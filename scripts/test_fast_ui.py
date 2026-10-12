@@ -173,6 +173,25 @@ class ActionTests(unittest.TestCase):
                 fast_ui.wait_selector("SIM", {"label": "Widget gallery"}, 0.01, [])
         self.assertIn("closest labels: [Widget Gallery]", str(caught.exception))
 
+    def test_tap_label_falls_back_to_the_only_node_with_that_label(self) -> None:
+        node = {"AXLabel": "Add Widget", "type": "StaticText", "frame": {"x": 0, "y": 0, "width": 10, "height": 10}}
+        with mock.patch.object(fast_ui, "hierarchy", return_value=[node]), mock.patch.object(fast_ui, "tap_point") as tap:
+            result = fast_ui.execute_action({"type": "tap_label", "label": "Add Widget"}, "SIM", Path("/tmp"), 1, [])
+        tap.assert_called_once_with("SIM", 5.0, 5.0, 0.15)
+        self.assertEqual(result, {"fallback_type": "StaticText"})
+
+    def test_tap_label_does_not_fall_back_when_ambiguous_or_type_explicit(self) -> None:
+        a = {"AXLabel": "Add", "type": "StaticText", "frame": {"x": 0, "y": 0, "width": 10, "height": 10}}
+        b = {"AXLabel": "Add", "type": "Image", "frame": {"x": 0, "y": 20, "width": 10, "height": 10}}
+        with mock.patch.object(fast_ui, "hierarchy", return_value=[a, b]), mock.patch.object(fast_ui.time, "sleep"), \
+                mock.patch.object(fast_ui, "tap_point") as tap:
+            with self.assertRaises(fast_ui.FastUIError):
+                fast_ui.execute_action({"type": "tap_label", "label": "Add", "timeout": 0.01}, "SIM", Path("/tmp"), 1, [])
+            with self.assertRaises(fast_ui.FastUIError):
+                fast_ui.execute_action({"type": "tap_label", "label": "Add Widget", "element_type": "Button", "timeout": 0.01},
+                                       "SIM", Path("/tmp"), 2, [])
+        tap.assert_not_called()
+
     def test_swipe_direction_uses_the_screen_frame(self) -> None:
         nodes = [
             {"AXLabel": "App", "type": "Application", "frame": {"x": 0, "y": 0, "width": 400, "height": 800}},

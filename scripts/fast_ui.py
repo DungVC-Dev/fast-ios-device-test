@@ -305,16 +305,42 @@ def wait_nodes(
     raise error
 
 
+def tappable(node: dict[str, Any]) -> bool:
+    frame = node.get("frame") or {}
+    try:
+        return float(frame["width"]) > 0 and float(frame["height"]) > 0
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def resolve_tap_target(
+    nodes: list[dict[str, Any]], selector: dict[str, Any], explicit_type: bool
+) -> dict[str, Any] | None:
+    """The node `tap_label` taps: the first match of the full selector; else, when the
+    flow did not pin `element_type`, the one node of any type with that label (a SwiftUI
+    text or image that is tappable but not exposed as a Button)."""
+    typed = sort_nodes([node for node in nodes if matches(node, selector)], ["y", "x"])
+    if typed:
+        return typed[0]
+    if explicit_type:
+        return None
+    loose = {key: value for key, value in selector.items() if key != "element_type"}
+    candidates = [node for node in nodes if matches(node, loose) and tappable(node)]
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def wait_selector(
     udid: str,
     selector: dict[str, Any],
     timeout: float,
     optional_prompt_labels: list[str],
+    predicate: Callable[[list[dict[str, Any]]], bool] | None = None,
 ) -> list[dict[str, Any]]:
+    """Wait until `selector` matches (or `predicate` holds); a timeout explains the miss."""
     try:
         return wait_nodes(
             udid,
-            lambda nodes: any(matches(node, selector) for node in nodes),
+            predicate or (lambda nodes: any(matches(node, selector) for node in nodes)),
             timeout,
             optional_prompt_labels,
         )
@@ -818,16 +844,22 @@ def execute_action(
         if not any(key in action for key in ("label", "label_contains", "id")):
             raise FastUIError(f"missing 'label' or 'id' in action {index}")
         selector = selector_of(action, "Button")
+        explicit_type = "element_type" in action
         if action.get("optional", False):
-            candidates = [node for node in hierarchy(udid) if matches(node, selector)]
+            target = resolve_tap_target(hierarchy(udid), selector, explicit_type)
         else:
             # One hierarchy poll resolves the control (and dismisses any
             # permission alert in the way); tapping its frame avoids a second
             # label lookup inside `axe tap --label`.
-            nodes = wait_selector(udid, selector, timeout, optional_prompt_labels)
-            candidates = [node for node in nodes if matches(node, selector)]
-        if candidates:
-            tap_point(udid, *frame_center(sort_nodes(candidates, ["y", "x"])[0]), post_delay)
+            nodes = wait_selector(
+                udid, selector, timeout, optional_prompt_labels,
+                predicate=lambda value: resolve_tap_target(value, selector, explicit_type) is not None,
+            )
+            target = resolve_tap_target(nodes, selector, explicit_type)
+        if target is not None:
+            tap_point(udid, *frame_center(target), post_delay)
+            if node_type(target) != selector["element_type"]:
+                return {"fallback_type": node_type(target)}
     elif kind == "wait_absent":
         wait_absent(udid, action, timeout, optional_prompt_labels)
     elif kind == "assert_absent":
