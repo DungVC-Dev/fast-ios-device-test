@@ -315,6 +315,14 @@ class AbsenceTests(unittest.TestCase):
 
 
 class MotionTests(unittest.TestCase):
+    def test_engine_imports_without_pillow(self) -> None:
+        import subprocess
+        code = "import sys; sys.modules['PIL'] = None; import fast_ui; print('ok')"
+        out = subprocess.run(
+            [sys.executable, "-c", code], cwd=str(Path(fast_ui.__file__).parent), capture_output=True, text=True
+        )
+        self.assertEqual(out.stdout.strip(), "ok", out.stderr[-300:])
+
     def test_motion_ratio_counts_changed_pixels(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             tmp = Path(raw)

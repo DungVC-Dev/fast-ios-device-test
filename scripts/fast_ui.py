@@ -22,8 +22,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
-from PIL import Image, ImageChops
-
 
 BUILD_SUFFIXES = {
     ".c", ".cc", ".cpp", ".entitlements", ".gif", ".h", ".jpeg", ".jpg",
@@ -873,6 +871,11 @@ def sort_nodes(nodes: list[dict[str, Any]], keys: list[str]) -> list[dict[str, A
 
 
 def motion_ratio(first: Path, second: Path, region: list[float], threshold: int) -> float:
+    try:
+        # Only `motion` needs Pillow; every other action runs on a stock python3.
+        from PIL import Image, ImageChops
+    except ImportError as error:
+        raise FastUIError("motion needs Pillow: python3 -m pip install --user pillow") from error
     image_a = Image.open(first).convert("RGB")
     image_b = Image.open(second).convert("RGB")
     if image_a.size != image_b.size:
