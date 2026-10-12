@@ -894,10 +894,12 @@ def execute_action(
     index: int,
     optional_prompt_labels: list[str],
     defaults: dict[str, Any] | None = None,
+    bundle_id: str = "",
 ) -> dict[str, Any] | None:
-    """Run one action; `defaults` carries flow-wide keys such as `settle` from `setup`."""
+    """Run one action; `defaults` carries flow-wide keys such as `settle` from `setup`,
+    `bundle_id` is the app under test for `launch`/`terminate` without an `app` key."""
     kind = required(action, "type", f"action {index}")
-    result = run_action(action, udid, artifacts, index, optional_prompt_labels)
+    result = run_action(action, udid, artifacts, index, optional_prompt_labels, bundle_id)
     settle = action.get("settle", (defaults or {}).get("settle"))
     if kind in GESTURE_KINDS and settle:
         timeout = SETTLE_TIMEOUT if isinstance(settle, bool) else float(settle)
@@ -911,6 +913,7 @@ def run_action(
     artifacts: Path,
     index: int,
     optional_prompt_labels: list[str],
+    bundle_id: str = "",
 ) -> dict[str, Any] | None:
     kind = required(action, "type", f"action {index}")
     timeout = float(action.get("timeout", 6))
@@ -1069,6 +1072,22 @@ def run_action(
             "motion_ratios": [round(value, 6) for value in ratios],
             **({"frames": [str(path) for path in paths]} if keep_frames else {}),
         }
+    elif kind == "type_text":
+        axe(udid, "type", required(action, "text", f"action {index}"))
+        invalidate_hierarchy(udid)
+    elif kind in ("launch", "terminate"):
+        app = action.get("app") or bundle_id
+        if not app:
+            raise FastUIError(f"action {index}: {kind} needs 'app'")
+        if kind == "launch":
+            arguments = [str(value) for value in action.get("launch_arguments", [])]
+            command(["xcrun", "simctl", "launch", udid, app, *arguments])
+        else:
+            command(["xcrun", "simctl", "terminate", udid, app], check=False)
+        invalidate_hierarchy(udid)
+    elif kind == "open_url":
+        command(["xcrun", "simctl", "openurl", udid, required(action, "url", f"action {index}")])
+        invalidate_hierarchy(udid)
     else:
         raise FastUIError(f"unsupported action type '{kind}'")
     return None
@@ -1182,7 +1201,7 @@ def main() -> int:
             current_step = f"{index:02d}_{action.get('type', 'unknown')}"
             with metrics.measure(current_step):
                 result = execute_action(
-                    action, udid, artifacts, index, optional_prompt_labels, defaults
+                    action, udid, artifacts, index, optional_prompt_labels, defaults, bundle_id
                 )
             if recorder:
                 labels_per_step.append(step_labels(udid, current_step, recorder.elapsed(), result))

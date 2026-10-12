@@ -226,6 +226,19 @@ class ActionTests(unittest.TestCase):
         settled.assert_called_once()
         self.assertEqual(result, {"settled": True})
 
+    def test_simulator_lifecycle_actions_call_simctl_and_axe(self) -> None:
+        with mock.patch.object(fast_ui, "command") as cmd, mock.patch.object(fast_ui, "axe") as axe:
+            fast_ui.execute_action({"type": "type_text", "text": "hello"}, "SIM", Path("/tmp"), 1, [], {}, "com.x")
+            fast_ui.execute_action({"type": "launch", "launch_arguments": ["-flag"]}, "SIM", Path("/tmp"), 2, [], {}, "com.x")
+            fast_ui.execute_action({"type": "terminate", "app": "com.apple.Preferences"}, "SIM", Path("/tmp"), 3, [], {}, "com.x")
+            fast_ui.execute_action({"type": "open_url", "url": "myapp://home"}, "SIM", Path("/tmp"), 4, [], {}, "com.x")
+        axe.assert_called_once_with("SIM", "type", "hello")
+        self.assertEqual(cmd.call_args_list[0].args[0], ["xcrun", "simctl", "launch", "SIM", "com.x", "-flag"])
+        self.assertEqual(cmd.call_args_list[1].args[0], ["xcrun", "simctl", "terminate", "SIM", "com.apple.Preferences"])
+        self.assertEqual(cmd.call_args_list[2].args[0], ["xcrun", "simctl", "openurl", "SIM", "myapp://home"])
+        with self.assertRaisesRegex(fast_ui.FastUIError, "needs 'app'"):
+            fast_ui.execute_action({"type": "launch"}, "SIM", Path("/tmp"), 5, [], {}, "")
+
     def test_swipe_direction_uses_the_screen_frame(self) -> None:
         nodes = [
             {"AXLabel": "App", "type": "Application", "frame": {"x": 0, "y": 0, "width": 400, "height": 800}},
