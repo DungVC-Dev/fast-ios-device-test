@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import sys
 import tempfile
@@ -202,6 +203,28 @@ class ActionTests(unittest.TestCase):
                 fast_ui.execute_action({"type": "tap_label", "label": "Add Widget", "element_type": "Button", "timeout": 0.01},
                                        "SIM", Path("/tmp"), 2, [])
         tap.assert_not_called()
+
+    def test_wait_settled_returns_true_when_two_polls_match(self) -> None:
+        a = [{"AXLabel": "A", "type": "Button", "frame": {"x": 0, "y": 0, "width": 1, "height": 1}}]
+        b = [{"AXLabel": "A", "type": "Button", "frame": {"x": 0, "y": 5, "width": 1, "height": 1}}]
+        with mock.patch.object(fast_ui, "hierarchy", side_effect=[a, b, b, b]), mock.patch.object(fast_ui.time, "sleep"):
+            self.assertTrue(fast_ui.wait_settled("SIM", timeout=5, stable_for=0))
+
+    def test_wait_settled_gives_up_quietly_on_a_moving_screen(self) -> None:
+        frames = itertools.count()
+        moving = lambda udid, max_age=0.0: [  # noqa: E731
+            {"AXLabel": "A", "type": "Image", "frame": {"x": 0, "y": next(frames), "width": 1, "height": 1}}
+        ]
+        with mock.patch.object(fast_ui, "hierarchy", side_effect=moving), mock.patch.object(fast_ui.time, "sleep"):
+            self.assertFalse(fast_ui.wait_settled("SIM", timeout=0.01))
+
+    def test_settle_flag_on_tap_records_result(self) -> None:
+        node = {"AXLabel": "Go", "type": "Button", "frame": {"x": 0, "y": 0, "width": 2, "height": 2}}
+        with mock.patch.object(fast_ui, "hierarchy", return_value=[node]), mock.patch.object(fast_ui, "tap_point"), \
+                mock.patch.object(fast_ui, "wait_settled", return_value=True) as settled:
+            result = fast_ui.execute_action({"type": "tap_label", "label": "Go", "settle": True}, "SIM", Path("/tmp"), 1, [])
+        settled.assert_called_once()
+        self.assertEqual(result, {"settled": True})
 
     def test_swipe_direction_uses_the_screen_frame(self) -> None:
         nodes = [

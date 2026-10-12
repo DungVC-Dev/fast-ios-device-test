@@ -409,6 +409,43 @@ def assert_absent(
         time.sleep(0.3)
 
 
+SETTLE_TIMEOUT = 2.5
+
+
+def tree_signature(nodes: list[dict[str, Any]]) -> str:
+    """Labels, types and whole-point frames in screen order: equal signatures mean nothing moved."""
+    parts = []
+    for node in sort_nodes(nodes, ["y", "x"]):
+        frame = node.get("frame") or {}
+        box = ",".join(f"{float(frame.get(key, 0) or 0):.0f}" for key in ("x", "y", "width", "height"))
+        parts.append(f"{node.get('AXLabel') or ''}/{node_type(node) or ''}/{box}")
+    return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()
+
+
+def wait_settled(
+    udid: str, timeout: float = SETTLE_TIMEOUT, interval: float = 0.1, stable_for: float = 0.1
+) -> bool:
+    """Poll until two consecutive trees match and have for `stable_for`; False after `timeout`.
+    Opt-in per action: a screen that animates forever would otherwise pay the whole timeout."""
+    deadline = time.perf_counter() + timeout
+    previous: str | None = None
+    stable_since = 0.0
+    while True:
+        try:
+            signature = tree_signature(hierarchy(udid))
+        except FastUIError:
+            return False
+        now = time.perf_counter()
+        if signature == previous:
+            if now - stable_since >= stable_for:
+                return True
+        else:
+            previous, stable_since = signature, now
+        if now >= deadline:
+            return False
+        time.sleep(interval)
+
+
 def swipe_points(action: dict[str, Any], nodes: list[dict[str, Any]], index: int) -> tuple[list[float], list[float]]:
     """`from`/`to` points, or a `direction` the finger moves in ("up" scrolls content down)."""
     if "direction" not in action:
@@ -847,7 +884,28 @@ def motion_ratio(first: Path, second: Path, region: list[float], threshold: int)
     return changed / (difference.width * difference.height)
 
 
+GESTURE_KINDS = {"tap_label", "tap_first", "tap_nearest", "tap_point", "swipe", "scroll_to"}
+
+
 def execute_action(
+    action: dict[str, Any],
+    udid: str,
+    artifacts: Path,
+    index: int,
+    optional_prompt_labels: list[str],
+    defaults: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Run one action; `defaults` carries flow-wide keys such as `settle` from `setup`."""
+    kind = required(action, "type", f"action {index}")
+    result = run_action(action, udid, artifacts, index, optional_prompt_labels)
+    settle = action.get("settle", (defaults or {}).get("settle"))
+    if kind in GESTURE_KINDS and settle:
+        timeout = SETTLE_TIMEOUT if isinstance(settle, bool) else float(settle)
+        result = {**(result or {}), "settled": wait_settled(udid, timeout=timeout)}
+    return result
+
+
+def run_action(
     action: dict[str, Any],
     udid: str,
     artifacts: Path,
@@ -1119,11 +1177,12 @@ def main() -> int:
             command(launch)
 
         optional_prompt_labels = setup.get("optional_permission_labels", [])
+        defaults = {"settle": True} if setup.get("settle_after_actions") else {}
         for index, action in enumerate(required(spec, "actions", "flow"), start=1):
             current_step = f"{index:02d}_{action.get('type', 'unknown')}"
             with metrics.measure(current_step):
                 result = execute_action(
-                    action, udid, artifacts, index, optional_prompt_labels
+                    action, udid, artifacts, index, optional_prompt_labels, defaults
                 )
             if recorder:
                 labels_per_step.append(step_labels(udid, current_step, recorder.elapsed(), result))
