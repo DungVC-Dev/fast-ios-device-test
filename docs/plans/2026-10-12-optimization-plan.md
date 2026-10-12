@@ -623,7 +623,7 @@ Run: `bash make-zip.sh`
 Expected: `~/Resources/Tool/fast-ios-device-test-1.2.0.zip`, khoảng 8.6 MB.
 
 - [ ] **Step 4: Commit và tag** `git commit -am "release 1.2.0" && git tag v1.2.0`
-- [ ] **Step 5: Cập nhật memory** `~/.claude/projects/-Users-sonmacmini/memory/ios-test-tooling-setup.md`: bản 1.2.0, có git và zip backup.
+- [ ] **Step 5: Cập nhật memory** memory của máy này: bản 1.2.0, có git và zip backup.
 
 ---
 

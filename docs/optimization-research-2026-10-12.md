@@ -8,6 +8,8 @@ Chưa có bản zip backup của bản đã vá: tạo backup trước khi sửa
 
 ## 1. Phương pháp
 
+"app A" trong tài liệu này là một app thật của công ty (dashboard có animation); tên app, tên thiết bị và bundle id đã được bỏ khỏi tài liệu vì không cần cho tool.
+
 - Đọc toàn bộ mã: `scripts/fast_ui.py` (engine simulator), `scripts/fast_device.py` +
   `device-runner/UITests/FlowRunner.swift` (iPhone thật), `fast_ui_review.py`,
   `fast_ui_report.py`, SKILL.md, references, commands, install.sh.
