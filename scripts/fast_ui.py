@@ -91,9 +91,20 @@ AXE_XCODE_HINT = (
 )
 
 
+# Right after a boot AXe's remote automation session sometimes fails to come up once;
+# the next attempt a second later succeeds, so one retry turns a flaky FAIL into a pass.
+AXE_SESSION_MARKER = "automation session"
+AXE_SESSION_RETRIES = 1
+
+
 def axe(udid: str, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     arguments = ["axe", *args, "--udid", udid]
-    result = command(arguments, check=False)
+    for attempt in range(AXE_SESSION_RETRIES + 1):
+        result = command(arguments, check=False)
+        transient = result.returncode != 0 and AXE_SESSION_MARKER in f"{result.stderr}\n{result.stdout}".lower()
+        if not transient or attempt == AXE_SESSION_RETRIES:
+            break
+        time.sleep(1.0)
     if check and result.returncode != 0:
         output = f"{result.stderr}\n{result.stdout}"
         detail = (result.stderr or result.stdout).strip().splitlines()

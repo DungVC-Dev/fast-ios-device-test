@@ -609,6 +609,18 @@ class StepLabelTests(unittest.TestCase):
 
 
 class AxeErrorTests(unittest.TestCase):
+    def test_automation_session_timeout_is_retried_once(self) -> None:
+        timed_out = mock.Mock(returncode=1, stdout="", stderr="Error: Timed out creating the simulator remote automation session")
+        good = mock.Mock(returncode=0, stdout="[]", stderr="")
+        with mock.patch.object(fast_ui, "command", side_effect=[timed_out, good]) as run, \
+                mock.patch.object(fast_ui.time, "sleep"):
+            self.assertIs(fast_ui.axe("SIM", "tap", "-x", "1", "-y", "1"), good)
+        self.assertEqual(run.call_count, 2)
+        with mock.patch.object(fast_ui, "command", side_effect=[timed_out, timed_out]), \
+                mock.patch.object(fast_ui.time, "sleep"):
+            with self.assertRaisesRegex(fast_ui.FastUIError, "automation session"):
+                fast_ui.axe("SIM", "tap", "-x", "1", "-y", "1")
+
     def test_simulatorkit_failure_suggests_developer_dir(self) -> None:
         failed = mock.Mock(returncode=1, stdout="", stderr="dyld: Library not loaded: /Library/Developer/PrivateFrameworks/SimulatorKit.framework")
         with mock.patch.object(fast_ui, "command", return_value=failed):
