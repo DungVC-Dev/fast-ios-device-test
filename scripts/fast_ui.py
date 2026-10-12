@@ -770,8 +770,16 @@ def build_lock(derived_data: Path) -> Iterator[None]:
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
-def prepare_app(app: dict[str, Any], base: Path, udid: str, reuse_app: bool) -> tuple[Path, bool]:
+def prepare_app(app: dict[str, Any], base: Path, udid: str, reuse_app: bool) -> tuple[Path | None, bool]:
     ensure_booted(udid)
+    if app.get("prebuilt"):
+        # Drive what is already on the simulator (a system app, a build Xcode installed):
+        # nothing to build, so no project or DerivedData is needed.
+        if app.get("app_path"):
+            app_path = resolved_path(app["app_path"], base)
+            verify_app(app_path, required(app, "bundle_id", "app"))
+            return app_path, False
+        return None, False
     app_path = resolved_path(required(app, "app_path", "app"), base)
     derived_data = resolved_path(required(app, "derived_data", "app"), base)
     if reuse_app:
@@ -1147,6 +1155,10 @@ def main() -> int:
     name = variant_name(required(spec, "name", "flow"), variant)
     udid = required(app, "simulator", "app")
     bundle_id = required(app, "bundle_id", "app")
+    # A prebuilt app is driven as installed; a fresh install needs an .app to put back.
+    fresh_install = bool(setup.get("fresh_install", not app.get("prebuilt")))
+    if fresh_install and app.get("prebuilt") and not app.get("app_path"):
+        raise FastUIError("prebuilt app without app_path cannot be fresh-installed")
     project_root = resolved_path(app.get("project_root", "."), base)
     artifacts_root = (
         Path(args.artifacts_root).expanduser().resolve()
@@ -1174,9 +1186,10 @@ def main() -> int:
         with metrics.measure("prepare"):
             app_path, built = prepare_app(app, base, udid, args.reuse_app)
         if args.build_only:
-            print(f"READY task={name} build={'yes' if built else 'skip'} app={file_link(app_path)} total={metrics.total:.1f}s")
+            location = file_link(app_path) if app_path else "installed"
+            print(f"READY task={name} build={'yes' if built else 'skip'} app={location} total={metrics.total:.1f}s")
             return 0
-        if setup.get("fresh_install", True):
+        if fresh_install:
             current_step = "fresh_install"
             with metrics.measure(current_step):
                 command(["xcrun", "simctl", "uninstall", udid, bundle_id], check=False)
@@ -1271,9 +1284,7 @@ def main() -> int:
     finally:
         restore_ui_settings(udid, previous_ui)
         if not args.build_only and not args.keep_state:
-            reset_preferences(
-                udid, bundle_id, setup.get("preferences", {}), setup.get("fresh_install", True)
-            )
+            reset_preferences(udid, bundle_id, setup.get("preferences", {}), fresh_install)
 
 
 if __name__ == "__main__":

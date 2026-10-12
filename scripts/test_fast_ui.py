@@ -404,6 +404,15 @@ class LifecycleTests(unittest.TestCase):
             fast_ui.tap_point("SIM-A", 10, 20, 0.08)
         self.assertEqual(axe.call_args.args[-1], str(fast_ui.DEVICE_HUB_TAP_SETTLE))
 
+    def test_prebuilt_app_skips_build_and_derived_data(self) -> None:
+        with mock.patch.object(fast_ui, "ensure_booted"), mock.patch.object(fast_ui, "build_if_needed") as build:
+            app_path, built = fast_ui.prepare_app(
+                {"bundle_id": "com.apple.Preferences", "prebuilt": True}, Path("/tmp"), "SIM", False
+            )
+        build.assert_not_called()
+        self.assertIsNone(app_path)
+        self.assertFalse(built)
+
     def test_build_only_flag_parses(self) -> None:
         with mock.patch.object(sys, "argv", ["fast_ui.py", "flow.json", "--build-only"]):
             args = fast_ui.parse_arguments()
