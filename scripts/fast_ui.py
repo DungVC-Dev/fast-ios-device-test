@@ -189,9 +189,26 @@ def node_type(node: dict[str, Any]) -> str | None:
     return node.get("type") or node.get("AXRole")
 
 
+SELECTOR_KEYS = ("label", "label_contains", "label_is_empty", "id", "value", "element_type", "frame")
+
+
+def selector_of(action: dict[str, Any], default_type: str | None = None) -> dict[str, Any]:
+    """The selector keys an action carries; `default_type` fills in `element_type` when absent."""
+    selector = {key: action[key] for key in SELECTOR_KEYS if key in action}
+    if default_type is not None and "element_type" not in selector:
+        selector["element_type"] = default_type
+    return selector
+
+
 def matches(node: dict[str, Any], selector: dict[str, Any]) -> bool:
     label = selector.get("label")
     if label is not None and node.get("AXLabel") != label:
+        return False
+    identifier = selector.get("id")
+    if identifier is not None and node.get("AXUniqueId") != identifier:
+        return False
+    value = selector.get("value")
+    if value is not None and str(node.get("AXValue")) != str(value):
         return False
     if selector.get("label_is_empty") and node.get("AXLabel"):
         return False
@@ -753,8 +770,9 @@ def execute_action(
     if kind == "wait":
         wait_selector(udid, action, timeout, optional_prompt_labels)
     elif kind == "tap_label":
-        label = required(action, "label", f"action {index}")
-        selector = {"label": label, "element_type": action.get("element_type", "Button")}
+        if not any(key in action for key in ("label", "label_contains", "id")):
+            raise FastUIError(f"missing 'label' or 'id' in action {index}")
+        selector = selector_of(action, "Button")
         if action.get("optional", False):
             candidates = [node for node in hierarchy(udid) if matches(node, selector)]
         else:

@@ -141,6 +141,23 @@ class ActionTests(unittest.TestCase):
         self.assertTrue(fast_ui.matches(node, {"label_contains": "Office"}))
         self.assertFalse(fast_ui.matches(node, {"label_contains": "Office 2G"}))
 
+    def test_matches_id_and_value(self) -> None:
+        node = {"AXLabel": "Wi-Fi", "AXUniqueId": "wifiSwitch", "AXValue": "1", "type": "Switch", "frame": {}}
+        self.assertTrue(fast_ui.matches(node, {"id": "wifiSwitch"}))
+        self.assertTrue(fast_ui.matches(node, {"value": "1", "element_type": "Switch"}))
+        self.assertFalse(fast_ui.matches(node, {"id": "other"}))
+
+    def test_tap_label_accepts_id_and_label_contains(self) -> None:
+        node = {"AXLabel": "Continue to app", "AXUniqueId": "cta", "type": "Button",
+                "frame": {"x": 0, "y": 0, "width": 10, "height": 10}}
+        with mock.patch.object(fast_ui, "hierarchy", return_value=[node]), \
+                mock.patch.object(fast_ui, "tap_point") as tap:
+            fast_ui.execute_action({"type": "tap_label", "id": "cta"}, "SIM", Path("/tmp"), 1, [])
+            fast_ui.execute_action({"type": "tap_label", "label_contains": "Continue"}, "SIM", Path("/tmp"), 2, [])
+        self.assertEqual(tap.call_count, 2)
+        with self.assertRaisesRegex(fast_ui.FastUIError, "missing 'label' or 'id'"):
+            fast_ui.execute_action({"type": "tap_label"}, "SIM", Path("/tmp"), 3, [])
+
     def test_swipe_direction_uses_the_screen_frame(self) -> None:
         nodes = [
             {"AXLabel": "App", "type": "Application", "frame": {"x": 0, "y": 0, "width": 400, "height": 800}},
