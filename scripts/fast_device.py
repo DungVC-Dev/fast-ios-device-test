@@ -73,6 +73,14 @@ def resolve_device(requested: str | None) -> dict[str, Any]:
         for device in devices:
             if requested in (device["udid"], device["name"]):
                 return device
+        # "Pink" is enough when only one iPhone has it in its name; a prefix shared by two
+        # ("iPhone 16") is refused rather than guessed.
+        partial = [device for device in devices if requested.lower() in str(device["name"]).lower()]
+        if len(partial) == 1:
+            return partial[0]
+        if partial:
+            names = [device["name"] for device in partial]
+            raise FastDeviceError(f"device '{requested}' matches {len(partial)} iPhones: {names}; pass the full name or UDID")
         raise FastDeviceError(f"device '{requested}' not found; known: {[d['name'] for d in devices]}")
     connected = [device for device in devices if device["connected"]]
     if len(connected) == 1:

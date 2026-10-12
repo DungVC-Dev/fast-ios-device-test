@@ -655,3 +655,13 @@ class DeviceLauncherTests(unittest.TestCase):
             self.assertEqual(json.loads((Path(raw) / "wifi-ui.json").read_text()), nodes)
         self.assertNotIn("nodes", results[0])
         self.assertEqual(results[0]["path"], saved[0])
+
+    def test_resolve_device_matches_partial_name_only_when_unique(self) -> None:
+        import fast_device
+        devices = [{"udid": "A", "name": "iPhone - Blue - 27", "os": "27.0", "connected": True},
+                   {"udid": "B", "name": "iPhone 16 - 26.2", "os": "26.2", "connected": True},
+                   {"udid": "C", "name": "iPhone 16 blue 18.6.2", "os": "18.6", "connected": False}]
+        with mock.patch.object(fast_device, "physical_devices", return_value=devices):
+            self.assertEqual(fast_device.resolve_device("blue - 27")["udid"], "A")
+            with self.assertRaisesRegex(fast_device.FastDeviceError, "matches 2 iPhones"):
+                fast_device.resolve_device("iPhone 16")
