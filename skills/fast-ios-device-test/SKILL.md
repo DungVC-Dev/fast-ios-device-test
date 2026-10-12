@@ -1,30 +1,27 @@
 ---
 name: fast-ios-device-test
-description: Use when asked to run, verify, re-test, or record an iOS screen or flow quickly on Simulator (/fastSimulatorTest) or a physical iPhone (/fastDeviceTest), including a matrix of several cases or several devices. Not for release, archive, or full-suite runs.
+description: Use when asked to run, verify, re-test, or record an iOS screen or flow quickly on Simulator (/fastSimulatorTest) or a physical iPhone (/fastDeviceTest), including a matrix of several cases or several devices, or a system app such as Settings. Not for release, archive, or full-suite runs.
 ---
 
 # Fast iOS Device Test
 
-Pick the narrowest runner:
+## Which tool
 
-| Request | Runner |
+| Need | Use |
 |---|---|
-| Any Simulator UI behavior described in words | `fastSimulatorTest <flow.json>` (`scripts/fast_ui.py`, fresh install) |
-| The same kind of flow on a physical iPhone | `fastDeviceTest <flow.json>` (`scripts/fast_device.py`, XCUITest runner) — read [references/device.md](references/device.md) first |
-| Watch the videos of a `--record` session | `fastUIReview` (`scripts/fast_ui_review.py`) — read [references/review.md](references/review.md) first |
+| Prove a behavior, rerun it, run a matrix, record video, report | this skill: `fastSimulatorTest <flow.json>` / `fastDeviceTest <flow.json>` |
+| Explore an unknown screen, pinch/drag/rotate, read the app's console log | a subagent with Xcode 27's `device-interaction` skill (`DeviceInteraction*` MCP tools), on a **different** simulator; then write the flow here |
+| Watch the videos of a `--record` session | `fastUIReview` — read [references/review.md](references/review.md) first |
+| Physical iPhone | read [references/device.md](references/device.md) first |
 
-Scripts live in `../../scripts/` relative to this file. `fastSimulatorTest` (on PATH after
-`install.sh`, or `${CLAUDE_PLUGIN_ROOT}/bin/fastSimulatorTest` as a plugin) is the same
-engine as `scripts/fast_ui.py`. If `axe` is missing: `brew install cameroncooke/axe/axe`;
-if Pillow is missing: `python3 -m pip install --user pillow`.
-
-The Python engine is feature-agnostic. Screen names, labels, navigation and
-assertions live only in flow JSON. Never edit the engine for one screen.
+Never point both tools at one simulator: Xcode reinstalls the app over the fresh install.
+The engine is feature-agnostic: screen names, labels and assertions live only in flow
+JSON. Never edit the engine for one screen. Every action, `setup` key and CLI flag is in
+[references/usage.md](references/usage.md).
 
 ## Flow file
 
 Everything the engine needs is in the flow; there is no per-project config.
-The smallest complete flow:
 
 ```json
 {
@@ -55,127 +52,64 @@ The smallest complete flow:
 }
 ```
 
-- Use absolute paths: relative ones resolve against the flow file's directory,
-  which is a temporary one.
-- `project` is the `.xcworkspace` or `.xcodeproj`. `simulator` is a UDID from
-  `xcrun simctl list devices available`; take one that Xcode or another agent is
-  not running the app on, because the fresh install replaces the app and wipes
-  its defaults.
-- `derived_data` is a folder of its own, never Xcode's DerivedData: two builds
-  in one DerivedData at the same time break each other. `app_path` is the `.app`
-  inside it (`Build/Products/<configuration>-iphonesimulator/<Product>.app`).
-- `build_inputs` are the source folders plus `project.pbxproj`. The build cache
-  watches only these; leave them out and every run goes through `xcodebuild`.
-- Selector keys sit directly on `wait`, `wait_absent`, `assert_absent` and
-  `tap_first`: `label` (exact accessibility label), `element_type`,
-  `label_is_empty`, `label_contains` (a substring, for long row labels such as
-  `"Office, No Internet Connection, …"`), and bounds under `frame`
-  (`{"frame": {"min_y": 400}}`).
-  `tap_label` matches a `Button` unless `element_type` says otherwise.
-- Every action type, `setup` key and CLI flag is in
-  [references/usage.md](references/usage.md).
+- **App already on the simulator** (Settings, a build Xcode installed): `"app": {"bundle_id":
+  "com.apple.Preferences", "prebuilt": true, "simulator": "<UDID>", "project_root": "<dir>"}`;
+  no project, build or fresh install, start with `{"type": "launch"}`.
+- Absolute paths only. `simulator` is a UDID from `xcrun simctl list devices available` that
+  nobody else runs the app on. `derived_data` is its own folder, never Xcode's DerivedData;
+  `app_path` is the `.app` inside it. `build_inputs` (source folders + `project.pbxproj`) drive
+  the build cache; without them every run rebuilds.
+- Selector keys on `wait`, `wait_absent`, `assert_absent`, `tap_first`, `tap_label`, `scroll_to`:
+  `label` (exact), `label_contains`, `id` (accessibilityIdentifier), `value` (a switch's "1"/"0",
+  a field's text), `element_type`, `label_is_empty`, `frame` bounds (`{"min_y": 400}`).
+- `tap_label` matches a `Button`; when the flow sets no `element_type` and exactly one node of
+  any type has the label, it taps that node and reports `fallback_type`.
 
-## fastSimulatorTest — one flow
+## One flow
 
-1. Write the smallest version-1 flow for only the requested behavior into a
-   temporary directory. Delete it after the run unless the user asks to keep it.
-2. Selectors: prefer accessibility labels from the Swift view. If a label is
-   unknown, put one `{"type": "dump"}` action at that point — the PASS line
-   prints the visible labels. Never fake a `wait` on a label that cannot exist
-   to force a hierarchy dump; that burns the whole timeout.
-3. Run `scripts/fast_ui.py <flow.json>`. It boots the simulator, reuses the
-   cached app when build inputs are unchanged, fresh-installs, injects
-   `setup.preferences`, and prints one PASS/FAIL line.
-4. On FAIL, the line already carries `visible labels: [...]` for the screen the
-   flow was stuck on. Fix exactly one selector, rerun with `--reuse-app`. After
-   two reruns of the same flow, stop and report the failure with the artifact
-   path instead of iterating further.
+1. Write the smallest version-1 flow for the requested behavior in a temporary directory
+   (delete it afterwards, one `rm <file>` per file).
+2. Unknown label → one `{"type": "dump"}` at that point: the PASS line prints the visible
+   labels and `<name>-ui.json` has label, type, id, value and tap `center` per node. Never
+   fake a `wait` on an impossible label to get a dump.
+3. Run `fastSimulatorTest <flow.json>`. It boots the simulator, reuses the cached app when
+   build inputs are unchanged, fresh-installs, seeds `setup.preferences`, prints one PASS/FAIL line.
+4. On FAIL the line lists `visible labels: [Add Widget (StaticText), …]` with types, says when
+   the label exists under another type, and suggests close labels. Fix one selector, rerun
+   with `--reuse-app`. After two reruns stop and report with the artifact link.
 
-### Flow timing rules (these are what make it fast)
+### Timing rules
 
-- First `wait` after launch: `timeout` ≤ 20. Every later `wait`/`tap_*`: ≤ 8.
-- `post_delay` ≤ 1. To let a screen settle, `wait` for a selector on the next
-  screen instead of sleeping. A `swipe` with `post_delay: 12` is a bug.
-- Use `pause` only for a product-defined delay (e.g. "popup closes after 5 s").
-- A "must not show" outcome is asserted with `assert_absent` (`seconds` ≤ 8);
-  a "closes" outcome with `wait_absent`. A tap that succeeds proves nothing
-  about absence.
-- Fresh install also wipes the app's defaults domain, so `setup.preferences`
-  of one flow never leak into the next. After every run (PASS or FAIL) the
-  engine removes the seeded preferences again, so a hard-coded `currentPurchase`
-  / onboarding flag never stays on the simulator; pass `--keep-state` to inspect
-  the app afterwards with them still in place. Seed `@ObjectUserDefaultWrapper` values
-  as `{"$json_data": ...}`; a plain string for a JSON-backed key decodes to nil.
-- Apple's own sheets (StoreKit review, system alerts from other processes) are
-  not in the accessibility tree: prove them with `screenshot`, not `wait`.
-- `tap_label` resolves the control from one hierarchy poll and taps its frame;
-  no separate `wait` for the same label is needed before it.
-- These limits apply to flows you write. If the user asks to rerun an existing
-  flow, run it with its own values and list any violations in the report.
-- Delete temporary flow files one by one (`rm <file>`); recursive deletes are
-  blocked by the permission system.
+- First `wait` after launch ≤ 20 s; every later `wait`/`tap_*` ≤ 8 s; `post_delay` ≤ 1 s.
+  To let a screen settle, `wait` for the next screen's selector; `pause` only for a
+  product-defined delay. `"settle": true` on a tap/swipe waits until the tree stops changing
+  (max 2.5 s) — use it on screens that keep animating, not by default.
+- "Must not show" → `assert_absent` (`seconds` ≤ 8); "closes" → `wait_absent`. A successful
+  tap proves nothing about absence.
+- Fresh install wipes the defaults domain, and the engine removes seeded preferences after every
+  run (`--keep-state` to inspect). Seed Codable values as `{"$json_data": …}`.
+- Apple's own sheets are not in the accessibility tree: prove them with `screenshot`.
+- Rerunning a user's existing flow: keep its values, list violations in the report.
 
-Every file or folder the runners print (`artifacts=`, `screenshot=`, `ui=`, `video=`,
-`path=`) is an absolute `file://` URL. Relay it as a markdown link,
-`[evidence](file:///…)`, never as a bare or relative path: those are not clickable.
+Every path the runners print (`artifacts=`, `screenshot=`, `ui=`, `video=`) is a `file://` URL:
+relay it as a markdown link.
 
-## Verify the real behavior, not just the selectors
+## Evidence, not just selectors
 
-A flow is only evidence when its last actions assert the product outcome
-(the next screen's label, a toast, a popup gone). A FAIL splits two ways:
+A flow is evidence only when its last actions assert the product outcome. A FAIL whose labels
+show the expected screen under another label is a selector bug (fix the flow); labels showing
+the wrong state (popup still there, gate not applied) are a product bug: fix the code, rebuild
+(`--build-only`, or drop `--reuse-app`), rerun the same flow. Record (`--record`) when the user
+asks for video or a flow proves a fix: a PASS keeps one `final[-<session>].mp4` per task, a
+FAIL keeps `run.mp4` beside `failure.png`.
 
-- The `visible labels` show the expected screen but under a different label
-  → selector bug → fix the flow.
-- The labels show the app in the wrong state (popup did not close, wrong tab,
-  gate not applied) → product bug → fix the app code under the project rules,
-  rebuild (`--build-only`, or drop `--reuse-app`), rerun the same flow.
+## Several flows or simulators
 
-With `--record`, metrics.json also carries `step_labels` (visible labels after
-every step); `fastUIReview` prints them under each SHEET and copies them into the
-review notes, so copy is checked from text rather than pixels.
-
-Record when the user asks for video or when a flow proves a fix:
-`fastSimulatorTest <flow.json> --record`. A PASS keeps exactly one clip per task at
-`<artifacts-root>/<task>/final[-<session>].mp4` and deletes earlier clips; a FAIL keeps its
-own `run.mp4` beside `failure.png` for diagnosis. Screenshots in the artifacts
-folder are what you read to confirm the state; the video is for the human.
-
-## fastSimulatorTest — several flows or several simulators
-
-Build once from the main agent: `scripts/fast_ui.py <any-flow.json> --build-only`
-→ prints `READY`. Every run after that passes `--reuse-app`.
-
-- **One simulator, up to about 5 flows:** run them one after another in this
-  conversation. A run is one command and one PASS/FAIL line, so a subagent
-  costs more than it saves.
-- **2+ simulators, or more flows than that:** fan out. Do NOT loop the flows in
-  this conversation.
-
-Fanning out:
-
-1. Group the flows by simulator. One booted simulator per agent, never two
-   agents on the same simulator (AXe and `simctl` serialize per device).
-   List booted devices with `xcrun simctl list devices booted`.
-2. Pick a session name (e.g. `review-2026-09-08`). Dispatch one agent per
-   simulator, all in ONE message, `model: sonnet` (the agent only runs commands
-   and fixes one selector from a FAIL line; use `opus` when the user asks for
-   it). Each agent's prompt: the absolute flow paths, its simulator UDID, the
-   exact command
-   `fastSimulatorTest <flow> --reuse-app --session <name> [--record]`, the two-rerun
-   cap, and "return only the PASS/FAIL lines".
-3. Collate with the tool, not by hand:
-   `fastUIReport --root <artifacts-root> --session <name>` prints the
-   flow × simulator table (latest attempt per cell, attempt counts, failure
-   causes with artifact paths, final videos). Paste it as the report. It works
-   the same for runs made in this conversation with `--session <name>`.
-
-The engine takes a build lock on DerivedData, so a stray build from an agent
-cannot corrupt the shared app, but agents should not need to build at all.
-
-Appearance and Dynamic Type variants: `--appearance light|dark` and
-`--content-size <simctl name>`; each variant is its own report row
-(see "Matrix" in [references/usage.md](references/usage.md)).
-
-Read
-[references/usage.md](references/usage.md) for the flow action reference,
-device selection, cache model, and troubleshooting.
+Build once: `fastSimulatorTest <any-flow.json> --build-only` → `READY`; then every run passes
+`--reuse-app`. One simulator and up to about 5 flows: run them here, one after another.
+2+ simulators or more flows: fan out, one `sonnet` agent per booted simulator, all in one
+message, each with its flow paths, UDID, the command
+`fastSimulatorTest <flow> --reuse-app --session <name> [--record]`, the two-rerun cap and
+"return only the PASS/FAIL lines"; never two agents on one simulator. Collate with
+`fastUIReport --root <artifacts-root> --session <name>` and paste its table. Variants:
+`--appearance light|dark`, `--content-size <simctl name>` are their own rows.

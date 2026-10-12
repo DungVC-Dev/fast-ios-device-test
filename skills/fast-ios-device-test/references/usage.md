@@ -87,12 +87,26 @@ Supported actions:
 - `screenshot`: save one named image.
 - `motion`: capture frames and assert a minimum changed-pixel ratio in a
   normalized `[left, top, right, bottom]` region.
-- `dump`: write the current UI hierarchy to `<name>-ui.json` and print the
-  visible labels (screen order, status-bar digits removed) in the PASS line.
-  Use it once to discover a selector; remove it from the final flow.
+- `dump`: write the on-screen nodes to `<name>-ui.json` (one flat JSON list: `label`,
+  `type`, `id`, `value`, `frame`, tap `center`; a few tens of KB) and print the visible
+  labels (screen order, status-bar digits removed) in the PASS line. Use it once to
+  discover a selector; remove it from the final flow.
+- `type_text`: type `text` into the focused field (US keyboard characters).
+- `launch` / `terminate`: `simctl launch` / `terminate` the flow's app, or `"app":
+  "<bundle id>"`; `launch` takes `launch_arguments`.
+- `open_url`: `simctl openurl` with `url` (deep links, universal links).
 
-Every `wait` timeout failure prints `visible labels: [...]` for the screen the
-flow stopped on, so a wrong selector is fixed from the FAIL line alone.
+Any tap or swipe may carry `"settle": true` (or a number of seconds, default 2.5): after the
+gesture the engine polls until two consecutive hierarchies match, then continues. It costs the
+whole timeout on a screen that never stops animating, so it is opt-in per action;
+`setup.settle_after_actions: true` turns it on for a whole flow.
+
+Every `wait` timeout failure prints `visible labels: [Add Widget (StaticText), …]` for the
+screen the flow stopped on, with each label's element type; when the wanted label exists under
+another type it says so (`'X' exists as StaticText, not Button: add element_type or use
+tap_first`), and otherwise lists the closest labels, so a wrong selector is fixed from the
+FAIL line alone. `tap_label` without `element_type` taps the one node of any type carrying
+the label when no Button does, and reports `fallback_type` in the results.
 
 Visual capture uses Simulator's native framebuffer rather than AXe. Passing
 flows capture nothing unless they contain `screenshot` or `motion`; passing
@@ -105,9 +119,11 @@ runner, so a longer settle time is expressed directly rather than by chaining
 gestures. Prefer `pause` over a one-pixel `swipe` when a flow only needs to wait:
 a swipe can scroll the screen it was meant to leave alone.
 
-Selectors accept `label`, `label_contains`, `label_is_empty`, `element_type`, and bounds nested under
-`frame`, such as `{"frame": {"min_y": 400, "max_width": 200}}` (`min_`/`max_` of
-`x`, `y`, `width`, `height`). Missing or ambiguous
+Selectors accept `label`, `label_contains`, `label_is_empty`, `id` (the
+accessibilityIdentifier, `AXUniqueId`), `value` (`AXValue`: "1"/"0" for a switch, the text of
+a field), `element_type`, and bounds nested under `frame`, such as `{"frame": {"min_y": 400,
+"max_width": 200}}` (`min_`/`max_` of `x`, `y`, `width`, `height`). `id` is the most stable
+key when the app sets identifiers; `tap_label` takes every key too. Missing or ambiguous
 required selectors fail closed. Optional system prompts are declared under
 `setup.optional_permission_labels`. The runner dismisses them from the same UI
 hierarchy polling loop used by selectors, so prompts that appear late do not
@@ -143,9 +159,16 @@ With `--record`, every step also stores the visible labels in `metrics.json`
 (`step_labels`, with the second it ended in the video); `fastUIReview` prints
 them per SHEET and copies them into the review notes.
 
+Prebuilt app: `"app": {"bundle_id": "…", "prebuilt": true, "simulator": "<UDID>",
+"project_root": "<dir>"}` drives whatever is installed on the simulator (a system app such as
+`com.apple.Preferences`, a build Xcode installed) without `project`, `derived_data` or
+`app_path`. `fresh_install` then defaults to false; set it true only together with an
+`app_path` to reinstall. Start such a flow with `{"type": "launch"}`.
+
 If an `axe` call fails with a SimulatorKit/PrivateFrameworks error, AXe is older
-than 1.8.0 and the selected Xcode is 27: upgrade AXe (`axe --version`). On Xcode 27
-AXe also needs Device Hub running; the engine opens it when it is not.
+than 1.8.0 and the selected Xcode is 27: `install.sh` unpacks the bundled 1.8.0 from
+`vendor/`. On Xcode 27 AXe also needs Device Hub running; the engine opens it when it is not.
+Pillow is only needed by `motion` and `fastUIReview`.
 
 For a new task, generate the smallest temporary flow containing only its
 state/actions/assertions, then remove it after the run. Save reusable flows only
@@ -167,9 +190,12 @@ fastDeviceTest do '{"type":"screenshot","name":"now"}' --device <d> --out <dir>
 fastDeviceTest stop --device <d>
 ```
 
-- The runner (`device-runner/`, built with xcodegen) is cached per Xcode +
-  signing profile + runner source in `~/Library/Caches/fast-device-test`;
-  `--rebuild-runner` forces a rebuild.
+- The runner (`device-runner/`, its `.xcodeproj` committed; regenerate with `xcodegen
+  generate` after editing `project.yml`) is cached per Xcode + signing profile + runner
+  source in `~/Library/Caches/fast-device-test`; `--rebuild-runner` forces a rebuild.
+- `--device` takes a UDID, the full name, or a unique part of the name.
+- `setup.wait_for_idle: false` (flows) or `--no-idle-wait` (`do`) skips XCUITest's
+  wait-for-idle around events on screens that never go idle; the report shows `wait_for_idle`.
 - Signing: an existing development profile that lists the device and matches a
   non-revoked keychain identity; never the bundle id of an installed app.
   `FAST_DEVICE_PROFILE=<uuid>` pins one.

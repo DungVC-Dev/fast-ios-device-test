@@ -31,6 +31,15 @@ re-signs it with an existing development profile, and runs the flow on the devic
   so a node must also sit inside its own cell. Use `scroll_to` to bring a row in.
 - `launch_arguments` stick to the app object: a later `launch` without them reuses
   the previous ones. Pass `"launch_arguments": []` to launch clean.
+- Selectors take `id` (accessibilityIdentifier) and `value` as on the simulator; `dump`
+  nodes carry `id` and `value` when set. `tap_label` falls back to the one node of any
+  type with that label when `element_type` is not given (result `fallback_type`).
+- **Screens that never go idle** (a GIF, a ticking clock) make XCUITest wait ~2.5 s after
+  every tap. `"setup": {"wait_for_idle": false}` in a flow, or `--no-idle-wait` on
+  `fastDeviceTest do`, switches that wait off for the run (private XCTest API, found at
+  runtime; the report shows `wait_for_idle`); the flow's own `wait`s keep it correct.
+- `--device` accepts a UDID, the full name, or a unique part of the name (`Pink`); a part
+  that matches two iPhones is refused.
 
 ### Persistent runner — use it for anything beyond one run
 
