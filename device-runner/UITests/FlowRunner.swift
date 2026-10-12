@@ -14,7 +14,13 @@ final class FlowRunner: XCTestCase {
         let frame: CGRect
         // Frame of the nearest enclosing cell; nil outside lists.
         let cell: CGRect?
+        // accessibilityIdentifier and the control's value ("1" for a switch that is on).
+        let identifier: String
+        let value: String
     }
+
+    // The selector keys an action may carry, shared with the Simulator engine.
+    static let selectorKeys = ["label", "label_contains", "label_is_empty", "id", "value", "element_type", "frame"]
 
     private var apps: [String: XCUIApplication] = [:]
     private var current: XCUIApplication?
@@ -190,17 +196,27 @@ private extension FlowRunner {
                 Thread.sleep(forTimeInterval: 0.3)
             } while Date() < deadline
         case "tap_label":
-            guard let label = action["label"] as? String else { throw Failure(message: "tap_label needs label") }
-            var selector: [String: Any] = ["label": label, "element_type": action["element_type"] ?? "Button"]
-            selector["frame"] = action["frame"]
-            let nodes: [Node]
-            if action["optional"] as? Bool ?? false {
-                nodes = snapshotNodes()
-            } else {
-                nodes = try waitNodes(timeout) { nodes in nodes.contains { self.matches($0, selector) } }
+            guard action["label"] != nil || action["label_contains"] != nil || action["id"] != nil else {
+                throw Failure(message: "missing 'label' or 'id' in action \(index)")
             }
-            if let node = sorted(nodes.filter { matches($0, selector) }, by: ["y", "x"]).first {
+            var selector: [String: Any] = [:]
+            for key in FlowRunner.selectorKeys { selector[key] = action[key] }
+            if selector["element_type"] == nil { selector["element_type"] = "Button" }
+            let explicitType = action["element_type"] != nil
+            let node: Node?
+            if action["optional"] as? Bool ?? false {
+                node = resolveTapTarget(snapshotNodes(), selector, explicitType: explicitType)
+            } else {
+                let nodes = try waitNodes(timeout) { nodes in
+                    self.resolveTapTarget(nodes, selector, explicitType: explicitType) != nil
+                }
+                node = resolveTapTarget(nodes, selector, explicitType: explicitType)
+            }
+            if let node {
                 tap(node.frame.midX, node.frame.midY, postDelay)
+                if let expected = selector["element_type"] as? String, !typeMatches(node.type, expected) {
+                    return ["fallback_type": node.type]
+                }
             }
         case "tap_first":
             let nodes = try waitNodes(timeout) { nodes in nodes.contains { self.matches($0, action) } }
@@ -331,7 +347,9 @@ private extension FlowRunner {
         screenBounds = root.frame
         var nodes: [Node] = []
         func walk(_ element: XCUIElementSnapshot, cell: CGRect?) {
-            nodes.append(Node(label: element.label, type: typeName(element.elementType), frame: element.frame, cell: cell))
+            let value = element.value.map { ($0 as? String) ?? String(describing: $0) } ?? ""
+            nodes.append(Node(label: element.label, type: typeName(element.elementType), frame: element.frame,
+                              cell: cell, identifier: element.identifier, value: value))
             let childCell = element.elementType == .cell ? element.frame : cell
             element.children.forEach { walk($0, cell: childCell) }
         }
@@ -368,9 +386,22 @@ private extension FlowRunner {
         return false
     }
 
+    // Port of the Simulator engine's resolve_tap_target: the first full match, else — when the
+    // flow did not pin element_type — the one node of any type with that label.
+    func resolveTapTarget(_ nodes: [Node], _ selector: [String: Any], explicitType: Bool) -> Node? {
+        if let node = sorted(nodes.filter { matches($0, selector) }, by: ["y", "x"]).first { return node }
+        if explicitType { return nil }
+        var loose = selector
+        loose["element_type"] = nil
+        let candidates = nodes.filter { matches($0, loose) }
+        return candidates.count == 1 ? candidates[0] : nil
+    }
+
     func matches(_ node: Node, _ selector: [String: Any]) -> Bool {
         if let label = selector["label"] as? String, node.label != label { return false }
         if let fragment = selector["label_contains"] as? String, !node.label.contains(fragment) { return false }
+        if let identifier = selector["id"] as? String, node.identifier != identifier { return false }
+        if let value = selector["value"], node.value != "\(value)" { return false }
         if selector["label_is_empty"] as? Bool ?? false, !node.label.isEmpty { return false }
         if let type = selector["element_type"] as? String, !typeMatches(node.type, type) { return false }
         let limits = selector["frame"] as? [String: Any] ?? [:]
@@ -443,13 +474,16 @@ private extension FlowRunner {
             }
             .prefix(limit)
             .map { node in
-                [
+                var entry: [String: Any] = [
                     "label": node.label, "type": node.type,
                     "frame": [
                         "x": Double(node.frame.minX.rounded()), "y": Double(node.frame.minY.rounded()),
                         "width": Double(node.frame.width.rounded()), "height": Double(node.frame.height.rounded()),
                     ],
-                ] as [String: Any]
+                ]
+                if !node.identifier.isEmpty { entry["id"] = node.identifier }
+                if !node.value.isEmpty { entry["value"] = node.value }
+                return entry
             }
     }
 
