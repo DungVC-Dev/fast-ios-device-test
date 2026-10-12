@@ -4,21 +4,20 @@ Bạn chỉ cần gõ lệnh và mô tả bằng lời. Agent tự viết flow, 
 
 ## Cài đặt (máy mới)
 
-Cần có sẵn Xcode và Homebrew.
+Chỉ cần có sẵn Xcode. Không cần Homebrew, không cần xcodegen: AXe đã đóng kèm trong gói.
 
-1. Tải file `fast-ios-device-test.zip` về, giải nén (ví dụ vào `~/Downloads`).
+1. Tải file `fast-ios-device-test-<version>.zip` về, giải nén (ví dụ vào `~/Downloads`).
 2. Mở Terminal, chạy:
    ```bash
    ~/Downloads/fast-ios-device-test/install.sh
    ```
+   Cài xong trong vài giây. Kiểm tra lại bất cứ lúc nào bằng `install.sh --check`.
 3. Thoát rồi mở lại Claude Code.
 
 Sau khi cài xong có thể xoá file zip và thư mục giải nén. Muốn cập nhật bản mới thì làm lại 3 bước trên.
+Lần chạy đầu trong mỗi dự án mất thêm 1–2 phút vì phải boot simulator và build app; từ lần hai mỗi flow chỉ 6–12 giây.
 
-Người gửi tạo file zip bằng lệnh:
-```bash
-cd ~/Documents/agent-skills && zip -r fast-ios-device-test.zip fast-ios-device-test -x '*.DS_Store'
-```
+Người gửi tạo file zip bằng lệnh `bash make-zip.sh` trong thư mục cha của tool.
 
 ## Lệnh
 

@@ -682,3 +682,35 @@ class DeviceLauncherTests(unittest.TestCase):
             fast_device.run_command(["do", '{"type":"wait","label":"A"}', "--out", raw])
         self.assertIs(request.call_args_list[0].args[1]["wait_for_idle"], False)
         self.assertNotIn("wait_for_idle", request.call_args_list[1].args[1])
+
+    def test_build_runner_uses_committed_xcodeproj_without_xcodegen(self) -> None:
+        import fast_device
+        calls: list[str] = []
+
+        def fake_run(args, **kwargs):
+            calls.append(args[0])
+            if args[0] == "xcodebuild":
+                products = Path(kwargs["cwd"]) / "dd/Build/Products"
+                products.mkdir(parents=True)
+                (products / "FastDevice_iphoneos.xctestrun").write_text("")
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        with tempfile.TemporaryDirectory() as raw:
+            src = Path(raw) / "src"
+            (src / "UITests").mkdir(parents=True)
+            (src / "project.yml").write_text("name: x\n")
+            (src / "FastDeviceRunner.xcodeproj").mkdir()
+            (src / "FastDeviceRunner.xcodeproj" / "project.pbxproj").write_text("v1")
+            cache = Path(raw) / "cache"
+            with mock.patch.object(fast_device, "RUNNER_SOURCE", src), mock.patch.object(fast_device, "CACHE_ROOT", cache), \
+                    mock.patch.object(fast_device.shutil, "which", return_value=None), \
+                    mock.patch.object(fast_device, "run", side_effect=fake_run), mock.patch.object(fast_device, "sign_runner"):
+                before = fast_device.runner_fingerprint("/Xcode", {"uuid": "u"})
+                xctestrun = fast_device.build_runner("/Xcode", {"uuid": "u"}, False)
+                (src / "FastDeviceRunner.xcodeproj" / "project.pbxproj").write_text("v2")
+                after = fast_device.runner_fingerprint("/Xcode", {"uuid": "u"})
+            work = cache / xctestrun.relative_to(cache).parts[0]
+            self.assertTrue((work / "FastDeviceRunner.xcodeproj" / "project.pbxproj").is_file())
+        self.assertNotIn("xcodegen", calls)
+        self.assertEqual(calls, ["xcodebuild"])
+        self.assertNotEqual(before, after)

@@ -200,7 +200,7 @@ def pick_signing(udid: str) -> dict[str, Any]:
 def runner_fingerprint(developer_dir: str, signing: dict[str, Any]) -> str:
     digest = hashlib.sha256()
     for path in sorted(RUNNER_SOURCE.rglob("*")):
-        if path.is_file() and path.suffix in {".swift", ".yml"}:
+        if path.is_file() and path.suffix in {".swift", ".yml", ".pbxproj"}:
             digest.update(path.read_bytes())
     digest.update(developer_dir.encode())
     digest.update(str(signing["uuid"]).encode())
@@ -215,15 +215,20 @@ def build_runner(developer_dir: str, signing: dict[str, Any], rebuild: bool) -> 
     if marker.exists() and not rebuild:
         return next(p for p in products.glob("*.xctestrun") if not p.name.startswith("run-"))
     work.mkdir(parents=True, exist_ok=True)
-    for item in ("project.yml", "UITests"):
+    # The generated project ships with the tool, so xcodegen is only needed when
+    # someone edits project.yml and deletes the .xcodeproj to regenerate it.
+    generated = RUNNER_SOURCE / "FastDeviceRunner.xcodeproj"
+    items = ["project.yml", "UITests"] + (["FastDeviceRunner.xcodeproj"] if generated.is_dir() else [])
+    for item in items:
         target = work / item
         if target.is_dir():
             shutil.rmtree(target)
         source = RUNNER_SOURCE / item
         shutil.copytree(source, target) if source.is_dir() else shutil.copy(source, target)
-    if not shutil.which("xcodegen"):
-        raise FastDeviceError("xcodegen missing: brew install xcodegen")
-    run(["xcodegen", "generate", "--quiet"], cwd=work)
+    if not generated.is_dir():
+        if not shutil.which("xcodegen"):
+            raise FastDeviceError("device-runner/FastDeviceRunner.xcodeproj missing and xcodegen not installed (brew install xcodegen)")
+        run(["xcodegen", "generate", "--quiet"], cwd=work)
     env = {**os.environ, "DEVELOPER_DIR": developer_dir}
     build = run(
         [

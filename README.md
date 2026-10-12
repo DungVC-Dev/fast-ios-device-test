@@ -17,17 +17,22 @@ runs one command from wherever the folder landed:
 ~/Downloads/fast-ios-device-test/install.sh
 ```
 
-It copies the folder to `~/.local/share/fast-ios-device-test`, installs `axe`
-(Homebrew; 1.8.0 or newer for Xcode 27), `xcodegen` and Pillow if missing, and
-wires the skill into `~/.claude/skills`, the commands into `~/.claude/commands`,
-and the launchers (`fastSimulatorTest`, `fastDeviceTest`, `fastUIReport`,
-`fastUIReview`) into `~/.local/bin`. The shared copy can be deleted afterwards.
-Restart Claude Code once. To upgrade, run `install.sh` again from a newer folder.
+It copies the folder to `~/.local/share/fast-ios-device-test`, unpacks the bundled
+`axe` (`vendor/`, 1.8.0, needed for Xcode 27) into `~/.local/share/axe` when none
+new enough is on PATH, installs Pillow if it can, and wires the skill into
+`~/.claude/skills`, the commands into `~/.claude/commands`, and the launchers
+(`fastSimulatorTest`, `fastDeviceTest`, `fastUIReport`, `fastUIReview`) into
+`~/.local/bin`. No Homebrew and no xcodegen are needed. The shared copy can be
+deleted afterwards. Restart Claude Code once. To upgrade, run `install.sh` again
+from a newer folder. `install.sh --check` prints the versions it sees and what is
+missing without changing anything.
 
 Maintainers who edit the tool in place: `install.sh --link` links this folder
-instead of copying it.
+instead of copying it. To make a shareable zip: `bash make-zip.sh`.
 
-To make a shareable zip: `zip -r fast-ios-device-test.zip fast-ios-device-test -x '*.DS_Store'`.
+Optional, for exploring a screen with Apple's own tools (pinch, drag, rotate, app
+console log) before writing a flow: register Xcode 27's MCP server once with
+`claude mcp add xcode -- xcrun mcpbridge`; the skill says when to use which.
 
 ## Setup per project
 
@@ -47,4 +52,6 @@ shows the smallest complete flow.
 - `scripts/fast_ui.py` — Simulator flow engine (`scripts/test_fast_ui.py` tests it); `--record`, `--session`
 - `scripts/fast_ui_report.py` — collates a fan-out session into a flow × simulator table (`fastUIReport`)
 - `scripts/fast_ui_review.py` — contact sheets and review notes for recorded runs (`fastUIReview`)
-- `scripts/fast_device.py` + `device-runner/` — physical-iPhone flow runner (XCUITest, auto-signed)
+- `scripts/fast_device.py` + `device-runner/` — physical-iPhone flow runner (XCUITest, auto-signed; the `.xcodeproj` is committed, regenerate with `xcodegen generate` after editing `project.yml`)
+- `vendor/` — the AXe release tarball `install.sh` unpacks when no `axe` ≥ 1.8.0 is on PATH (MIT, see `vendor/AXe-LICENSE`)
+- `docs/` — optimization research and the implementation plan behind 1.2.0
