@@ -83,6 +83,30 @@ class HierarchyTests(unittest.TestCase):
         many = [{"AXLabel": f"L{i:03d}"} for i in range(100)]
         self.assertEqual(len(fast_ui.visible_labels(many, limit=12)), 12)
 
+    def test_flatten_skips_frame_dicts_and_recurses_children_only(self) -> None:
+        tree = [{"type": "Application", "frame": {"x": 0, "y": 0, "width": 10, "height": 10},
+                 "children": [{"type": "Button", "AXLabel": "Go", "frame": {"x": 1, "y": 2, "width": 4, "height": 4}}]}]
+        nodes = list(fast_ui.flatten(tree))
+        self.assertEqual([n.get("type") for n in nodes], ["Application", "Button"])
+
+    def test_compact_node_drops_children_and_survives_missing_frame(self) -> None:
+        node = {"type": "Button", "AXLabel": "Go", "AXUniqueId": "go", "AXValue": "1",
+                "frame": {"x": 1, "y": 2, "width": 4, "height": 4}, "children": [{"type": "Image"}]}
+        self.assertEqual(fast_ui.compact_node(node),
+                         {"label": "Go", "type": "Button", "id": "go", "value": "1",
+                          "frame": {"x": 1, "y": 2, "width": 4, "height": 4}, "center": [3.0, 4.0]})
+        self.assertEqual(fast_ui.compact_node({"type": "Other"}), {"type": "Other"})
+
+    def test_dump_file_is_flat_and_compact(self) -> None:
+        nodes = [{"AXLabel": "Widgets", "type": "Button", "frame": {"x": 0, "y": 0, "width": 1, "height": 1},
+                  "children": [{"type": "Image", "frame": {"x": 0, "y": 0, "width": 1, "height": 1}}]}]
+        with tempfile.TemporaryDirectory() as raw, mock.patch.object(fast_ui, "hierarchy", return_value=nodes), \
+                mock.patch.object(fast_ui.time, "sleep"):
+            fast_ui.execute_action({"type": "dump", "name": "home"}, "SIM", Path(raw), 3, [])
+            text = (Path(raw) / "home-ui.json").read_text()
+        self.assertNotIn("children", text)
+        self.assertIn('"center"', text)
+
 
 class ActionTests(unittest.TestCase):
     def test_tap_label_taps_matched_frame_without_axe_label_lookup(self) -> None:

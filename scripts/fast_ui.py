@@ -110,14 +110,44 @@ def file_link(path: Path | str) -> str:
     return Path(path).expanduser().resolve().as_uri()
 
 
+NODE_KEYS = ("type", "AXLabel", "children")
+
+
 def flatten(value: Any) -> Iterator[dict[str, Any]]:
+    """Accessibility nodes of a describe-ui tree, parents first. Only `children`
+    is descended into: an AXe node's other dict values (`frame`, …) are attributes."""
     if isinstance(value, dict):
-        yield value
-        for child in value.values():
-            yield from flatten(child)
+        if any(key in value for key in NODE_KEYS):
+            yield value
+        yield from flatten(value.get("children") or [])
     elif isinstance(value, list):
         for child in value:
             yield from flatten(child)
+
+
+def compact_node(node: dict[str, Any]) -> dict[str, Any]:
+    """Label, type, id, value, frame and tap centre only: what a flow author needs,
+    without the nested children that made a dump grow with the depth of the tree."""
+    compact: dict[str, Any] = {}
+    for key, source in (("label", "AXLabel"), ("type", "type"), ("id", "AXUniqueId"), ("value", "AXValue")):
+        value = node.get(source)
+        if value not in (None, ""):
+            compact[key] = str(value) if key != "type" else value
+    frame = node.get("frame") or {}
+    try:
+        box = {name: round(float(frame[name]), 1) for name in ("x", "y", "width", "height")}
+    except (KeyError, TypeError, ValueError):
+        return compact
+    compact["frame"] = box
+    compact["center"] = [round(box["x"] + box["width"] / 2, 1), round(box["y"] + box["height"] / 2, 1)]
+    return compact
+
+
+def write_dump(path: Path, nodes: list[dict[str, Any]]) -> None:
+    path.write_text(
+        json.dumps([compact_node(node) for node in nodes], indent=1, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
 
 
 DESCRIBE_UI_ATTEMPTS = 3
@@ -743,7 +773,7 @@ def execute_action(
         nodes = wait_nodes(udid, lambda _: True, timeout, optional_prompt_labels)
         name = action.get("name", f"step-{index:02d}")
         path = artifacts / f"{name}-ui.json"
-        path.write_text(json.dumps(nodes, indent=2) + "\n", encoding="utf-8")
+        write_dump(path, nodes)
         return {"path": str(path), "labels": visible_labels(nodes)}
     elif kind == "pause":
         time.sleep(float(action.get("seconds", 1)))
@@ -1019,9 +1049,7 @@ def main() -> int:
         try:
             screenshot(udid, artifacts / "failure.png")
             failure_nodes = hierarchy(udid)
-            (artifacts / "failure-ui.json").write_text(
-                json.dumps(failure_nodes, indent=2) + "\n", encoding="utf-8"
-            )
+            write_dump(artifacts / "failure-ui.json", failure_nodes)
             if recorder and recorder.started is not None:
                 labels_per_step.append(
                     {"step": current_step, "at": round(failed_at, 2), "labels": visible_labels(failure_nodes)}
