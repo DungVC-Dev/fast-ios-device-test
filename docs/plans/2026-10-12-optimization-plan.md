@@ -627,6 +627,22 @@ Expected: `~/Resources/Tool/fast-ios-device-test-1.2.0.zip`, khoảng 8.6 MB.
 
 ---
 
+### Task 17 (A10): Retry một lần khi AXe không mở được automation session
+
+Phát hiện khi chạy baseline của Task 14: lần tap đầu ngay sau khi boot simulator đôi khi
+FAIL với `Error: Timed out creating the simulator remote automation session`, lần sau PASS.
+
+**Files:**
+- Modify: `scripts/fast_ui.py` (`axe`)
+- Test: `scripts/test_fast_ui.py` (class `AxeErrorTests`)
+
+**Interfaces:**
+- `AXE_SESSION_MARKER = "automation session"`, `AXE_SESSION_RETRIES = 1`; `axe()` gọi lại
+  `command` một lần sau 1 s khi output chứa marker; lỗi khác không retry.
+
+- [x] Test `test_automation_session_timeout_is_retried_once` (RED → GREEN), suite 76/76.
+- [x] Commit `engine: retry AXe once when the automation session times out`.
+
 ## Thứ tự và điểm dừng
 
 A1 → A2 → A3 → A4 → A5 → A6 → A7 → A8 → A9 (mỗi task một commit, dừng được sau bất kỳ task nào, tool vẫn chạy). B1 → B2 → B3 cần iPhone cắm và mở khoá. C1 độc lập. D1 sau A và B để tài liệu khớp mã. D2 → D3 cuối cùng.

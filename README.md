@@ -34,6 +34,24 @@ Optional, for exploring a screen with Apple's own tools (pinch, drag, rotate, ap
 console log) before writing a flow: register Xcode 27's MCP server once with
 `claude mcp add xcode -- xcrun mcpbridge`; the skill says when to use which.
 
+## What changed in 1.2.0
+
+- A FAIL line lists each visible label with its element type, says when the label exists
+  under another type, and suggests close labels; `tap_label` taps the one non-Button node
+  with the label when no Button has it (`fallback_type`).
+- `dump` and `failure-ui.json` are flat and compact (label, type, id, value, frame,
+  center): tens of KB instead of megabytes.
+- Selectors take `id` (accessibilityIdentifier) and `value` on simulator and device.
+- A hierarchy younger than 300 ms is reused for the first poll of a tap (~1 s saved per
+  wait → tap pair); opt-in `"settle": true` waits until the tree stops changing.
+- New simulator actions: `type_text`, `launch`, `terminate`, `open_url`; `app.prebuilt`
+  drives an installed or system app without a project.
+- Device: `setup.wait_for_idle: false` / `do --no-idle-wait` skips XCUITest's wait-for-idle;
+  `--device` accepts a unique part of the name.
+- `fastUIReview` compiles its AVFoundation helper once instead of interpreting it per video.
+- Installer: bundled AXe 1.8.0, committed runner `.xcodeproj` (no Homebrew, no xcodegen),
+  Pillow optional, `install.sh --check`; `make-zip.sh` builds the shareable zip.
+
 ## Setup per project
 
 None. `/fastSimulatorTest` and `/fastDeviceTest` read everything from the flow

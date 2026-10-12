@@ -1,7 +1,7 @@
 {
   "name": "fast-ios-device-test",
-  "version": "1.1.0",
-  "description": "Fast iOS verification for Claude Code: /fastSimulatorTest drives Simulator UI flows (with per-simulator fan-out), /fastDeviceTest runs the same flows on a physical iPhone, /fastUIReview reviews recorded runs.",
+  "version": "1.2.0",
+  "description": "Fast iOS verification for Claude Code: /fastSimulatorTest drives Simulator UI flows (with per-simulator fan-out, system and prebuilt apps), /fastDeviceTest runs the same flows on a physical iPhone, /fastUIReview reviews recorded runs.",
   "author": {
     "name": "DungVC"
   },
