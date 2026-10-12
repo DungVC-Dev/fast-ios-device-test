@@ -261,6 +261,54 @@ Python, profile ký và thứ còn thiếu.
 Kế hoạch chi tiết theo từng task, có test và lệnh kiểm tra:
 [plans/2026-10-12-optimization-plan.md](plans/2026-10-12-optimization-plan.md).
 
+---
+
+# Phần 3 — Kết quả thực hiện (2026-10-12, bản 1.2.0)
+
+Toàn bộ 17 task trong kế hoạch đã làm xong theo TDD, mỗi task một commit trên nhánh
+`optimize-1.2.0` (git khởi tạo từ bản 1.1.0 đang cài), tag `v1.2.0`. Unit test: 53 → 77,
+chạy bằng `cd scripts && python3 -m unittest test_fast_ui test_fast_ui_review`. Reviewer độc
+lập (model mạnh nhất, ngữ cảnh mới) đọc toàn bộ diff: 0 Critical, 3 Important, 7 Minor; cả 3
+Important và 1 Minor nâng hạng đã sửa trong một vòng, có test đỏ trước; 6 Minor còn lại ghi
+trong ledger `docs/plans/2026-10-12-optimization-ledger.md` để làm ở 1.2.1.
+
+## 18. Đã làm được gì (đo lại sau khi sửa)
+
+| Hạng mục | Kết quả |
+|---|---|
+| FAIL tự giải thích | `visible labels: [Add Widget (StaticText), …]`, thêm `'X' exists as StaticText, not Button` hoặc `closest labels: […]` |
+| `tap_label` fallback | tap node duy nhất cùng label khi không ghi `element_type`, trả `fallback_type`; không bao giờ tap vào Application/Window; trên iPhone gộp các container lồng cùng frame (kiểm chứng trên Settings: `fallback_type: StaticText`) |
+| Dump | file FAIL thật từ 11 MB → 47 KB (295 node); dump Settings 166 node / 30 id / 26 KB |
+| Selector | thêm `id`, `value`; `tap_label` nhận mọi khoá; kiểm chứng trên iPhone (tap theo `id=com.apple.settings.general`, chờ theo `value`) |
+| Cache hierarchy | tái dùng cây < 300 ms ở poll đầu của tap; xoá sau mọi gesture/launch |
+| `settle` | opt-in theo action hoặc `setup.settle_after_actions`, timeout 2.5 s, không bao giờ làm FAIL |
+| Action mới (simulator) | `type_text`, `launch`, `terminate`, `open_url`; `app.prebuilt` chạy Settings không cần project (PASS 70 s kể cả boot, lần sau ~12 s) |
+| AXe session flake | retry một lần khi "Timed out creating the simulator remote automation session" (gặp trong baseline) |
+| iPhone | `wait_for_idle: false` / `do --no-idle-wait` (runner báo `wait_for_idle: false`, selector private tìm thấy trên Xcode 27.0 / iOS 26.6.1); `--device` khớp một phần tên |
+| Review | helper Swift biên dịch một lần vào `~/Library/Caches/fast-ios-device-test` |
+| Tài liệu | SKILL.md 1366 → 887 từ, command 316 → 158 và 231 → 135 từ; có quy tắc chọn Xcode MCP hay tool này; subagent sau khi sửa tìm thấy `prebuilt` trong SKILL.md, PASS lần đầu, 3 tool call thay vì 8 |
+| Cài đặt | AXe 1.8.0 đóng kèm trong `vendor/`, `.xcodeproj` commit sẵn, Pillow tuỳ chọn, `install.sh --check`; cài thử máy sạch 0.8 s; không Homebrew, không xcodegen |
+| Gói | `make-zip.sh` → `~/Resources/Tool/fast-ios-device-test-1.2.0.zip` (8.1 MB); backup bản cũ `fast-ios-device-test-1.1.0-backup.zip` |
+
+## 19. Chưa đo được / còn để lại
+
+- Lợi ích thời gian của `wait_for_idle: false` trên dashboard có animation không đo lại được
+  trong phiên này vì app DEV cứ hiện paywall sau mỗi lần launch; bằng chứng là runner báo đã
+  swizzle và flow chạy đúng ở cả hai chế độ. Số 2.4 s/tap vẫn là số đo từ log ngày 12/10 buổi sáng.
+- 6 Minor của reviewer (xem ledger): docs bảo flow prebuilt bắt đầu bằng `launch` dù engine đã
+  launch; `.xcodeproj` cũ build im lặng khi `project.yml` đổi; `Quiescence.disable()` cấp IMP
+  mới mỗi lần; một test in ra stdout; `install.sh` không cảnh báo khi axe cũ đứng trước trên
+  PATH; câu gợi ý "add element_type" khi selector đã có element_type.
+- Ý tưởng ngoài kế hoạch chưa làm: `touch down/up` cho Switch, predicate `enabled`/`focused`,
+  engine tự tìm `app_path`, thư viện flow theo dự án, đăng ký Xcode MCP trong `install.sh`.
+
+## 20. Dùng và chia sẻ
+
+- Máy này: bản live đã là 1.2.0 (symlink không đổi). Mở lại Claude Code để nạp SKILL.md mới.
+- Máy khác: gửi `fast-ios-device-test-1.2.0.zip`, giải nén, chạy `install.sh`, mở lại Claude
+  Code; `install.sh --check` để tự chẩn đoán. Xcode MCP (tuỳ chọn): `claude mcp add xcode -- xcrun mcpbridge`.
+- Khi đồng nghiệp gửi bản mới của họ: port lên nhánh git này thay vì cài đè.
+
 ## 17. Nguồn
 
 - AXe releases: https://github.com/cameroncooke/AXe/releases ; issue #74: https://github.com/cameroncooke/AXe/issues/74
