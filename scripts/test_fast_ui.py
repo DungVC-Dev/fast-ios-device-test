@@ -158,6 +158,21 @@ class ActionTests(unittest.TestCase):
         with self.assertRaisesRegex(fast_ui.FastUIError, "missing 'label' or 'id'"):
             fast_ui.execute_action({"type": "tap_label"}, "SIM", Path("/tmp"), 3, [])
 
+    def test_wait_timeout_lists_types_and_explains_type_mismatch(self) -> None:
+        nodes = [{"AXLabel": "Add Widget", "type": "StaticText", "frame": {"x": 0, "y": 10}}]
+        with mock.patch.object(fast_ui, "hierarchy", return_value=nodes), mock.patch.object(fast_ui.time, "sleep"):
+            with self.assertRaises(fast_ui.FastUIError) as caught:
+                fast_ui.wait_selector("SIM", {"label": "Add Widget", "element_type": "Button"}, 0.01, [])
+        self.assertIn("Add Widget (StaticText)", str(caught.exception))
+        self.assertIn("exists as StaticText, not Button", str(caught.exception))
+
+    def test_wait_timeout_suggests_close_labels(self) -> None:
+        nodes = [{"AXLabel": "Widget Gallery", "type": "StaticText", "frame": {"x": 0, "y": 10}}]
+        with mock.patch.object(fast_ui, "hierarchy", return_value=nodes), mock.patch.object(fast_ui.time, "sleep"):
+            with self.assertRaises(fast_ui.FastUIError) as caught:
+                fast_ui.wait_selector("SIM", {"label": "Widget gallery"}, 0.01, [])
+        self.assertIn("closest labels: [Widget Gallery]", str(caught.exception))
+
     def test_swipe_direction_uses_the_screen_frame(self) -> None:
         nodes = [
             {"AXLabel": "App", "type": "Application", "frame": {"x": 0, "y": 0, "width": 400, "height": 800}},

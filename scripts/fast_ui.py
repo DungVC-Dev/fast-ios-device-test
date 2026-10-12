@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import fcntl
 import hashlib
 import json
@@ -33,7 +34,8 @@ BUILD_SUFFIXES = {
 
 
 class FastUIError(RuntimeError):
-    pass
+    # The hierarchy seen when a wait gave up, so callers can explain the miss.
+    nodes: list[dict[str, Any]] = []
 
 
 class Metrics:
@@ -189,6 +191,42 @@ def node_type(node: dict[str, Any]) -> str | None:
     return node.get("type") or node.get("AXRole")
 
 
+def typed_labels(nodes: list[dict[str, Any]], limit: int = 25) -> list[str]:
+    """`visible_labels` with the element type beside each label: a flow author sees at
+    once that "Add Widget" is a StaticText, which `tap_label` (Button) never matches."""
+    by_label: dict[str, str | None] = {}
+    for node in sort_nodes(nodes, ["y", "x"]):
+        label = str(node.get("AXLabel") or "").strip()
+        if label and label not in by_label:
+            by_label[label] = node_type(node)
+    return [
+        f"{label} ({by_label.get(label)})" if by_label.get(label) else label
+        for label in visible_labels(nodes, limit=limit)
+    ]
+
+
+def selector_hints(selector: dict[str, Any], nodes: list[dict[str, Any]]) -> str:
+    """Why a selector may have missed: same label under another type, or a near-miss label."""
+    wanted = selector.get("label") or selector.get("label_contains")
+    if not wanted:
+        return ""
+    expected_type = selector.get("element_type")
+    if selector.get("label") is not None:
+        other_types = sorted({
+            str(node_type(node)) for node in nodes
+            if node.get("AXLabel") == wanted and node_type(node) and node_type(node) != expected_type
+        })
+        if other_types and expected_type:
+            return (
+                f"; '{wanted}' exists as {', '.join(other_types)}, not {expected_type}: "
+                "add element_type or use tap_first"
+            )
+    labels = visible_labels(nodes, limit=200)
+    close = difflib.get_close_matches(str(wanted), labels, n=3, cutoff=0.6)
+    close += [label for label in labels if str(wanted).lower() in label.lower() and label not in close]
+    return f"; closest labels: [{', '.join(close[:3])}]" if close else ""
+
+
 SELECTOR_KEYS = ("label", "label_contains", "label_is_empty", "id", "value", "element_type", "frame")
 
 
@@ -261,8 +299,10 @@ def wait_nodes(
         if predicate(nodes):
             return nodes
         time.sleep(0.12)
-    labels = ", ".join(visible_labels(nodes, limit=25))
-    raise FastUIError(f"timed out waiting for UI selector; visible labels: [{labels}]")
+    labels = ", ".join(typed_labels(nodes, limit=25))
+    error = FastUIError(f"timed out waiting for UI selector; visible labels: [{labels}]")
+    error.nodes = nodes
+    raise error
 
 
 def wait_selector(
@@ -271,12 +311,17 @@ def wait_selector(
     timeout: float,
     optional_prompt_labels: list[str],
 ) -> list[dict[str, Any]]:
-    return wait_nodes(
-        udid,
-        lambda nodes: any(matches(node, selector) for node in nodes),
-        timeout,
-        optional_prompt_labels,
-    )
+    try:
+        return wait_nodes(
+            udid,
+            lambda nodes: any(matches(node, selector) for node in nodes),
+            timeout,
+            optional_prompt_labels,
+        )
+    except FastUIError as error:
+        explained = FastUIError(f"{error}{selector_hints(selector, error.nodes)}")
+        explained.nodes = error.nodes
+        raise explained from None
 
 
 def wait_absent(
