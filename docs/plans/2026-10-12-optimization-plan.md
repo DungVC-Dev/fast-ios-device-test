@@ -23,11 +23,11 @@
 
 ## Review Focus
 
-1. Hai node `StaticText` cùng label, không có Button → `tap_label` không được fallback, phải FAIL kèm gợi ý (test ở Task A4).
-2. Node từ `describe-ui` không có `frame` → `compact_node` không crash, không có khoá `frame`/`center` (test ở Task A1).
-3. Tap xong rồi `wait` màn hình kế trong vòng 300 ms → không được đọc cache cũ (test ở Task A5).
-4. `settle: true` trên màn hình không bao giờ đứng yên → trả về sau timeout, flow không FAIL (test ở Task A6).
-5. Tên iPhone khớp hai máy ("iPhone 16" khớp "iPhone 16 - 26.2" và "iPhone 16 blue") → lỗi liệt kê cả hai, không tự chọn (test ở Task B1).
+1. Hai node `StaticText` cùng label, không có Button → `tap_label` không được fallback, phải FAIL kèm gợi ý (test ở Task 4 (A4)).
+2. Node từ `describe-ui` không có `frame` → `compact_node` không crash, không có khoá `frame`/`center` (test ở Task 1 (A1)).
+3. Tap xong rồi `wait` màn hình kế trong vòng 300 ms → không được đọc cache cũ (test ở Task 5 (A5)).
+4. `settle: true` trên màn hình không bao giờ đứng yên → trả về sau timeout, flow không FAIL (test ở Task 6 (A6)).
+5. Tên iPhone khớp hai máy ("iPhone 16" khớp "iPhone 16 - 26.2" và "iPhone 16 blue") → lỗi liệt kê cả hai, không tự chọn (test ở Task 10 (B1)).
 
 ---
 
@@ -65,7 +65,7 @@ Expected: `Ran 63 tests ... OK` (53 + 10).
 
 ## Phase A — Engine simulator (`scripts/fast_ui.py`)
 
-### Task A1: `flatten` chỉ trả node thật, dump gọn
+### Task 1 (A1): `flatten` chỉ trả node thật, dump gọn
 
 **Files:**
 - Modify: `scripts/fast_ui.py:113-120` (`flatten`), `:742-747` (`dump`), `:1019-1024` (failure-ui)
@@ -122,7 +122,7 @@ Expected: OK (test `test_dump_action_writes_labels_and_hierarchy` cũ vẫn pass
 
 ---
 
-### Task A2: Selector `id`, `value`; `tap_label` nhận mọi khoá selector
+### Task 2 (A2): Selector `id`, `value`; `tap_label` nhận mọi khoá selector
 
 **Files:**
 - Modify: `scripts/fast_ui.py:162-189` (`matches`), `:725-737` (`tap_label`)
@@ -162,7 +162,7 @@ def test_tap_label_accepts_id_and_label_contains(self) -> None:
 
 ---
 
-### Task A3: FAIL in type và gợi ý label gần giống
+### Task 3 (A3): FAIL in type và gợi ý label gần giống
 
 **Files:**
 - Modify: `scripts/fast_ui.py:35-36` (`FastUIError`), `:144-155` (`visible_labels`), `:192-232` (`wait_nodes`, `wait_selector`)
@@ -202,7 +202,7 @@ def test_wait_timeout_suggests_close_labels(self) -> None:
 
 ---
 
-### Task A4: `tap_label` fallback sang node duy nhất cùng label
+### Task 4 (A4): `tap_label` fallback sang node duy nhất cùng label
 
 **Files:**
 - Modify: `scripts/fast_ui.py` nhánh `tap_label` trong `execute_action`
@@ -242,7 +242,7 @@ def test_tap_label_does_not_fall_back_when_ambiguous_or_type_explicit(self) -> N
 
 ---
 
-### Task A5: Cache hierarchy 300 ms
+### Task 5 (A5): Cache hierarchy 300 ms
 
 **Files:**
 - Modify: `scripts/fast_ui.py:126-137` (`hierarchy`), `:302-337` (`swipe`, `tap_point`), `:394-403` (`step_labels`), `execute_action`
@@ -250,7 +250,7 @@ def test_tap_label_does_not_fall_back_when_ambiguous_or_type_explicit(self) -> N
 
 **Interfaces:**
 - Produces: `HIERARCHY_REUSE = 0.3`; `hierarchy(udid: str, max_age: float = 0.0) -> list[dict]` trả bản cache nếu tuổi ≤ `max_age`, nếu không gọi AXe và ghi cache `(time.perf_counter(), nodes)` theo `udid`.
-- Produces: `invalidate_hierarchy(udid: str) -> None`; gọi trong `tap_point`, `swipe`, và các action `launch`/`terminate`/`open_url`/`type_text` của Task A7.
+- Produces: `invalidate_hierarchy(udid: str) -> None`; gọi trong `tap_point`, `swipe`, và các action `launch`/`terminate`/`open_url`/`type_text` của Task 7 (A7).
 - `wait_nodes(..., first_poll_max_age: float = 0.0)`: poll đầu dùng `hierarchy(udid, first_poll_max_age)`, các poll sau `max_age=0`. Nhánh `tap_label`, `tap_first`, `tap_nearest` truyền `HIERARCHY_REUSE`; `step_labels` gọi `hierarchy(udid, HIERARCHY_REUSE)`.
 
 - [ ] **Step 1: Viết test fail**
@@ -275,7 +275,7 @@ def test_hierarchy_reuses_a_fresh_tree_until_a_gesture(self) -> None:
 
 ---
 
-### Task A6: `settle` opt-in sau action
+### Task 6 (A6): `settle` opt-in sau action
 
 **Files:**
 - Modify: `scripts/fast_ui.py` (`execute_action`, hàm mới)
@@ -318,7 +318,7 @@ def test_settle_flag_on_tap_records_result(self) -> None:
 
 ---
 
-### Task A7: Action `type_text`, `launch`, `terminate`, `open_url`
+### Task 7 (A7): Action `type_text`, `launch`, `terminate`, `open_url`
 
 **Files:**
 - Modify: `scripts/fast_ui.py` (`execute_action`, `main`)
@@ -354,7 +354,7 @@ def test_simulator_lifecycle_actions_call_simctl_and_axe(self) -> None:
 
 ---
 
-### Task A8: Chế độ app có sẵn (`app.prebuilt`)
+### Task 8 (A8): Chế độ app có sẵn (`app.prebuilt`)
 
 **Files:**
 - Modify: `scripts/fast_ui.py:598-606` (`prepare_app`), `main` (fresh_install)
@@ -388,7 +388,7 @@ Expected: dòng `PASS task=settings-smoke ... labels=[...]` và `settings-ui.jso
 
 ---
 
-### Task A9: Pillow lười
+### Task 9 (A9): Pillow lười
 
 **Files:**
 - Modify: `scripts/fast_ui.py:24` (import), `:692-709` (`motion_ratio`)
@@ -413,7 +413,7 @@ def test_engine_imports_without_pillow(self) -> None:
 
 ## Phase B — iPhone thật
 
-### Task B1: `--device` khớp một phần tên
+### Task 10 (B1): `--device` khớp một phần tên
 
 **Files:**
 - Modify: `scripts/fast_device.py:70-81` (`resolve_device`)
@@ -441,7 +441,7 @@ def test_resolve_device_matches_partial_name_only_when_unique(self) -> None:
 
 ---
 
-### Task B2: Runner đọc `identifier`/`value`, selector `id`/`value`, dump có id
+### Task 11 (B2): Runner đọc `identifier`/`value`, selector `id`/`value`, dump có id
 
 **Files:**
 - Modify: `device-runner/UITests/FlowRunner.swift:11-17` (`Node`), `:329-341` (`snapshotNodes`), `:371-386` (`matches`), `:192-204` (`tap_label`), `:436-454` (`visibleNodes`)
@@ -449,7 +449,7 @@ def test_resolve_device_matches_partial_name_only_when_unique(self) -> None:
 **Interfaces:**
 - `Node` thêm `let identifier: String` và `let value: String` (từ `element.identifier`, `element.value as? String ?? ""`).
 - `matches` thêm: `selector["id"] as? String` so với `node.identifier`; `selector["value"] as? String` so với `node.value`.
-- `tap_label` lấy selector từ action theo cùng danh sách khoá như Python (`label`, `label_contains`, `id`, `value`, `element_type`, `frame`), mặc định `element_type = "Button"`, và áp dụng fallback như Task A4 (duy nhất một node cùng label khi không ghi `element_type`).
+- `tap_label` lấy selector từ action theo cùng danh sách khoá như Python (`label`, `label_contains`, `id`, `value`, `element_type`, `frame`), mặc định `element_type = "Button"`, và áp dụng fallback như Task 4 (A4) (duy nhất một node cùng label khi không ghi `element_type`).
 - `visibleNodes` thêm `"id"` và `"value"` khi không rỗng.
 
 - [ ] **Step 1: Sửa Swift như trên.**
@@ -467,7 +467,7 @@ Expected: `PASS actions=3 ... ui=file:///tmp/fd/settings-ui.json`; file có node
 
 ---
 
-### Task B3: Tắt wait-for-idle theo flow
+### Task 12 (B3): Tắt wait-for-idle theo flow
 
 **Files:**
 - Create: `device-runner/UITests/Quiescence.swift`
@@ -500,7 +500,7 @@ Expected: khoảng cách `Tap` → request kế từ ~2.8 s xuống < 1.0 s; c�
 
 ## Phase C — Review
 
-### Task C1: Biên dịch helper Swift một lần
+### Task 13 (C1): Biên dịch helper Swift một lần
 
 **Files:**
 - Modify: `scripts/fast_ui_review.py:150-166` (`extract`, `durations`), `:330-335` (`main`)
@@ -534,7 +534,7 @@ def test_helper_is_compiled_once_and_reused(self) -> None:
 
 ## Phase D — Tài liệu, installer, đóng gói
 
-### Task D1: Tài liệu skill
+### Task 14 (D1): Tài liệu skill
 
 **Files:**
 - Modify: `skills/fast-ios-device-test/SKILL.md`, `skills/fast-ios-device-test/references/usage.md`, `references/device.md`, `commands/fastSimulatorTest.md`, `commands/fastDeviceTest.md`
@@ -552,7 +552,7 @@ def test_helper_is_compiled_once_and_reused(self) -> None:
 
 ---
 
-### Task D2: Installer tự chứa
+### Task 15 (D2): Installer tự chứa
 
 **Files:**
 - Create: `vendor/AXe-macOS-v1.8.0-universal.tar.gz` (tải từ GitHub release, 8.4 MB), `vendor/AXe-LICENSE`
@@ -606,7 +606,7 @@ Expected: `engine self-test: OK`, `CHECK OK`, thời gian < 10 s.
 
 ---
 
-### Task D3: Phiên bản 1.2.0 và gói chia sẻ
+### Task 16 (D3): Phiên bản 1.2.0 và gói chia sẻ
 
 **Files:**
 - Modify: `.claude-plugin/plugin.json` (`"version": "1.2.0"`), `.claude-plugin/marketplace.json`, `README.md` (changelog 1.2.0)
