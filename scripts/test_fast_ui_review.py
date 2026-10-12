@@ -110,6 +110,28 @@ class NotesTests(unittest.TestCase):
         self.assertEqual(merged["a"]["step_labels"][0]["labels"], ["T"])
 
 
+class HelperTests(unittest.TestCase):
+    def test_helper_is_compiled_once_and_reused(self) -> None:
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as raw, mock.patch.object(review.subprocess, "run") as run:
+            run.return_value.returncode = 0
+            cache = Path(raw)
+            first = review.helper_command("print(1)", cache)
+            Path(first[0]).write_text("")  # what a successful swiftc leaves behind
+            second = review.helper_command("print(1)", cache)
+        self.assertEqual(first, second)
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0][0], "swiftc")
+
+    def test_helper_falls_back_to_the_interpreter_when_swiftc_fails(self) -> None:
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as raw, mock.patch.object(review.subprocess, "run") as run:
+            run.return_value.returncode = 1
+            command = review.helper_command("print(1)", Path(raw))
+        self.assertEqual(command[0], "swift")
+        self.assertTrue(command[1].endswith(".swift"))
+
+
 class CombinedTests(unittest.TestCase):
     def test_timeline_places_title_mid_and_clip_end(self) -> None:
         items = [{"path": "/x/a.mp4", "title": "a"}, {"path": "/x/b.mp4", "title": "b"}]

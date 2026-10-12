@@ -34,6 +34,7 @@ Frame extraction uses AVFoundation through a small Swift helper — no ffmpeg ne
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import subprocess
@@ -69,6 +70,28 @@ for raw in args[3...] {
     try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "\\(out)/\\(raw).png"))
 }
 '''
+
+HELPER_CACHE = Path.home() / "Library/Caches/fast-ios-device-test"
+
+
+def helper_command(source: str, cache_dir: Path) -> list[str]:
+    """Command prefix that runs the AVFoundation helper: a binary compiled once per helper
+    source (`swiftc`, ~1 s, then 0.03 s per call) or, if that fails, the `swift`
+    interpreter (~4 s on first use, 0.3 s after)."""
+    digest = hashlib.sha1(source.encode("utf-8")).hexdigest()[:12]
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    binary = cache_dir / f"frames-{digest}"
+    script = cache_dir / f"frames-{digest}.swift"
+    if binary.exists():
+        return [str(binary)]
+    script.write_text(source, encoding="utf-8")
+    compiled = subprocess.run(
+        ["swiftc", "-O", str(script), "-o", str(binary)], check=False, capture_output=True, text=True, timeout=300
+    )
+    if compiled.returncode == 0:
+        return [str(binary)]
+    return ["swift", str(script)]
+
 
 # Claude bills roughly one token per 750 image pixels; the estimate tells the reviewer what a sheet costs.
 PIXELS_PER_TOKEN = 750
@@ -147,17 +170,17 @@ def select_frames(frames: list[tuple[Path, str]], threshold: float) -> list[tupl
     return kept
 
 
-def extract(video: Path, times: list[float], helper: Path, out: Path) -> list[Path]:
+def extract(video: Path, times: list[float], helper: list[str], out: Path) -> list[Path]:
     subprocess.run(
-        ["swift", str(helper), str(video), str(out), *[f"{t:.1f}" for t in times]],
+        [*helper, str(video), str(out), *[f"{t:.1f}" for t in times]],
         check=False, capture_output=True, text=True, timeout=600,
     )
     return [out / f"{t:.1f}.png" for t in times if (out / f"{t:.1f}.png").exists()]
 
 
-def durations(videos: list[Path], helper: Path) -> list[float]:
+def durations(videos: list[Path], helper: list[str]) -> list[float]:
     completed = subprocess.run(
-        ["swift", str(helper), "duration", *[str(video) for video in videos]],
+        [*helper, "duration", *[str(video) for video in videos]],
         check=False, capture_output=True, text=True, timeout=600,
     )
     values = [float(line) for line in completed.stdout.split() if line.strip()]
@@ -229,7 +252,7 @@ def combined_timeline(items: list[dict], clip_seconds: list[float], title_second
     return timeline
 
 
-def review_session(args: argparse.Namespace, helper: Path, raw: Path) -> int:
+def review_session(args: argparse.Namespace, helper: list[str], raw: Path) -> int:
     root = args.root.expanduser().resolve()
     out = (args.out or root / f"review-{args.session}").expanduser().resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -273,7 +296,7 @@ def review_session(args: argparse.Namespace, helper: Path, raw: Path) -> int:
     return 0
 
 
-def review_combined(args: argparse.Namespace, helper: Path, raw: Path) -> int:
+def review_combined(args: argparse.Namespace, helper: list[str], raw: Path) -> int:
     video = args.combined.expanduser().resolve()
     items = json.loads(args.manifest.read_text(encoding="utf-8"))
     out = (args.out or video.parent / f"review-{video.stem}").expanduser().resolve()
@@ -327,9 +350,8 @@ def main() -> int:
     elif not (args.root and args.session):
         parser.error("--root and --session are required (or use --combined)")
 
+    helper = helper_command(SWIFT_HELPER, HELPER_CACHE)
     with tempfile.TemporaryDirectory() as raw:
-        helper = Path(raw) / "frames.swift"
-        helper.write_text(SWIFT_HELPER, encoding="utf-8")
         if args.combined:
             return review_combined(args, helper, Path(raw))
         return review_session(args, helper, Path(raw))
