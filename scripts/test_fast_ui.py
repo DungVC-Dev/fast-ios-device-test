@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import itertools
 import json
 import sys
@@ -15,7 +16,8 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fast_ui  # noqa: E402
 
-from PIL import Image  # noqa: E402
+# Pillow is optional for the engine (only `motion` needs it), so the suite must run without it.
+HAVE_PILLOW = importlib.util.find_spec("PIL") is not None
 
 
 def app_spec(tmp: Path, simulator: str) -> dict:
@@ -204,6 +206,14 @@ class ActionTests(unittest.TestCase):
                                        "SIM", Path("/tmp"), 2, [])
         tap.assert_not_called()
 
+    def test_tap_label_never_falls_back_to_the_application_root(self) -> None:
+        root = {"AXLabel": "Demo App", "type": "Application", "frame": {"x": 0, "y": 0, "width": 400, "height": 800}}
+        with mock.patch.object(fast_ui, "hierarchy", return_value=[root]), mock.patch.object(fast_ui.time, "sleep"), \
+                mock.patch.object(fast_ui, "tap_point") as tap:
+            with self.assertRaises(fast_ui.FastUIError):
+                fast_ui.execute_action({"type": "tap_label", "label": "Demo App", "timeout": 0.01}, "SIM", Path("/tmp"), 1, [])
+        tap.assert_not_called()
+
     def test_wait_settled_returns_true_when_two_polls_match(self) -> None:
         a = [{"AXLabel": "A", "type": "Button", "frame": {"x": 0, "y": 0, "width": 1, "height": 1}}]
         b = [{"AXLabel": "A", "type": "Button", "frame": {"x": 0, "y": 5, "width": 1, "height": 1}}]
@@ -323,7 +333,9 @@ class MotionTests(unittest.TestCase):
         )
         self.assertEqual(out.stdout.strip(), "ok", out.stderr[-300:])
 
+    @unittest.skipUnless(HAVE_PILLOW, "Pillow not installed")
     def test_motion_ratio_counts_changed_pixels(self) -> None:
+        from PIL import Image
         with tempfile.TemporaryDirectory() as raw:
             tmp = Path(raw)
             a = Image.new("RGB", (100, 100), (0, 0, 0))

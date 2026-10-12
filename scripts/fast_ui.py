@@ -330,6 +330,9 @@ def wait_nodes(
     raise error
 
 
+CONTAINER_TYPES = ("Application", "Window")
+
+
 def tappable(node: dict[str, Any]) -> bool:
     frame = node.get("frame") or {}
     try:
@@ -350,7 +353,11 @@ def resolve_tap_target(
     if explicit_type:
         return None
     loose = {key: value for key, value in selector.items() if key != "element_type"}
-    candidates = [node for node in nodes if matches(node, loose) and tappable(node)]
+    # The app's root node carries the app name as its label; "tapping" it would hit the screen centre.
+    candidates = [
+        node for node in nodes
+        if matches(node, loose) and tappable(node) and node_type(node) not in CONTAINER_TYPES
+    ]
     return candidates[0] if len(candidates) == 1 else None
 
 

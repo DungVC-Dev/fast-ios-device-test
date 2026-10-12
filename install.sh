@@ -18,7 +18,9 @@ case "${1:-}" in
     --check) MODE="check" ;;
 esac
 
-xcode_major="$(xcodebuild -version 2>/dev/null | sed -n 's/^Xcode \([0-9]*\).*/\1/p')"
+# `|| true`: with no Xcode selected `xcodebuild` is a failing shim, and under `set -eo pipefail`
+# that would end the script before it could say so.
+xcode_major="$(xcodebuild -version 2>/dev/null | sed -n 's/^Xcode \([0-9]*\).*/\1/p' || true)"
 
 axe_version() { axe --version 2>/dev/null | tr -dc '0-9.'; }
 

@@ -400,8 +400,15 @@ private extension FlowRunner {
         if explicitType { return nil }
         var loose = selector
         loose["element_type"] = nil
-        let candidates = nodes.filter { matches($0, loose) }
-        return candidates.count == 1 ? candidates[0] : nil
+        // XCUITest nests a text in containers with the same label and frame; those are one
+        // target, and the innermost (last in walk order) is the one to tap. The application
+        // and window roots carry the app's name and are never a target.
+        let candidates = nodes.filter { matches($0, loose) && !["Application", "Window"].contains($0.type) }
+        let frames = Set(candidates.map {
+            "\($0.frame.minX.rounded()),\($0.frame.minY.rounded()),\($0.frame.width.rounded()),\($0.frame.height.rounded())"
+        })
+        guard frames.count == 1 else { return nil }
+        return candidates.last
     }
 
     func matches(_ node: Node, _ selector: [String: Any]) -> Bool {
@@ -456,6 +463,8 @@ private extension FlowRunner {
         case .link: return "Link"
         case .tab: return "Tab"
         case .alert: return "Alert"
+        case .application: return "Application"
+        case .window: return "Window"
         default: return "Other"
         }
     }
