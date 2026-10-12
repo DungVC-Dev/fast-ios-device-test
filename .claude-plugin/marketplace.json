@@ -1,0 +1,14 @@
+{
+  "name": "fast-ios-device-test",
+  "owner": {
+    "name": "DungVC"
+  },
+  "plugins": [
+    {
+      "name": "fast-ios-device-test",
+      "source": "./",
+      "description": "/fastSimulatorTest (Simulator UI flows, fan-out), /fastDeviceTest (the same flows on a physical iPhone) and /fastUIReview (review of recorded runs)"
+    }
+  ],
+  "description": "Fast iOS verification commands for Claude Code (Simulator and physical-iPhone UI flows)."
+}

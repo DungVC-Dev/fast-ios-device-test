@@ -1,0 +1,317 @@
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import sys
+import unicodedata
+from dataclasses import dataclass
+from difflib import SequenceMatcher
+from pathlib import Path
+
+
+SCRIPT_DIRECTORY = Path(__file__).resolve().parent
+RUNNER = SCRIPT_DIRECTORY / "fast_device_test.sh"
+DEFAULT_PROJECT = os.environ.get("FAST_TEST_PROJECT") or os.environ.get("FAST_IOS_PROJECT")
+DEFAULT_SCHEME = os.environ.get("FAST_TEST_SCHEME") or os.environ.get("FAST_IOS_SCHEME")
+DEFAULT_CONFIGURATION = os.environ.get(
+    "FAST_TEST_CONFIGURATION", os.environ.get("FAST_IOS_CONFIGURATION", "Debug")
+)
+DEFAULT_DEVICE = os.environ.get("FAST_TEST_DEVICE") or os.environ.get("FAST_IOS_DEVICE_ID") or ""
+
+
+def load_project_env(project_root: Path) -> None:
+    # Per-project defaults (scheme, configuration, device) live next to the
+    # project so nothing machine-specific is baked into the script.
+    env_file = project_root / ".fast-ios.env"
+    if not env_file.is_file():
+        return
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"'))
+
+
+def discover_project(start: Path) -> Path | None:
+    for folder in [start, *start.parents]:
+        found = sorted(folder.glob("*.xcworkspace")) or sorted(folder.glob("*.xcodeproj"))
+        if found:
+            return found[0]
+    return None
+
+GENERIC_WORDS = {
+    "a",
+    "app",
+    "behavior",
+    "button",
+    "chuc",
+    "di",
+    "flow",
+    "giup",
+    "man",
+    "screen",
+    "test",
+    "tests",
+    "toi",
+}
+TYPE_PATTERN = re.compile(
+    r"\b(?:final\s+)?(?:struct|class|enum)\s+([A-Za-z_][A-Za-z0-9_]*Tests)\b"
+)
+METHOD_PATTERN = re.compile(r"\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+
+
+@dataclass(frozen=True)
+class Candidate:
+    identifier: str
+    suite: str
+    method: str | None
+    search_text: str
+
+
+def normalize(value: str) -> str:
+    camel_spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", value)
+    ascii_value = unicodedata.normalize("NFKD", camel_spaced).encode(
+        "ascii", "ignore"
+    ).decode("ascii")
+    return " ".join(re.findall(r"[a-z0-9]+", ascii_value.lower()))
+
+
+def meaningful_words(value: str) -> list[str]:
+    return [word for word in normalize(value).split() if word not in GENERIC_WORDS]
+
+
+def discover_candidates(project_root: Path) -> list[Candidate]:
+    candidates: dict[str, Candidate] = {}
+    test_roots = sorted(project_root.glob("*Tests"))
+    test_roots += sorted(project_root.glob("*UITests"))
+    for test_root in test_roots:
+        if not test_root.is_dir():
+            continue
+        target = test_root.name
+        for source_path in test_root.rglob("*.swift"):
+            try:
+                source = source_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+
+            relative_path = str(source_path.relative_to(project_root))
+            suites = TYPE_PATTERN.findall(source)
+            if not suites and source_path.stem.endswith("Tests"):
+                suites = [source_path.stem]
+
+            methods = METHOD_PATTERN.findall(source)
+            for suite in dict.fromkeys(suites):
+                suite_identifier = f"{target}/{suite}"
+                suite_search = normalize(f"{relative_path} {suite}")
+                candidates[suite_identifier] = Candidate(
+                    identifier=suite_identifier,
+                    suite=suite,
+                    method=None,
+                    search_text=suite_search,
+                )
+                for method in dict.fromkeys(methods):
+                    method_identifier = f"{suite_identifier}/{method}"
+                    candidates[method_identifier] = Candidate(
+                        identifier=method_identifier,
+                        suite=suite,
+                        method=method,
+                        search_text=normalize(f"{relative_path} {suite} {method}"),
+                    )
+    return list(candidates.values())
+
+
+def candidate_score(query: str, candidate: Candidate) -> float:
+    words = meaningful_words(query)
+    if not words:
+        return 0.0
+
+    query_words = set(words)
+    candidate_words = set(candidate.search_text.split())
+    suite_words = set(meaningful_words(candidate.suite))
+    score = 0.0
+    for word in words:
+        if word in candidate_words:
+            score += 10.0
+            continue
+        if any(
+            word in candidate_word or candidate_word in word
+            for candidate_word in candidate_words
+        ):
+            score += 5.0
+            continue
+        similarity = max(
+            SequenceMatcher(None, word, candidate_word).ratio()
+            for candidate_word in candidate_words
+        )
+        if similarity >= 0.72:
+            score += similarity * 3.0
+
+    normalized_query = " ".join(words)
+    if normalized_query and normalized_query in candidate.search_text:
+        score += 20.0
+    if all(
+        any(
+            word in candidate_word or candidate_word in word
+            for candidate_word in candidate_words
+        )
+        for word in words
+    ):
+        score += 10.0
+
+    if suite_words and suite_words.issubset(query_words):
+        score += 30.0
+    elif query_words and query_words.issubset(suite_words):
+        score += 25.0
+
+    if candidate.method:
+        method_words = set(meaningful_words(candidate.method))
+        method_query_words = query_words.difference(suite_words)
+        score += 6.0 if method_words.intersection(method_query_words) else -1.0
+    return score
+
+
+def resolve_scope(query: str, project_root: Path) -> str:
+    compact_query = query.strip()
+    if re.fullmatch(
+        r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+){1,2}", compact_query
+    ):
+        return compact_query
+
+    candidates = discover_candidates(project_root)
+    if not candidates:
+        raise ValueError(f"no test sources found under {project_root}")
+
+    ranked = sorted(
+        ((candidate_score(query, candidate), candidate) for candidate in candidates),
+        key=lambda item: (-item[0], item[1].method is not None, item[1].identifier),
+    )
+    best_score, best = ranked[0]
+    suite_alternatives: list[tuple[float, Candidate]] = []
+    seen_suites: set[str] = set()
+    for score, candidate in ranked:
+        if candidate.suite in seen_suites:
+            continue
+        seen_suites.add(candidate.suite)
+        suite_alternatives.append((score, candidate))
+        if len(suite_alternatives) == 5:
+            break
+
+    if best_score < 10.0:
+        suggestions = "\n".join(
+            f"  {candidate.identifier}" for _, candidate in suite_alternatives
+        )
+        raise ValueError(
+            f"no confident test match for '{query}'. Closest suites:\n{suggestions}"
+        )
+
+    if len(suite_alternatives) > 1:
+        second_score, second = suite_alternatives[1]
+        if second_score >= best_score - 1.0 and second.suite != best.suite:
+            suggestions = "\n".join(
+                f"  {candidate.identifier} (score {score:.1f})"
+                for score, candidate in suite_alternatives[:3]
+            )
+            raise ValueError(f"ambiguous test scope '{query}':\n{suggestions}")
+
+    return best.identifier
+
+
+def parse_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="fastUnitTest",
+        description=(
+            "Resolve a requested screen/flow to narrow iOS tests and reuse cached builds."
+        ),
+    )
+    parser.add_argument(
+        "scope", nargs="*", help="Natural-language scope or XCTest identifier"
+    )
+    parser.add_argument("--only-testing", action="append", default=[])
+    parser.add_argument("--all-tests", action="store_true")
+    parser.add_argument(
+        "--hot", action="store_true", help="Skip fingerprinting and reuse cached products"
+    )
+    parser.add_argument("--project", type=Path, default=DEFAULT_PROJECT)
+    parser.add_argument("--scheme", default=DEFAULT_SCHEME)
+    parser.add_argument("--configuration", default=DEFAULT_CONFIGURATION)
+    parser.add_argument("--device", default=DEFAULT_DEVICE, help="Omit to use the single connected iPhone")
+    parser.add_argument("--cache", type=Path)
+    parser.add_argument("--force-build", action="store_true")
+    parser.add_argument("--build-only", action="store_true")
+    parser.add_argument("--allow-package-resolution", action="store_true")
+    parser.add_argument("--list-devices", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--verbose", action="store_true")
+    return parser.parse_args()
+
+
+def main() -> int:
+    arguments = parse_arguments()
+    project_value = arguments.project or discover_project(Path.cwd())
+    if project_value is None:
+        raise ValueError("no .xcodeproj/.xcworkspace found; pass --project or set FAST_TEST_PROJECT")
+    project = Path(project_value).expanduser().resolve()
+    project_root = project.parent
+    load_project_env(project_root)
+    arguments.scheme = arguments.scheme or os.environ.get("FAST_TEST_SCHEME")
+    if not arguments.scheme:
+        raise ValueError("pass --scheme, set FAST_TEST_SCHEME, or add it to .fast-ios.env")
+    if arguments.configuration == "Debug":
+        arguments.configuration = os.environ.get("FAST_TEST_CONFIGURATION", "Debug")
+    arguments.device = arguments.device or os.environ.get("FAST_TEST_DEVICE", "")
+
+    identifiers = list(arguments.only_testing)
+    if arguments.scope:
+        identifiers.append(resolve_scope(" ".join(arguments.scope), project_root))
+
+    if arguments.all_tests and identifiers:
+        raise ValueError("do not combine --all-tests with a targeted scope")
+    if not arguments.all_tests and not identifiers and not arguments.list_devices:
+        raise ValueError(
+            "provide a screen/flow/test scope, or use --all-tests explicitly"
+        )
+
+    command = [
+        str(RUNNER),
+        "--project",
+        str(project),
+        "--scheme",
+        arguments.scheme,
+        "--configuration",
+        arguments.configuration,
+    ]
+    if arguments.device:
+        command.extend(("--device", arguments.device))
+    if arguments.hot:
+        command.append("--reuse-build")
+    if arguments.cache:
+        command.extend(("--cache", str(arguments.cache.expanduser())))
+    for flag in (
+        "force_build",
+        "build_only",
+        "allow_package_resolution",
+        "list_devices",
+        "dry_run",
+        "verbose",
+    ):
+        if getattr(arguments, flag):
+            command.append(f"--{flag.replace('_', '-')}")
+    for identifier in identifiers:
+        command.extend(("--only-testing", identifier))
+
+    if identifiers:
+        print(f"Scope: {', '.join(identifiers)}", flush=True)
+    os.execv(command[0], command)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except ValueError as error:
+        print(f"error: {error}", file=sys.stderr)
+        raise SystemExit(2)

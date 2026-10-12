@@ -1,0 +1,21 @@
+---
+description: Run only the XCTest unit tests related to the requested screen or flow on the physical iPhone
+argument-hint: <screen, flow, behavior, or XCTest identifier>
+allowed-tools: Bash, Glob, Grep, Read
+---
+
+Interpret `$ARGUMENTS` as the current test scope. Do not reuse an unrelated
+scope from earlier conversation and do not run the full suite unless the user
+explicitly requests it. The Python launcher indexes test sources and resolves
+the narrowest confident suite or method. If it reports no match or ambiguity,
+inspect the suggested test sources and report the gap instead of substituting
+unrelated tests.
+
+Run the shared launcher:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT:-$HOME/.local}/bin/fastUnitTest" "$ARGUMENTS"
+```
+
+Use `--hot` only when no build input changed after the cached build. Report the
+selected identifier, whether the build was skipped, and the test result.
