@@ -665,3 +665,20 @@ class DeviceLauncherTests(unittest.TestCase):
             self.assertEqual(fast_device.resolve_device("blue - 27")["udid"], "A")
             with self.assertRaisesRegex(fast_device.FastDeviceError, "matches 2 iPhones"):
                 fast_device.resolve_device("iPhone 16")
+
+    def test_prepare_flow_keeps_wait_for_idle(self) -> None:
+        import fast_device
+        prepared = fast_device.prepare_flow({"version": 1, "setup": {"wait_for_idle": False, "preferences": {"a": True}}})
+        self.assertFalse(prepared["setup"]["wait_for_idle"])
+
+    def test_do_passes_no_idle_wait_into_the_request(self) -> None:
+        import fast_device
+        reply = {"status": "pass", "results": [], "labels": []}
+        with mock.patch.object(fast_device, "resolve_device", return_value={"udid": "U", "name": "X"}), \
+                mock.patch.object(fast_device, "start_server"), \
+                mock.patch.object(fast_device, "request", return_value=dict(reply)) as request, \
+                tempfile.TemporaryDirectory() as raw:
+            fast_device.run_command(["do", '[{"type":"wait","label":"A"}]', "--no-idle-wait", "--out", raw])
+            fast_device.run_command(["do", '{"type":"wait","label":"A"}', "--out", raw])
+        self.assertIs(request.call_args_list[0].args[1]["wait_for_idle"], False)
+        self.assertNotIn("wait_for_idle", request.call_args_list[1].args[1])

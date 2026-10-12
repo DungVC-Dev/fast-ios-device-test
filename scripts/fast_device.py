@@ -593,6 +593,10 @@ def run_command(argv: list[str]) -> int:
         )
         parser.add_argument("--app", help="Bundle id to drive from this (or the first) action on")
         parser.add_argument("--out", type=Path, default=Path.cwd(), help="Where screenshots go")
+        parser.add_argument(
+            "--no-idle-wait", action="store_true",
+            help="Skip XCUITest's wait-for-idle around each event (screens that animate forever)",
+        )
     args = parser.parse_args(argv[1:])
     device = resolve_device(args.device)
     udid = device["udid"]
@@ -612,11 +616,12 @@ def run_command(argv: list[str]) -> int:
         if args.app and actions and "app" not in actions[0]:
             actions[0]["app"] = args.app
         timeout = 30 + sum(float(a.get("timeout", 6)) + float(a.get("seconds", 0)) for a in actions)
+        idle = {"wait_for_idle": False} if args.no_idle_wait else {}
         if isinstance(parsed, list):
-            response = request(udid, {"op": "actions", "actions": actions}, timeout=timeout)
+            response = request(udid, {"op": "actions", "actions": actions, **idle}, timeout=timeout)
             results = response.get("results", [])
         else:
-            response = request(udid, {"op": "action", "action": actions[0]}, timeout=timeout)
+            response = request(udid, {"op": "action", "action": actions[0], **idle}, timeout=timeout)
             results = [response["result"]] if response.get("result") else []
         args.out.mkdir(parents=True, exist_ok=True)
         shots = save_screenshots(response, args.out)

@@ -75,6 +75,9 @@ private extension FlowRunner {
                   let operation = request["op"] as? String else {
                 throw Failure(message: "request needs an op")
             }
+            let skipIdle = (request["wait_for_idle"] as? Bool) == false
+            if skipIdle { Quiescence.disable() }
+            defer { if skipIdle { Quiescence.restore() } }
             switch operation {
             case "ping":
                 return ["status": "pass", "pong": true]
@@ -125,6 +128,9 @@ private extension FlowRunner {
         let setup = flow["setup"] as? [String: Any] ?? [:]
         let previousAppearance = XCUIDevice.shared.appearance
         defer { XCUIDevice.shared.appearance = previousAppearance }
+        let skipIdle = (setup["wait_for_idle"] as? Bool) == false
+        let idleNote: [String: Any] = skipIdle ? ["wait_for_idle": Quiescence.disable() ? false : "unsupported"] : [:]
+        defer { if skipIdle { Quiescence.restore() } }
         do {
             let app = flow["app"] as? [String: Any] ?? [:]
             guard let bundleID = app["bundle_id"] as? String else { throw Failure(message: "missing app.bundle_id") }
@@ -152,11 +158,12 @@ private extension FlowRunner {
                     results.append(["step": index].merging(result) { first, _ in first })
                 }
             }
-            return ["status": "pass", "results": results, "labels": lastLabels]
+            return ["status": "pass", "results": results, "labels": lastLabels].merging(idleNote) { first, _ in first }
         } catch {
             capture("failure")
             if let current { attachText("failure-ui.txt", current.debugDescription) }
             return ["status": "fail", "step": step, "error": message(error), "results": results, "labels": lastLabels]
+                .merging(idleNote) { first, _ in first }
         }
     }
 }
