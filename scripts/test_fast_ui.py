@@ -83,6 +83,17 @@ class HierarchyTests(unittest.TestCase):
         many = [{"AXLabel": f"L{i:03d}"} for i in range(100)]
         self.assertEqual(len(fast_ui.visible_labels(many, limit=12)), 12)
 
+    def test_hierarchy_reuses_a_fresh_tree_until_a_gesture(self) -> None:
+        good = mock.Mock(stdout='[{"AXLabel": "A", "type": "Button"}]', returncode=0)
+        with mock.patch.object(fast_ui, "axe", return_value=good) as axe, mock.patch.object(fast_ui.time, "sleep"):
+            fast_ui.hierarchy("SIM")
+            fast_ui.hierarchy("SIM", max_age=fast_ui.HIERARCHY_REUSE)
+            self.assertEqual(axe.call_count, 1)
+            fast_ui.tap_point("SIM", 1, 1, 0)
+            fast_ui.hierarchy("SIM", max_age=fast_ui.HIERARCHY_REUSE)
+            fast_ui.hierarchy("SIM")
+        self.assertEqual(axe.call_count, 4)  # describe, tap, describe, describe
+
     def test_flatten_skips_frame_dicts_and_recurses_children_only(self) -> None:
         tree = [{"type": "Application", "frame": {"x": 0, "y": 0, "width": 10, "height": 10},
                  "children": [{"type": "Button", "AXLabel": "Go", "frame": {"x": 1, "y": 2, "width": 4, "height": 4}}]}]

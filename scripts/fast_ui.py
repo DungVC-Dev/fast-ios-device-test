@@ -153,16 +153,29 @@ def write_dump(path: Path, nodes: list[dict[str, Any]]) -> None:
 
 
 DESCRIBE_UI_ATTEMPTS = 3
+# A describe-ui call costs about a second of AXe session setup; a tree younger than
+# this, taken by the wait that just succeeded, is still the screen the tap lands on.
+HIERARCHY_REUSE = 0.3
+_HIERARCHY_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
 
-def hierarchy(udid: str) -> list[dict[str, Any]]:
+def invalidate_hierarchy(udid: str) -> None:
+    _HIERARCHY_CACHE.pop(udid, None)
+
+
+def hierarchy(udid: str, max_age: float = 0.0) -> list[dict[str, Any]]:
+    cached = _HIERARCHY_CACHE.get(udid)
+    if cached is not None and max_age > 0 and time.perf_counter() - cached[0] <= max_age:
+        return cached[1]
     # AXe occasionally fails once right after launch while the accessibility
     # server is still coming up; one failed poll must not fail the whole flow.
     last_error: Exception | None = None
     for attempt in range(DESCRIBE_UI_ATTEMPTS):
         try:
             result = axe(udid, "describe-ui")
-            return list(flatten(json.loads(result.stdout)))
+            nodes = list(flatten(json.loads(result.stdout)))
+            _HIERARCHY_CACHE[udid] = (time.perf_counter(), nodes)
+            return nodes
         except (FastUIError, json.JSONDecodeError) as error:
             last_error = error
             time.sleep(0.4 * (attempt + 1))
@@ -279,11 +292,14 @@ def wait_nodes(
     predicate: Callable[[list[dict[str, Any]]], bool],
     timeout: float,
     optional_prompt_labels: list[str] | None = None,
+    first_poll_max_age: float = 0.0,
 ) -> list[dict[str, Any]]:
     deadline = time.perf_counter() + timeout
     nodes: list[dict[str, Any]] = []
+    max_age = first_poll_max_age
     while time.perf_counter() < deadline:
-        nodes = hierarchy(udid)
+        nodes = hierarchy(udid, max_age)
+        max_age = 0.0
         prompt = next(
             (
                 node
@@ -335,6 +351,7 @@ def wait_selector(
     timeout: float,
     optional_prompt_labels: list[str],
     predicate: Callable[[list[dict[str, Any]]], bool] | None = None,
+    first_poll_max_age: float = 0.0,
 ) -> list[dict[str, Any]]:
     """Wait until `selector` matches (or `predicate` holds); a timeout explains the miss."""
     try:
@@ -343,6 +360,7 @@ def wait_selector(
             predicate or (lambda nodes: any(matches(node, selector) for node in nodes)),
             timeout,
             optional_prompt_labels,
+            first_poll_max_age,
         )
     except FastUIError as error:
         explained = FastUIError(f"{error}{selector_hints(selector, error.nodes)}")
@@ -418,6 +436,7 @@ def swipe_points(action: dict[str, Any], nodes: list[dict[str, Any]], index: int
 
 
 def swipe(udid: str, start: list[float], end: list[float], duration: float, post_delay: float) -> None:
+    invalidate_hierarchy(udid)
     axe(
         udid, "swipe", "--start-x", str(start[0]), "--start-y", str(start[1]),
         "--end-x", str(end[0]), "--end-y", str(end[1]),
@@ -446,6 +465,7 @@ def split_post_delay(post_delay: float) -> tuple[float, float]:
 
 
 def tap_point(udid: str, x: float, y: float, post_delay: float) -> None:
+    invalidate_hierarchy(udid)
     capped, remainder = split_post_delay(max(post_delay, TAP_SETTLE))
     axe(
         udid, "tap", "-x", f"{x:.2f}", "-y", f"{y:.2f}",
@@ -515,7 +535,7 @@ def step_labels(udid: str, step: str, at: float, result: dict[str, Any] | None) 
         labels = result["labels"]
     else:
         try:
-            labels = visible_labels(hierarchy(udid))
+            labels = visible_labels(hierarchy(udid, HIERARCHY_REUSE))
         except FastUIError:
             labels = []
     return {"step": step, "at": round(at, 2), "labels": labels}
@@ -854,6 +874,7 @@ def execute_action(
             nodes = wait_selector(
                 udid, selector, timeout, optional_prompt_labels,
                 predicate=lambda value: resolve_tap_target(value, selector, explicit_type) is not None,
+                first_poll_max_age=HIERARCHY_REUSE,
             )
             target = resolve_tap_target(nodes, selector, explicit_type)
         if target is not None:
@@ -890,7 +911,7 @@ def execute_action(
             direction = {"direction": action.get("direction", "up")}
             swipe(udid, *swipe_points(direction, nodes, index), 0.3, 0.4)
     elif kind == "tap_first":
-        nodes = wait_selector(udid, action, timeout, optional_prompt_labels)
+        nodes = wait_selector(udid, action, timeout, optional_prompt_labels, first_poll_max_age=HIERARCHY_REUSE)
         candidates = [node for node in nodes if matches(node, action)]
         candidates = sort_nodes(candidates, action.get("sort", ["y", "x"]))
         if not candidates:
@@ -908,6 +929,7 @@ def execute_action(
                 and any(matches(node, anchor_selector) for node in value),
                 timeout,
                 optional_prompt_labels,
+                HIERARCHY_REUSE,
             )
             targets = [node for node in nodes if matches(node, target_selector)]
             anchors = [node for node in nodes if matches(node, anchor_selector)]
