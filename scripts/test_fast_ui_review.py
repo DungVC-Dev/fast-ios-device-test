@@ -132,6 +132,19 @@ class HelperTests(unittest.TestCase):
         self.assertTrue(command[1].endswith(".swift"))
 
 
+class DeviceRunTests(unittest.TestCase):
+    def test_device_runs_are_reviewed_under_their_udid(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            run = Path(raw) / "gating" / "20261013-110324-00008120"
+            run.mkdir(parents=True)
+            (run / "metrics.json").write_text(json.dumps({
+                "task": "gating", "udid": "00008120-0000000000000001", "session": "pr", "status": "pass",
+                "video": str(Path(raw) / "gating" / "final-pr.mp4"), "total_seconds": 21.0,
+            }))
+            runs = review.load_runs(Path(raw), "pr")
+        self.assertEqual([r["simulator"][:8] for r in runs], ["00008120"])
+
+
 class CombinedTests(unittest.TestCase):
     def test_timeline_places_title_mid_and_clip_end(self) -> None:
         items = [{"path": "/x/a.mp4", "title": "a"}, {"path": "/x/b.mp4", "title": "b"}]

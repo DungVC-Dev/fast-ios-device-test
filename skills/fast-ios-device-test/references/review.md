@@ -1,6 +1,7 @@
 # fastUIReview — reviewing recorded runs
 
-Read this before reviewing a `--record` session. Flow format and timing rules are in
+Read this before reviewing a `--record` session, from the Simulator or an iPhone
+(`fastDeviceTest --record`). Flow format and timing rules are in
 [../SKILL.md](../SKILL.md); the tool's flags are in [usage.md](usage.md).
 
 ## A recorded run is not verified until someone watched it

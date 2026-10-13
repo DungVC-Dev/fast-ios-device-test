@@ -38,8 +38,37 @@ re-signs it with an existing development profile, and runs the flow on the devic
   every tap. `"setup": {"wait_for_idle": false}` in a flow, or `--no-idle-wait` on
   `fastDeviceTest do`, switches that wait off for the run (private XCTest API, found at
   runtime; the report shows `wait_for_idle`); the flow's own `wait`s keep it correct.
-- `--device` accepts a UDID, the full name, or a unique part of the name (`Pink`); a part
+- `--device` accepts a UDID, the full name, or a unique part of the name (`Blue`); a part
   that matches two iPhones is refused.
+
+### Screen recording (`--record`)
+
+The iPhone screen **can** be recorded: XCTest records every UI test on a device by itself
+(`PreferredScreenCaptureFormat = screenRecording` is the runner's default), but its default
+attachment lifetime (`deleteOnSuccess`) throws the clip away when the test passes. `--record`
+sets `SystemAttachmentLifetime = keepAlways` in that run's `.xctestrun`, and the clip comes
+back with the other attachments. No Control Center, no QuickTime, no recording dot on screen,
+nothing written to the iPhone's Photos.
+
+```bash
+fastDeviceTest flow.json --device <d> --record --session pr-12
+# PASS … video=file://…/<task>/final-pr-12.mp4 artifacts=file://…
+```
+
+- One-shot runs only: the persistent runner is one long test, so its clip would span the
+  whole session. `--record` with `--serve`, or while `serve` holds the iPhone, is refused.
+  A recorded flow costs one-shot time (~20 s) plus ~2 s to re-encode.
+- The clip is re-encoded at review quality (H.264 MP4, long side 960 px, ~800 kbit/s:
+  17 s of a 1290×2796 recording goes from 20 MB to ~1.4 MB). A PASS keeps
+  `<task>/final[-<session>].mp4` (one per task, older clips deleted), a FAIL keeps `run.mp4`
+  in its run folder. The full-resolution original stays in `result.xcresult`.
+- Without `--record` nothing is kept, a FAIL included: the runner reports a failed flow
+  in its result file, so for XCTest the test passed.
+- Video inside the app keeps playing while XCTest records (checked on iOS 26.6 with an
+  `AVPlayer` guide video). Recording over the USB cable with QuickTime / CoreMediaIO
+  is the method that froze in-app video; do not use it.
+- The run has no per-step timestamps, so `fastUIReview` samples device clips on its
+  interval grid.
 
 ### Persistent runner — use it for anything beyond one run
 
@@ -80,6 +109,7 @@ device that already has a runner ("is busy"); pick another iPhone, never `stop`
 a runner you did not start.
 
 - Artifacts: `<project_root>/build/fast-device/<task>/<run>/` with screenshots,
-  `failure.png`, `failure-ui.txt`, `metrics.json` and the `.xcresult`.
+  `failure.png`, `failure-ui.txt`, `metrics.json`, the `.xcresult` and, with `--record`,
+  the clip (`run.mp4` on FAIL; `<task>/final[-<session>].mp4` on PASS).
 - Device must be unlocked, in Developer Mode, trusting the Mac; enable
   Settings › Developer › Enable UI Automation if iOS asks. One run per device at a time.

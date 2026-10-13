@@ -12,6 +12,7 @@ description: Use when asked to run, verify, re-test, or record an iOS screen or 
 | Prove a behavior, rerun it, run a matrix, record video, report | this skill: `fastSimulatorTest <flow.json>` / `fastDeviceTest <flow.json>` |
 | Explore an unknown screen, pinch/drag/rotate, read the app's console log | a subagent with Xcode 27's `device-interaction` skill (`DeviceInteraction*` MCP tools), on a **different** simulator; then write the flow here |
 | Watch the videos of a `--record` session | `fastUIReview` — read [references/review.md](references/review.md) first |
+| One captioned sheet of chosen screenshots for a PR or ticket | `fastEvidenceSheet <spec.json>` — "Evidence sheet" in [references/usage.md](references/usage.md) |
 | Physical iPhone | read [references/device.md](references/device.md) first |
 
 Never point both tools at one simulator: Xcode reinstalls the app over the fresh install.
@@ -91,8 +92,8 @@ Everything the engine needs is in the flow; there is no per-project config.
 - Apple's own sheets are not in the accessibility tree: prove them with `screenshot`.
 - Rerunning a user's existing flow: keep its values, list violations in the report.
 
-Every path the runners print (`artifacts=`, `screenshot=`, `ui=`, `video=`) is a `file://` URL:
-relay it as a markdown link.
+Every path the tools print (`artifacts=`, `screenshot=`, `ui=`, `video=`, `path=`) is a `file://`
+URL: relay it as a markdown link.
 
 ## Evidence, not just selectors
 
@@ -101,7 +102,9 @@ show the expected screen under another label is a selector bug (fix the flow); l
 the wrong state (popup still there, gate not applied) are a product bug: fix the code, rebuild
 (`--build-only`, or drop `--reuse-app`), rerun the same flow. Record (`--record`) when the user
 asks for video or a flow proves a fix: a PASS keeps one `final[-<session>].mp4` per task, a
-FAIL keeps `run.mp4` beside `failure.png`.
+FAIL keeps `run.mp4` beside `failure.png`. Both engines record — the iPhone through XCTest's own
+screen recording, one-shot runs only ([references/device.md](references/device.md)) — and both
+re-encode the clip at review quality (H.264, 960 px, ~1–2 MB for 20 s).
 
 ## Several flows or simulators
 

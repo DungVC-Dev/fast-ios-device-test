@@ -34,7 +34,10 @@ all pass `--reuse-app`. Artifacts land in
 `build/fast-ui/<task>/<timestamp>-<udid8>-<pid>/`, so parallel runs never
 overwrite each other.
 
-`--record` captures the simulator screen (`simctl io recordVideo`, HEVC). On
+`--record` captures the simulator screen (`simctl io recordVideo`) and re-encodes it at
+review quality: H.264 MP4, long side 960 px, ~800 kbit/s, so a 20 s clip is 0.5–2 MB
+and plays in any browser or PR attachment. The re-encode only replaces the recording when
+it succeeded and came out smaller (`FAST_VIDEO_LONG_SIDE=0` keeps the original). On
 PASS the clip becomes `<artifacts-root>/<task>/final.mp4` (`final-<session>.mp4`
 when `--session` is set, so two sessions never overwrite each other) and every
 older clip of that task is deleted; on FAIL the clip stays as `run.mp4` in that
@@ -168,7 +171,7 @@ Prebuilt app: `"app": {"bundle_id": "…", "prebuilt": true, "simulator": "<UDID
 If an `axe` call fails with a SimulatorKit/PrivateFrameworks error, AXe is older
 than 1.8.0 and the selected Xcode is 27: `install.sh` unpacks the bundled 1.8.0 from
 `vendor/`. On Xcode 27 AXe also needs Device Hub running; the engine opens it when it is not.
-Pillow is only needed by `motion` and `fastUIReview`.
+Pillow is only needed by `motion`, `fastUIReview` and `fastEvidenceSheet`.
 
 For a new task, generate the smallest temporary flow containing only its
 state/actions/assertions, then remove it after the run. Save reusable flows only
@@ -203,12 +206,22 @@ fastDeviceTest stop --device <d>
   `setup.content_size` → `-UIPreferredContentSizeCategoryName`; `setup.appearance`
   → `XCUIDevice.appearance`, restored after the flow.
 - Artifacts: `<project_root>/build/fast-device/<task>/<run>/` (`FAST_DEVICE_ROOT`).
+- `--record` (one-shot runs) keeps XCTest's own screen recording of the iPhone and
+  re-encodes it at the same review quality as the Simulator: a PASS keeps
+  `<artifacts-root>/<task>/final[-<session>].mp4`, a FAIL `run.mp4` in its run folder.
+  Without `--record` no clip is kept, a failing flow included: the runner reports a FAIL
+  in its result file, so for XCTest the test passed and its recording is deleted.
+  The full-resolution original stays inside `result.xcresult`. Details in
+  [device.md](device.md).
+- `--session <name>` (or `FAST_UI_SESSION`, shared with the Simulator engine) tags
+  `metrics.json`, so `fastUIReport` and `fastUIReview` collate device runs too (the
+  column is the iPhone's UDID prefix).
 
 ## Reviewing recordings
 
 `scripts/fast_ui_review.py --root <artifacts-root> --session <name> [--interval 1.0]
 [--change-threshold 0.01] [--columns 6] [--out <dir>]` (launcher `fastUIReview`)
-reads every `metrics.json` of the session that has a video and writes
+reads every `metrics.json` of the session that has a video (Simulator or iPhone runs) and writes
 `<out>/<task>-<sim>.png`: a header with the case name, status and the flow's
 `expect` text, then one frame at the end of each flow step (labelled with the
 step name) plus one every `--interval` seconds. Interval frames whose pixels
@@ -237,7 +250,42 @@ delta=…s OK|MISMATCH` (exit 2 on mismatch).
 
 Frames come from AVFoundation through a Swift helper, so no ffmpeg is needed. The
 sheets are meant to be read one by one; the PASS line only proves the selectors
-resolved.
+resolved. Device runs carry no per-step times, so their sheets use the interval grid
+only.
+
+## Evidence sheet for a PR (`fastEvidenceSheet`)
+
+`scripts/fast_evidence_sheet.py <spec.json>` (launcher `fastEvidenceSheet`) lays chosen
+screenshots side by side with a title, a label and a caption per cell, for a PR or a
+ticket. It is not a review tool: `fastUIReview` samples a recording, this one shows the
+outcome of each case.
+
+```json
+{
+  "title": "PRJ-12 · Paywall gating (Staging, iPhone iOS 26.6)",
+  "root": "/abs/MyApp/build/evidence-prj-12/device",
+  "out": "/abs/MyApp/build/evidence-prj-12/pr/gating.jpg",
+  "columns": 7,
+  "cells": [
+    {"task": "gating-prod", "shot": "1-paywall", "label": "G1 · Production", "caption": "paywall on reopen"},
+    {"task": "gating-off", "shot": "main", "label": "G2 · Off", "caption": "reopen: false →\nno paywall"},
+    {"image": "/abs/before.png", "label": "Before", "caption": "the bug"}
+  ]
+}
+```
+
+- `root` is the `--artifacts-root` the flows ran with. A `task` cell takes `<shot>.png`
+  from that task's newest **passing** run (`metrics.json` status `pass`; Finder files
+  and failing runs are skipped); `"run": "<run folder>"` pins one, e.g. a "before" shot
+  from a failing run. An `image` cell takes any file. Relative paths resolve against the
+  spec file.
+- Captions wrap to the cell (`\n` forces a break); the font covers Vietnamese and other
+  diacritics. Cells are 360 px wide (`cell_width`), `columns` per row (default 7).
+- `out` ending in `.jpg` (the default) writes JPEG quality 80: seven phone shots are
+  ~300 KB and still readable at 2× zoom. `.png` keeps it lossless (~3× larger).
+- Every cell is checked first; one FAIL line lists every missing shot together with the
+  shots that run does have. Success prints `SHEET cells=… size=WxH kb=… tokens≈… path=file://…`.
+  Read the sheet back before handing it over.
 
 ## Matrix: appearance and Dynamic Type
 
@@ -254,6 +302,9 @@ not grow at `accessibility-*` sizes as a product finding.
 ## Environment variables
 
 - `FAST_UI_ROOT`: artifacts root for `fastSimulatorTest` (runs, screenshots, videos).
+- `FAST_UI_SESSION`: default `--session` for both engines.
+- `FAST_VIDEO_LONG_SIDE` / `FAST_VIDEO_KBPS`: review-quality re-encode of recordings
+  (960 / 800); `FAST_VIDEO_LONG_SIDE=0` keeps the original clip.
 - `FAST_UI_KEEP_DAYS`: prune age for that root; `0` disables pruning.
 - `FAST_DEVICE_ROOT`: artifacts root for `fastDeviceTest`.
 - `FAST_DEVICE_PROFILE`: provisioning profile UUID or path for the device runner.

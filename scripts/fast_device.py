@@ -22,6 +22,9 @@ from pathlib import Path
 from typing import Any
 
 HERE = Path(__file__).resolve().parent
+# bin/ holds symlinks in a git checkout but copies in the zip, so look beside scripts/ too.
+sys.path[:0] = [str(HERE), str(HERE.parent / "scripts")]
+from fast_media import VIDEO_SUFFIXES, publish_video, shrink_video  # noqa: E402
 RUNNER_SOURCE = HERE.parent / "device-runner"
 CACHE_ROOT = Path(os.environ.get("FAST_DEVICE_CACHE", Path.home() / "Library/Caches/fast-device-test"))
 PROFILE_DIRS = [
@@ -73,7 +76,7 @@ def resolve_device(requested: str | None) -> dict[str, Any]:
         for device in devices:
             if requested in (device["udid"], device["name"]):
                 return device
-        # "Pink" is enough when only one iPhone has it in its name; a prefix shared by two
+        # "Blue" is enough when only one iPhone has it in its name; a prefix shared by two
         # ("iPhone 16") is refused rather than guessed.
         partial = [device for device in devices if requested.lower() in str(device["name"]).lower()]
         if len(partial) == 1:
@@ -316,6 +319,28 @@ def prepare_flow(spec: dict[str, Any], appearance: str | None = None, content_si
     return {**spec, "setup": setup}
 
 
+def enable_recording(xctestrun: Path) -> None:
+    # XCTest records the device screen during every UI test, but its default attachment
+    # lifetime deletes the recording when the test passes.
+    for key, value in {"PreferredScreenCaptureFormat": "screenRecording", "SystemAttachmentLifetime": "keepAlways"}.items():
+        run(["plutil", "-replace", f"{TEST_TARGET}.{key}", "-string", value, str(xctestrun)])
+
+
+def publish_recording(artifacts: Path, passed: bool, session: str = "") -> Path | None:
+    """XCTest's screen recording of the run at review quality: a PASS keeps it as
+    <task>/final[-<session>].mp4, a FAIL as run.mp4 beside its other artifacts."""
+    recordings = sorted(
+        (path for path in artifacts.iterdir() if path.is_file() and path.suffix.lower() in VIDEO_SUFFIXES),
+        key=lambda path: path.stat().st_size, reverse=True,
+    )
+    if not recordings:
+        return None
+    primary, *others = recordings
+    for other in others:
+        shrink_video(other, other.with_suffix(".mp4"))
+    return publish_video(artifacts.parent, shrink_video(primary, artifacts / "run.mp4"), passed, session)
+
+
 def install_app(udid: str, app_path: str) -> None:
     run(["xcrun", "devicectl", "device", "install", "app", "--device", udid, app_path])
 
@@ -486,8 +511,20 @@ def parse_flow_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--appearance", choices=["light", "dark"])
     parser.add_argument("--content-size", choices=list(CONTENT_SIZES))
     parser.add_argument("--artifacts-root", type=Path, default=os.environ.get("FAST_DEVICE_ROOT") or None)
+    parser.add_argument(
+        "--record", action="store_true",
+        help="Keep XCTest's screen recording (one-shot runs only); a PASS keeps "
+        "<artifacts-root>/<task>/final[-<session>].mp4 at review quality",
+    )
+    parser.add_argument(
+        "--session", default=os.environ.get("FAST_UI_SESSION", ""),
+        help="Group this run under a session; fastUIReport and fastUIReview collate by it",
+    )
     parser.add_argument("--json", action="store_true")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.record and args.serve:
+        parser.error("--record needs a one-shot run; drop --serve")
+    return args
 
 
 def variant_name(name: str, appearance: str | None, content_size: str | None) -> str:
@@ -517,6 +554,11 @@ def run_flow(args: argparse.Namespace) -> int:
         install_app(device["udid"], str(Path(args.install or app["install_path"]).expanduser()))
     if args.serve:
         start_server(device, args.rebuild_runner)
+    if args.record and server_alive(device["udid"]):
+        raise FastDeviceError(
+            f"--record needs a one-shot run, but a persistent runner holds {device['name']}; "
+            "stop it (`fastDeviceTest stop`) if it is yours, then rerun"
+        )
 
     project_root = Path(app.get("project_root", flow_path.parent)).expanduser()
     root = (args.artifacts_root or project_root / "build/fast-device").expanduser().resolve()
@@ -531,13 +573,15 @@ def run_flow(args: argparse.Namespace) -> int:
         report["screenshots"] = save_screenshots(report, artifacts)
     else:
         mode = "one-shot"
-        report = run_one_shot(device, prepared, artifacts, args.rebuild_runner)
+        report = run_one_shot(device, prepared, artifacts, args.rebuild_runner, args.record)
     save_dumps(report.get("results", []), artifacts)
+    video = publish_recording(artifacts, report["status"] == "pass", args.session)
 
     report.update({
         "task": name, "device": device["name"], "udid": device["udid"], "ios": device["os"], "mode": mode,
-        "total_seconds": round(time.perf_counter() - started, 1), "artifacts": str(artifacts),
+        "session": args.session, "total_seconds": round(time.perf_counter() - started, 1), "artifacts": str(artifacts),
         **({"expect": spec["expect"]} if spec.get("expect") else {}),
+        **({"video": str(video)} if video else {}),
     })
     (artifacts / "metrics.json").write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
     if args.json:
@@ -545,17 +589,20 @@ def run_flow(args: argparse.Namespace) -> int:
     elif report["status"] == "pass":
         dumps = [r for r in report.get("results", []) if "labels" in r]
         suffix = f" labels={json.dumps(dumps[-1]['labels'], ensure_ascii=False)}" if dumps else ""
+        suffix += f" video={file_link(video)}" if video else ""
         print(f"PASS task={name} device={device['name']} mode={mode} total={report['total_seconds']}s{suffix} artifacts={file_link(artifacts)}")
     else:
         print(
             f"FAIL task={name} device={device['name']} mode={mode} step={report.get('step')} "
-            f"error={report.get('error')} artifacts={file_link(artifacts)}",
+            f"error={report.get('error')}{f' video={file_link(video)}' if video else ''} artifacts={file_link(artifacts)}",
             file=sys.stderr,
         )
     return 0 if report["status"] == "pass" else 1
 
 
-def run_one_shot(device: dict[str, Any], prepared: dict[str, Any], artifacts: Path, rebuild: bool) -> dict[str, Any]:
+def run_one_shot(
+    device: dict[str, Any], prepared: dict[str, Any], artifacts: Path, rebuild: bool, record: bool = False
+) -> dict[str, Any]:
     developer_dir = developer_dir_for(device["os"])
     signing = pick_signing(device["udid"])
     xctestrun = build_runner(developer_dir, signing, rebuild)
@@ -564,6 +611,8 @@ def run_one_shot(device: dict[str, Any], prepared: dict[str, Any], artifacts: Pa
     run_xctestrun = xctestrun.with_name(f"run-{os.getpid()}.xctestrun")
     shutil.copy(xctestrun, run_xctestrun)
     run(["plutil", "-replace", f"{TEST_TARGET}.TestingEnvironmentVariables.FAST_FLOW", "-string", encoded, str(run_xctestrun)])
+    if record:
+        enable_recording(run_xctestrun)
     result_bundle = artifacts / "result.xcresult"
     test = run(
         [

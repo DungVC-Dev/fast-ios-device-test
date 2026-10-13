@@ -1,5 +1,51 @@
 # Changelog
 
+## 1.3.0 — 2026-10-13
+
+### The iPhone screen can be recorded
+
+`fastDeviceTest --record` keeps XCTest's own screen recording of a one-shot run. XCTest records
+every UI test on a device by default, but its attachment lifetime `deleteOnSuccess` threw the
+clip away whenever the test passed — and the runner's tests always pass, even when the flow
+fails, because the flow reports its result in a file. `--record` sets `SystemAttachmentLifetime =
+keepAlways` in that run's `.xctestrun`. No Control Center, no QuickTime, no recording dot, nothing
+in Photos; video inside the app keeps playing (QuickTime/CoreMediaIO capture froze it).
+
+- A PASS keeps `<task>/final[-<session>].mp4`, a FAIL `run.mp4`, as on the Simulator; the PASS and
+  FAIL lines carry `video=file://…`. The full-resolution original stays in `result.xcresult`.
+- `--record` is refused with `--serve` or while a persistent runner holds the iPhone: the runner
+  is one long test, so its clip would span the whole session.
+- `fastDeviceTest --session` (or `FAST_UI_SESSION`, shared with the Simulator) tags device runs;
+  `fastUIReport` and `fastUIReview` now read them (keyed by the iPhone's UDID).
+
+### Clips light enough for a PR
+
+Both engines re-encode recordings at review quality: H.264 MP4, long side 960 px, ~800 kbit/s.
+
+| Clip | Before | After |
+|---|---|---|
+| iPhone, 17 s, 1290×2796 | 20 MB (H.264, 10 Mbit/s) | 1.4 MB, 442×960, ~2 s to encode |
+| Simulator, 23 s | full-resolution HEVC | 0.4 MB H.264, plays in every browser |
+
+The re-encode replaces a clip only when it succeeded and came out smaller; any failure keeps
+the original. `FAST_VIDEO_LONG_SIDE` / `FAST_VIDEO_KBPS` tune it, `FAST_VIDEO_LONG_SIDE=0` keeps
+originals. AVFoundation only, no ffmpeg.
+
+### `fastEvidenceSheet`
+
+A new launcher lays chosen screenshots into one captioned sheet for a PR or ticket: a title,
+then a label and a wrapped caption above each shot, from a JSON spec. Task cells take the shot
+from the task's newest passing run; JPEG quality 80 by default (seven phone shots ≈ 300 KB);
+the font covers Vietnamese diacritics; one FAIL line lists every missing shot with the shots
+that exist.
+
+### Smaller fixes
+
+- `fastUIReview` prints its sheets, notes and review folder as `file://` links, like the engines.
+- Tests: `test_fast_media.py` (including a real AVFoundation encode) and
+  `test_fast_evidence_sheet.py`; 102 tests in all, one of them runs every launcher as the copy a
+  zip stores. `install.sh` self-tests the media module too.
+
 ## 1.2.0 — 2026-10-13
 
 Compared with the first version (1.1.0 by DungVC, with the Xcode 27 fixes listed below).

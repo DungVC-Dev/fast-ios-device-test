@@ -66,10 +66,10 @@ if [[ "$MODE" == "check" ]]; then
         echo "axe=missing"; missing+=(axe)
     fi
     echo "python=$(python3 --version 2>&1 | sed 's/Python //') ($(command -v python3))"
-    python3 -c "import PIL" 2>/dev/null && echo "pillow=yes" || echo "pillow=no (only fastUIReview and the motion action need it)"
+    python3 -c "import PIL" 2>/dev/null && echo "pillow=yes" || echo "pillow=no (only fastUIReview, fastEvidenceSheet and the motion action need it)"
     command -v xcodegen >/dev/null && echo "xcodegen=yes (optional)" || echo "xcodegen=no (optional: device-runner ships its xcodeproj)"
     echo "profiles=$(profile_count) development profiles (fastDeviceTest needs one that lists the iPhone)"
-    for name in fastSimulatorTest fastDeviceTest fastUIReview fastUIReport; do
+    for name in fastSimulatorTest fastDeviceTest fastUIReview fastUIReport fastEvidenceSheet; do
         [[ -L "$BIN_DIR/$name" ]] || missing+=("$name launcher")
     done
     [[ -L "$SKILLS_DIR/fast-ios-device-test" ]] || missing+=(skill)
@@ -105,7 +105,7 @@ link() {
 mkdir -p "$SKILLS_DIR" "$COMMANDS_DIR" "$BIN_DIR"
 axe_ok || install_axe
 python3 -c "import PIL" 2>/dev/null || python3 -m pip install --user pillow >/dev/null 2>&1 \
-    || echo "note: Pillow not installed; only fastUIReview and the motion action need it (python3 -m pip install --user pillow)"
+    || echo "note: Pillow not installed; only fastUIReview, fastEvidenceSheet and the motion action need it (python3 -m pip install --user pillow)"
 
 link "$HERE/skills/fast-ios-device-test" "$SKILLS_DIR/fast-ios-device-test"
 link "$HERE/commands/fastSimulatorTest.md" "$COMMANDS_DIR/fastSimulatorTest.md"
@@ -116,13 +116,15 @@ link "$HERE/scripts/fast_ui.py" "$BIN_DIR/fastUITest"
 link "$HERE/scripts/fast_device.py" "$BIN_DIR/fastDeviceTest"
 link "$HERE/scripts/fast_ui_report.py" "$BIN_DIR/fastUIReport"
 link "$HERE/scripts/fast_ui_review.py" "$BIN_DIR/fastUIReview"
-chmod +x "$HERE/scripts/fast_ui.py" "$HERE/scripts/fast_ui_report.py" "$HERE/scripts/fast_ui_review.py" "$HERE/scripts/fast_device.py"
+link "$HERE/scripts/fast_evidence_sheet.py" "$BIN_DIR/fastEvidenceSheet"
+chmod +x "$HERE/scripts/fast_ui.py" "$HERE/scripts/fast_ui_report.py" "$HERE/scripts/fast_ui_review.py" "$HERE/scripts/fast_device.py" \
+    "$HERE/scripts/fast_evidence_sheet.py"
 
 case ":$PATH:" in
 *":$BIN_DIR:"*) ;;
 *) echo "note: add '$BIN_DIR' to PATH, e.g. echo 'export PATH=\"$BIN_DIR:\$PATH\"' >> ~/.zshrc" ;;
 esac
 
-(cd "$HERE/scripts" && python3 -m unittest test_fast_ui >/dev/null 2>&1) && echo "engine self-test: OK" \
-    || echo "engine self-test: FAILED (cd scripts && python3 -m unittest test_fast_ui)"
+(cd "$HERE/scripts" && python3 -m unittest test_fast_ui test_fast_media >/dev/null 2>&1) && echo "engine self-test: OK" \
+    || echo "engine self-test: FAILED (cd scripts && python3 -m unittest test_fast_ui test_fast_media)"
 echo "done. In Claude Code: /fastSimulatorTest <flow>, /fastDeviceTest <flow>, /fastUIReview <session>"

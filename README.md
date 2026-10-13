@@ -8,6 +8,10 @@ Claude Code slash commands for fast iOS verification:
 | `/fastDeviceTest <screen or flow>` | Runs the same JSON flow on a physical iPhone through a cached, auto-signed XCUITest runner; can also drive Settings, Shortcuts and SpringBoard. |
 | `/fastUIReview <session>` | Builds contact sheets from a recorded session so every case's video is reviewed, not just its PASS line. |
 
+Plus the `fastEvidenceSheet <spec.json>` launcher: one captioned JPEG of chosen screenshots
+for a PR or ticket. Both engines record with `--record` (the iPhone through XCTest's own
+screen recording) and keep the clip at review quality (H.264, 960 px, ~1–2 MB for 20 s).
+
 ## Install (once per machine)
 
 Needs Xcode (26 or 27). Nothing else: AXe 1.8.0 is bundled in `vendor/`.
@@ -40,8 +44,9 @@ Maintainers: `bash make-zip.sh` builds the release zip next to the folder.
 
 ## What's new
 
-See [CHANGELOG.md](CHANGELOG.md): 1.2.0 is faster, explains its own failures, drives
-system apps, and installs without Homebrew.
+See [CHANGELOG.md](CHANGELOG.md): 1.3.0 records the iPhone screen, keeps every clip light
+enough for a PR, and adds `fastEvidenceSheet`. 1.2.0 made the tool faster, made failures
+explain themselves, drove system apps and installed without Homebrew.
 
 ## Setup per project
 
@@ -57,10 +62,12 @@ shows the smallest complete flow.
 - `skills/fast-ios-device-test/references/review.md` — reviewing recorded runs with fastUIReview
 - `skills/fast-ios-device-test/references/usage.md` — flow action reference, matrix, cache model, troubleshooting
 - `commands/` — the three slash commands
-- `bin/` — launchers (`fastSimulatorTest`, `fastDeviceTest`, `fastUIReport`, `fastUIReview`) for the plugin install
+- `bin/` — launchers (`fastSimulatorTest`, `fastDeviceTest`, `fastUIReport`, `fastUIReview`, `fastEvidenceSheet`) for the plugin install
 - `scripts/fast_ui.py` — Simulator flow engine (`scripts/test_fast_ui.py` tests it); `--record`, `--session`
 - `scripts/fast_ui_report.py` — collates a fan-out session into a flow × simulator table (`fastUIReport`)
 - `scripts/fast_ui_review.py` — contact sheets and review notes for recorded runs (`fastUIReview`)
+- `scripts/fast_evidence_sheet.py` — captioned evidence sheet for a PR (`fastEvidenceSheet`; `scripts/test_fast_evidence_sheet.py`)
+- `scripts/fast_media.py` — review-quality video re-encode and the one-final-clip rule, shared by both engines (`scripts/test_fast_media.py`)
 - `scripts/fast_device.py` + `device-runner/` — physical-iPhone flow runner (XCUITest, auto-signed; the `.xcodeproj` is committed, regenerate with `xcodegen generate` after editing `project.yml`)
 - `vendor/` — the AXe release tarball `install.sh` unpacks when no `axe` ≥ 1.8.0 is on PATH (MIT, see `vendor/AXe-LICENSE`)
 - `docs/` — optimization research and the implementation plan behind 1.2.0

@@ -7,7 +7,7 @@
     {
       "name": "fast-ios-device-test",
       "source": "./",
-      "description": "/fastSimulatorTest (Simulator UI flows, fan-out), /fastDeviceTest (the same flows on a physical iPhone) and /fastUIReview (review of recorded runs)"
+      "description": "/fastSimulatorTest (Simulator UI flows, fan-out), /fastDeviceTest (the same flows on a physical iPhone, with screen recording), /fastUIReview (review of recorded runs) and fastEvidenceSheet (captioned PR evidence)"
     }
   ],
   "description": "Fast iOS verification commands for Claude Code (Simulator and physical-iPhone UI flows)."

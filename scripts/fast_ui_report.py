@@ -34,10 +34,15 @@ def load_runs(root: Path, session: str, since: str) -> list[dict[str, Any]]:
     return runs
 
 
+def target(run: dict[str, Any]) -> str:
+    """The simulator or, for a fastDeviceTest run, the iPhone the run used (first 8 chars)."""
+    return str(run.get("simulator") or run.get("udid") or "?")[:8]
+
+
 def latest_per_cell(runs: list[dict[str, Any]]) -> dict[tuple[str, str], dict[str, Any]]:
     cells: dict[tuple[str, str], dict[str, Any]] = {}
     for run in sorted(runs, key=lambda item: item["_stamp"]):
-        cells[(run.get("task", "?"), str(run.get("simulator", "?"))[:8])] = run
+        cells[(run.get("task", "?"), target(run))] = run
     return cells
 
 
@@ -65,7 +70,7 @@ def render(cells: dict[tuple[str, str], dict[str, Any]], attempts: dict[tuple[st
         lines.append("")
         lines.append("Failures:")
         for run in failures:
-            lines.append(f"- {run['task']} [{str(run.get('simulator', ''))[:8]}] step={run.get('step')}: {run.get('error')}")
+            lines.append(f"- {run['task']} [{target(run)}] step={run.get('step')}: {run.get('error')}")
             lines.append(f"  artifacts: {Path(run['_dir']).resolve().as_uri()}")
     videos = [run["video"] for run in cells.values() if run.get("video")]
     if videos:
@@ -95,7 +100,7 @@ def main() -> int:
     cells = latest_per_cell(runs)
     attempts: dict[tuple[str, str], int] = {}
     for run in runs:
-        key = (run.get("task", "?"), str(run.get("simulator", "?"))[:8])
+        key = (run.get("task", "?"), target(run))
         attempts[key] = attempts.get(key, 0) + 1
     if args.json:
         print(json.dumps({f"{task}@{sim}": run for (task, sim), run in cells.items()}, indent=2))

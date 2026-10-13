@@ -22,6 +22,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
+# bin/ holds symlinks in a git checkout but copies in the zip, so look beside scripts/ too.
+sys.path[:0] = [str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parent.parent / "scripts")]
+from fast_media import publish_video, shrink_video  # noqa: E402
+
 
 BUILD_SUFFIXES = {
     ".c", ".cc", ".cpp", ".entitlements", ".gif", ".h", ".jpeg", ".jpg",
@@ -642,20 +646,6 @@ class Recorder:
         self.process = None
 
 
-def publish_video(task_dir: Path, video: Path, passed: bool, session: str = "") -> Path | None:
-    """Keep exactly one final video per task (per session when tagged); failures keep only their own clip."""
-    if not video.exists():
-        return None
-    for old in task_dir.glob("*/run.mp4"):
-        if old != video:
-            old.unlink(missing_ok=True)
-    if not passed:
-        return video
-    final = task_dir / (f"final-{session}.mp4" if session else "final.mp4")
-    shutil.move(str(video), final)
-    return final
-
-
 def prune_artifacts(root: Path, keep_days: float) -> int:
     """Delete run folders and final videos untouched for `keep_days`; empty task dirs go too."""
     if keep_days <= 0 or not root.is_dir():
@@ -1244,7 +1234,7 @@ def main() -> int:
 
         if recorder:
             recorder.stop()
-            video = publish_video(artifacts.parent, recorder.path, passed=True, session=args.session)
+            video = publish_video(artifacts.parent, shrink_video(recorder.path), passed=True, session=args.session)
         payload = {
             "status": "pass", "task": name, "simulator": udid, "session": args.session,
             **({"expect": spec["expect"]} if spec.get("expect") else {}),
@@ -1272,7 +1262,7 @@ def main() -> int:
         if recorder:
             try:
                 recorder.stop()
-                video = publish_video(artifacts.parent, recorder.path, passed=False, session=args.session)
+                video = publish_video(artifacts.parent, shrink_video(recorder.path), passed=False, session=args.session)
             except Exception:
                 video = None
         try:
