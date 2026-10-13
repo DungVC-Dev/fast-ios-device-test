@@ -6,18 +6,24 @@ Bạn chỉ cần gõ lệnh và mô tả bằng lời. Agent tự viết flow, 
 
 Chỉ cần có sẵn Xcode. Không cần Homebrew, không cần xcodegen: AXe đã đóng kèm trong gói.
 
-1. Tải file `fast-ios-device-test-<version>.zip` về, giải nén (ví dụ vào `~/Downloads`).
-2. Mở Terminal, chạy:
+1. Mở Terminal, chạy:
    ```bash
-   ~/Downloads/fast-ios-device-test/install.sh
+   git clone https://github.com/kiluss2/fast-ios-device-test.git ~/fast-ios-device-test
+   ~/fast-ios-device-test/install.sh --link
    ```
    Cài xong trong vài giây. Kiểm tra lại bất cứ lúc nào bằng `install.sh --check`.
-3. Thoát rồi mở lại Claude Code.
+2. Thoát rồi mở lại Claude Code.
 
-Sau khi cài xong có thể xoá file zip và thư mục giải nén. Muốn cập nhật bản mới thì làm lại 3 bước trên.
-Lần chạy đầu trong mỗi dự án mất thêm 1–2 phút vì phải boot simulator và build app; từ lần hai mỗi flow chỉ 6–12 giây.
+Cập nhật bản mới: `git -C ~/fast-ios-device-test pull`. Giữ nguyên thư mục `~/fast-ios-device-test`
+vì skill và lệnh trỏ vào đó.
 
-Người gửi tạo file zip bằng lệnh `bash make-zip.sh` trong thư mục cha của tool.
+Không dùng git: tải `fast-ios-device-test-<version>.zip` ở trang
+[Releases](https://github.com/kiluss2/fast-ios-device-test/releases), giải nén ở đâu cũng được,
+chạy `install.sh` trong đó (không thêm cờ). Cách này chép tool vào `~/.local/share`, nên xoá
+thư mục giải nén sau đó cũng không sao.
+
+Lần chạy đầu trong mỗi dự án mất thêm 1–2 phút vì phải boot simulator và build app; từ lần hai
+mỗi flow chỉ 6–12 giây. Có gì mới: xem [CHANGELOG.md](CHANGELOG.md).
 
 ## Lệnh
 

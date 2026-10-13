@@ -8,49 +8,40 @@ Claude Code slash commands for fast iOS verification:
 | `/fastDeviceTest <screen or flow>` | Runs the same JSON flow on a physical iPhone through a cached, auto-signed XCUITest runner; can also drive Settings, Shortcuts and SpringBoard. |
 | `/fastUIReview <session>` | Builds contact sheets from a recorded session so every case's video is reviewed, not just its PASS line. |
 
-## Setup (once per machine)
+## Install (once per machine)
 
-Share this folder any way you like (zip, AirDrop, shared drive). The recipient
-runs one command from wherever the folder landed:
+Needs Xcode (26 or 27). Nothing else: AXe 1.8.0 is bundled in `vendor/`.
 
 ```bash
-~/Downloads/fast-ios-device-test/install.sh
+git clone https://github.com/kiluss2/fast-ios-device-test.git ~/fast-ios-device-test
+~/fast-ios-device-test/install.sh --link
 ```
 
-It copies the folder to `~/.local/share/fast-ios-device-test`, unpacks the bundled
-`axe` (`vendor/`, 1.8.0, needed for Xcode 27) into `~/.local/share/axe` when none
-new enough is on PATH, installs Pillow if it can, and wires the skill into
-`~/.claude/skills`, the commands into `~/.claude/commands`, and the launchers
-(`fastSimulatorTest`, `fastDeviceTest`, `fastUIReport`, `fastUIReview`) into
-`~/.local/bin`. No Homebrew and no xcodegen are needed. The shared copy can be
-deleted afterwards. Restart Claude Code once. To upgrade, run `install.sh` again
-from a newer folder. `install.sh --check` prints the versions it sees and what is
-missing without changing anything.
+Restart Claude Code. To upgrade later: `git -C ~/fast-ios-device-test pull`. With
+`--link` the skill, commands and launchers point into the clone, so keep that folder.
 
-Maintainers who edit the tool in place: `install.sh --link` links this folder
-instead of copying it. To make a shareable zip: `bash make-zip.sh`.
+Without git: download `fast-ios-device-test-<version>.zip` from the
+[Releases](https://github.com/kiluss2/fast-ios-device-test/releases) page, unzip it
+anywhere and run its `install.sh` (no flag). That copies the tool to
+`~/.local/share/fast-ios-device-test`, so the unzipped folder can be deleted.
+
+Either way the installer unpacks the bundled `axe` into `~/.local/share/axe` when none
+new enough is on PATH, installs Pillow if it can (only video review needs it), and
+links the skill into `~/.claude/skills`, the commands into `~/.claude/commands` and
+the launchers (`fastSimulatorTest`, `fastDeviceTest`, `fastUIReport`, `fastUIReview`)
+into `~/.local/bin`. `install.sh --check` prints what it sees and what is missing,
+without changing anything.
 
 Optional, for exploring a screen with Apple's own tools (pinch, drag, rotate, app
 console log) before writing a flow: register Xcode 27's MCP server once with
 `claude mcp add xcode -- xcrun mcpbridge`; the skill says when to use which.
 
-## What changed in 1.2.0
+Maintainers: `bash make-zip.sh` builds the release zip next to the folder.
 
-- A FAIL line lists each visible label with its element type, says when the label exists
-  under another type, and suggests close labels; `tap_label` taps the one non-Button node
-  with the label when no Button has it (`fallback_type`).
-- `dump` and `failure-ui.json` are flat and compact (label, type, id, value, frame,
-  center): tens of KB instead of megabytes.
-- Selectors take `id` (accessibilityIdentifier) and `value` on simulator and device.
-- A hierarchy younger than 300 ms is reused for the first poll of a tap (~1 s saved per
-  wait → tap pair); opt-in `"settle": true` waits until the tree stops changing.
-- New simulator actions: `type_text`, `launch`, `terminate`, `open_url`; `app.prebuilt`
-  drives an installed or system app without a project.
-- Device: `setup.wait_for_idle: false` / `do --no-idle-wait` skips XCUITest's wait-for-idle;
-  `--device` accepts a unique part of the name.
-- `fastUIReview` compiles its AVFoundation helper once instead of interpreting it per video.
-- Installer: bundled AXe 1.8.0, committed runner `.xcodeproj` (no Homebrew, no xcodegen),
-  Pillow optional, `install.sh --check`; `make-zip.sh` builds the shareable zip.
+## What's new
+
+See [CHANGELOG.md](CHANGELOG.md): 1.2.0 is faster, explains its own failures, drives
+system apps, and installs without Homebrew.
 
 ## Setup per project
 
