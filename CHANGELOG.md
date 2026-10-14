@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+### Every interaction a real UI test needs
+
+Flows could tap, swipe, type and wait. They can now drive the whole surface of an app, with the
+same action names on Simulator and iPhone (table in `references/usage.md`):
+
+- **Gestures:** `long_press`, `double_tap`, `drag` (hold, then move: reorder, Home Screen
+  icons, drag-and-drop), `swipe` inside an element (swipe-to-delete), `back`, `edge_swipe`,
+  `pull_to_refresh`; on the iPhone `pinch`, `rotate_gesture`, `two_finger_tap`.
+- **Keyboard:** `type_text` into a named field with `clear: true`, `clear_text`, `press_key`,
+  `dismiss_keyboard`.
+- **Controls:** `set_switch` (taps only when needed and waits for the new value), `set_slider`,
+  `set_picker`, `tap_alert` (system or app alert).
+- **Assertions:** `assert_value` (`equals` / `not_equals` / `contains` / `matches` on a value or
+  label, polled), `assert_count`, and the selector key `enabled`.
+- **Device state:** `press_button`, `activate`, `set_appearance`, `set_location`,
+  `set_permission`, `set_clipboard` / `assert_clipboard`; Simulator `push_notification` and
+  `status_bar`; iPhone `set_orientation`, `open_url`.
+
+Measured on Xcode 27.0 / iOS 27 and built into the Simulator engine: a switch flips only for a
+~0.3 s touch; the back gesture, row swipe actions and edge swipes need `axe drag`, not `axe
+swipe`; keys are dropped unless sent inside an `axe batch` with a sleep on both sides; AXe sends
+numeric values as numbers (row 0 of a wheel is `0`, not empty).
+
+On the iPhone (checked on iOS 26.6.1): `open_url` uses the system handler instead of handing the
+URL to the current app; the clipboard is read and written with the runner briefly in front
+(iOS drops background access); an XCTest gesture failure is now a step FAIL instead of ending
+the persistent runner; search fields are `SearchField` and match `TextField`; `dump` lists
+unlabelled nodes that carry an identifier.
+
+### Fixed
+
+- Swipes by `direction` measured the screen as the largest frame in the tree, which in a long
+  list is the scroll content (y −1580); they now use the application's frame.
+
 ## 1.3.0 — 2026-10-13
 
 ### The iPhone screen can be recorded

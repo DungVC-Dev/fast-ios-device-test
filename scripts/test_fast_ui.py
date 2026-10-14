@@ -242,7 +242,7 @@ class ActionTests(unittest.TestCase):
             fast_ui.execute_action({"type": "launch", "launch_arguments": ["-flag"]}, "SIM", Path("/tmp"), 2, [], {}, "com.x")
             fast_ui.execute_action({"type": "terminate", "app": "com.apple.Preferences"}, "SIM", Path("/tmp"), 3, [], {}, "com.x")
             fast_ui.execute_action({"type": "open_url", "url": "myapp://home"}, "SIM", Path("/tmp"), 4, [], {}, "com.x")
-        axe.assert_called_once_with("SIM", "type", "hello")
+        axe.assert_called_once_with("SIM", "batch", "--step", "sleep 0.3", "--step", "type hello", "--step", "sleep 0.3")
         self.assertEqual(cmd.call_args_list[0].args[0], ["xcrun", "simctl", "launch", "SIM", "com.x", "-flag"])
         self.assertEqual(cmd.call_args_list[1].args[0], ["xcrun", "simctl", "terminate", "SIM", "com.apple.Preferences"])
         self.assertEqual(cmd.call_args_list[2].args[0], ["xcrun", "simctl", "openurl", "SIM", "myapp://home"])
@@ -293,6 +293,214 @@ class ActionTests(unittest.TestCase):
                 fast_ui.wait_selector("SIM", {"label": "Missing"}, 0.01, [])
         self.assertIn("Smart", str(caught.exception))
         self.assertIn("Widgets", str(caught.exception))
+
+
+class GestureAndControlTests(unittest.TestCase):
+    """The actions added for full UI tests; AXe and simctl are mocked."""
+
+    APP = {"AXLabel": "App", "type": "Application", "frame": {"x": 0, "y": 0, "width": 400, "height": 800}}
+
+    def run_action(self, action: dict, bundle_id: str = "com.x") -> dict | None:
+        return fast_ui.execute_action(action, "SIM", Path("/tmp"), 1, [], {}, bundle_id)
+
+    @staticmethod
+    def node(**fields) -> dict:
+        frame = fields.pop("frame", {"x": 0, "y": 100, "width": 100, "height": 40})
+        return {"type": "Button", "frame": frame, **fields}
+
+    def steps(self, axe_mock: mock.Mock) -> list[str]:
+        """The --step values of every `axe batch` call, flattened."""
+        found = []
+        for call in axe_mock.call_args_list:
+            arguments = list(call.args[1:])
+            found += [arguments[i + 1] for i, value in enumerate(arguments) if value == "--step"]
+        return found
+
+    def test_long_press_holds_a_touch_on_the_selected_node(self) -> None:
+        target = self.node(AXLabel="Hold")
+        with mock.patch.object(fast_ui, "hierarchy", return_value=[target]), \
+                mock.patch.object(fast_ui, "axe") as axe, mock.patch.object(fast_ui.time, "sleep"):
+            self.run_action({"type": "long_press", "label": "Hold", "duration": 1.5})
+        axe.assert_called_once_with("SIM", "touch", "-x", "50.00", "-y", "120.00", "--down", "--up", "--delay", "1.5")
+
+    def test_double_tap_sends_both_taps_in_one_session(self) -> None:
+        with mock.patch.object(fast_ui, "axe") as axe, mock.patch.object(fast_ui.time, "sleep"):
+            self.run_action({"type": "double_tap", "x": 10, "y": 20})
+        self.assertEqual(axe.call_count, 1)
+        self.assertEqual(
+            self.steps(axe), ["sleep 0.3", "tap -x 10.00 -y 20.00", "sleep 0.08", "tap -x 10.00 -y 20.00", "sleep 0.3"]
+        )
+
+    def test_drag_holds_then_moves_from_a_selector_to_a_point(self) -> None:
+        source = self.node(AXUniqueId="card")
+        with mock.patch.object(fast_ui, "hierarchy", return_value=[source]), \
+                mock.patch.object(fast_ui, "axe") as axe, mock.patch.object(fast_ui.time, "sleep"):
+            self.run_action({"type": "drag", "from": {"id": "card"}, "to": [300, 500], "hold": 0.7})
+        self.assertEqual(self.steps(axe), [
+            "touch -x 50.00 -y 120.00 --down", "sleep 0.7",
+            "swipe --start-x 50.00 --start-y 120.00 --end-x 300.00 --end-y 500.00 --duration 0.8",
+        ])
+
+    def test_gesture_target_needs_a_point_or_selector(self) -> None:
+        with self.assertRaisesRegex(fast_ui.FastUIError, "needs x/y"):
+            self.run_action({"type": "long_press"})
+
+    def test_press_key_repeats_inside_one_batch_led_by_a_sleep(self) -> None:
+        with mock.patch.object(fast_ui, "axe") as axe, mock.patch.object(fast_ui.time, "sleep"):
+            self.run_action({"type": "press_key", "key": "Delete", "count": 2})
+        self.assertEqual(self.steps(axe), ["sleep 0.3", "key 42", "sleep 0.05", "key 42", "sleep 0.05", "sleep 0.3"])
+        with self.assertRaisesRegex(fast_ui.FastUIError, "must be one of"):
+            self.run_action({"type": "press_key", "key": "f13"})
+
+    def test_set_switch_taps_only_when_the_value_differs(self) -> None:
+        off = self.node(AXLabel="Wi-Fi", type="CheckBox", AXValue=0, frame={"x": 0, "y": 100, "width": 300, "height": 40})
+        on = {**off, "AXValue": 1}
+        with mock.patch.object(fast_ui, "hierarchy", return_value=[on]), \
+                mock.patch.object(fast_ui, "axe") as axe:
+            self.assertEqual(self.run_action({"type": "set_switch", "label": "Wi-Fi", "on": True}), {"toggled": False})
+        axe.assert_not_called()
+        with mock.patch.object(fast_ui, "hierarchy", side_effect=[[off], [on]]), \
+                mock.patch.object(fast_ui, "axe") as axe, mock.patch.object(fast_ui.time, "sleep"):
+            self.assertEqual(self.run_action({"type": "set_switch", "label": "Wi-Fi", "on": True}), {"toggled": True})
+        # A wide (SwiftUI row) switch is touched near its trailing edge, held long enough to flip.
+        axe.assert_called_once_with("SIM", "touch", "-x", "264.00", "-y", "120.00", "--down", "--up", "--delay", "0.3")
+
+    def test_set_slider_drags_the_thumb_when_axe_lands_on_another_step(self) -> None:
+        def slider(value: str) -> dict:
+            return self.node(type="Slider", AXUniqueId="size", AXValue=value,
+                             frame={"x": 0, "y": 100, "width": 228, "height": 40})
+        scroll_bar = self.node(type="Slider", AXLabel="Vertical scroll bar, 2 pages", AXValue="0%")
+        trees = [[scroll_bar, slider("50%")], [slider("33%")], [slider("50%")]]
+        with mock.patch.object(fast_ui, "hierarchy", side_effect=trees), \
+                mock.patch.object(fast_ui, "axe") as axe, mock.patch.object(fast_ui.time, "sleep"):
+            result = self.run_action({"type": "set_slider", "id": "size", "percent": 50})
+        self.assertEqual(result, {"percent": 50.0})
+        self.assertEqual(axe.call_args_list[0].args[1:4], ("slider", "--id", "size"))
+        drag = axe.call_args_list[1].args
+        self.assertEqual((drag[1], drag[3], drag[7]), ("drag", "80.00", "114.00"))
+
+    def test_slider_percent_reads_uikit_and_swiftui_values(self) -> None:
+        self.assertEqual(fast_ui.slider_percent({"AXValue": "50%"}), 50.0)
+        self.assertEqual(fast_ui.slider_percent({"AXValue": 0.25}), 25.0)
+        self.assertEqual(fast_ui.slider_percent({"AXValue": 0}), 0.0)
+        self.assertIsNone(fast_ui.slider_percent({"AXValue": "3"}))
+
+    def test_set_picker_steps_an_index_wheel_toward_the_index(self) -> None:
+        def wheel(value: int) -> dict:
+            return self.node(type="Slider", AXValue=value, frame={"x": 0, "y": 100, "width": 300, "height": 120})
+        volume = self.node(type="Slider", AXValue=0.5)
+        trees = [[volume, wheel(0)], [volume, wheel(1)], [volume, wheel(2)]]
+        with mock.patch.object(fast_ui, "hierarchy", side_effect=trees), \
+                mock.patch.object(fast_ui, "drag") as drag:
+            self.assertEqual(self.run_action({"type": "set_picker", "index": 2}), {"steps": 2})
+        self.assertEqual(drag.call_count, 2)
+        start, end = drag.call_args.args[1:3]
+        self.assertLess(end[1], start[1])  # finger up: the next row
+
+    def test_assert_value_reads_numeric_zero_and_explains_a_miss(self) -> None:
+        field = self.node(AXUniqueId="count", AXValue=0)
+        with mock.patch.object(fast_ui, "hierarchy", return_value=[field]), mock.patch.object(fast_ui.time, "sleep"):
+            self.run_action({"type": "assert_value", "id": "count", "equals": "0"})
+            with self.assertRaisesRegex(fast_ui.FastUIError, "value is '0', expected '7'"):
+                self.run_action({"type": "assert_value", "id": "count", "equals": "7", "timeout": 0.2})
+            with self.assertRaisesRegex(fast_ui.FastUIError, "needs equals"):
+                self.run_action({"type": "assert_value", "id": "count"})
+
+    def test_assert_count_counts_each_box_once(self) -> None:
+        row = self.node(AXLabel="Row 1", type="StaticText")
+        nested = {**row}
+        other = self.node(AXLabel="Row 2", type="StaticText", frame={"x": 0, "y": 200, "width": 100, "height": 40})
+        with mock.patch.object(fast_ui, "hierarchy", return_value=[row, nested, other]), \
+                mock.patch.object(fast_ui.time, "sleep"):
+            self.assertEqual(self.run_action({"type": "assert_count", "label_contains": "Row", "count": 2}), {"count": 2})
+            with self.assertRaisesRegex(fast_ui.FastUIError, "2 nodes matched, expected at least 3"):
+                self.run_action({"type": "assert_count", "label_contains": "Row", "min": 3, "timeout": 0.2})
+
+    def test_clear_finds_a_field_picked_by_its_old_text_again(self) -> None:
+        full = self.node(type="TextField", AXValue="old@x.com")
+        empty = {**full, "AXValue": "Email"}
+        with mock.patch.object(fast_ui, "hierarchy", side_effect=[[full], [empty]]), \
+                mock.patch.object(fast_ui, "tap_point"), mock.patch.object(fast_ui, "axe"), \
+                mock.patch.object(fast_ui.time, "sleep"):
+            self.run_action({"type": "clear_text", "value": "old@x.com", "element_type": "TextField"})
+
+    def test_set_permission_needs_an_explicit_action(self) -> None:
+        with self.assertRaisesRegex(fast_ui.FastUIError, "needs action"):
+            self.run_action({"type": "set_permission", "service": "photos"})
+
+    def test_assert_value_checks_the_top_left_match(self) -> None:
+        lower = self.node(AXLabel="$5", type="StaticText", frame={"x": 0, "y": 500, "width": 50, "height": 20})
+        upper = self.node(AXLabel="$9", type="StaticText", frame={"x": 0, "y": 80, "width": 50, "height": 20})
+        with mock.patch.object(fast_ui, "hierarchy", return_value=[lower, upper]), mock.patch.object(fast_ui.time, "sleep"):
+            self.run_action({"type": "assert_value", "label_contains": "$", "attribute": "label", "equals": "$9"})
+
+    def test_enabled_selector_key(self) -> None:
+        self.assertTrue(fast_ui.matches({"AXLabel": "Pay", "enabled": False}, {"label": "Pay", "enabled": False}))
+        self.assertFalse(fast_ui.matches({"AXLabel": "Pay", "enabled": True}, {"label": "Pay", "enabled": False}))
+
+    def test_swipe_on_an_element_drags_inside_its_frame(self) -> None:
+        row = self.node(AXUniqueId="row", frame={"x": 0, "y": 100, "width": 400, "height": 50})
+        with mock.patch.object(fast_ui, "hierarchy", return_value=[row]), \
+                mock.patch.object(fast_ui, "drag") as drag, mock.patch.object(fast_ui, "swipe") as swipe:
+            self.run_action({"type": "swipe", "id": "row", "direction": "left"})
+        swipe.assert_not_called()
+        self.assertEqual(drag.call_args.args[1:3], ((320.0, 125.0), (80.0, 125.0)))
+
+    def test_back_drags_from_the_left_edge_of_the_application_frame(self) -> None:
+        content = {"type": "Group", "frame": {"x": -16, "y": -1580, "width": 434, "height": 1858}}
+        with mock.patch.object(fast_ui, "hierarchy", return_value=[content, self.APP]), \
+                mock.patch.object(fast_ui, "drag") as drag:
+            self.run_action({"type": "back"})
+        self.assertEqual(drag.call_args.args[1:3], ((2.0, 400.0), (320.0, 400.0)))
+
+    def test_simctl_backed_actions(self) -> None:
+        with mock.patch.object(fast_ui, "command", return_value=mock.Mock(stdout="copied")) as cmd, \
+                mock.patch.object(fast_ui, "simctl_with_input") as piped:
+            self.run_action({"type": "set_permission", "service": "photos", "action": "grant"})
+            self.run_action({"type": "set_location", "latitude": 10.5, "longitude": 106.7})
+            self.run_action({"type": "status_bar", "time": "9:41", "battery_level": 100})
+            self.run_action({"type": "push_notification", "title": "Hi", "body": "there"})
+            self.run_action({"type": "set_clipboard", "text": "copied"})
+        self.assertEqual(cmd.call_args_list[0].args[0], ["xcrun", "simctl", "privacy", "SIM", "grant", "photos", "com.x"])
+        self.assertEqual(cmd.call_args_list[1].args[0], ["xcrun", "simctl", "location", "SIM", "set", "10.5,106.7"])
+        self.assertEqual(
+            cmd.call_args_list[2].args[0],
+            ["xcrun", "simctl", "status_bar", "SIM", "override", "--time", "9:41", "--batteryLevel", "100"],
+        )
+        push_args, payload = piped.call_args_list[0].args
+        self.assertEqual(push_args, ["xcrun", "simctl", "push", "SIM", "com.x", "-"])
+        self.assertEqual(json.loads(payload), {"aps": {"alert": {"title": "Hi", "body": "there"}}})
+        self.assertEqual(piped.call_args_list[1].args, (["xcrun", "simctl", "pbcopy", "SIM"], "copied"))
+
+    def test_set_clipboard_fails_when_the_pasteboard_stays_empty(self) -> None:
+        with mock.patch.object(fast_ui, "simctl_with_input"), \
+                mock.patch.object(fast_ui, "command", return_value=mock.Mock(stdout="")), \
+                mock.patch.object(fast_ui.time, "sleep"):
+            with self.assertRaisesRegex(fast_ui.FastUIError, "did not reach"):
+                self.run_action({"type": "set_clipboard", "text": "x", "timeout": 0})
+
+    def test_assert_clipboard(self) -> None:
+        with mock.patch.object(fast_ui, "command", return_value=mock.Mock(stdout="copied")), \
+                mock.patch.object(fast_ui.time, "sleep"):
+            self.run_action({"type": "assert_clipboard", "equals": "copied"})
+            with self.assertRaisesRegex(fast_ui.FastUIError, "clipboard is 'copied'"):
+                self.run_action({"type": "assert_clipboard", "contains": "other", "timeout": 0})
+        # The pasteboard syncs after a moment: an empty first read is retried.
+        reads = [mock.Mock(stdout=""), mock.Mock(stdout="copied")]
+        with mock.patch.object(fast_ui, "command", side_effect=reads), mock.patch.object(fast_ui.time, "sleep"):
+            self.run_action({"type": "assert_clipboard", "equals": "copied"})
+
+    def test_press_button_maps_names_and_rejects_volume(self) -> None:
+        with mock.patch.object(fast_ui, "axe") as axe, mock.patch.object(fast_ui.time, "sleep"):
+            self.run_action({"type": "press_button", "button": "home"})
+        axe.assert_called_once_with("SIM", "button", "home", "--duration", "0.3")
+        with self.assertRaisesRegex(fast_ui.FastUIError, "volume buttons need a physical iPhone"):
+            self.run_action({"type": "press_button", "button": "volume_up"})
+
+    def test_multi_touch_actions_point_to_the_device_engine(self) -> None:
+        for kind in ("pinch", "rotate_gesture", "two_finger_tap", "set_orientation"):
+            with self.assertRaisesRegex(fast_ui.FastUIError, "fastDeviceTest"):
+                self.run_action({"type": kind})
 
 
 class AbsenceTests(unittest.TestCase):

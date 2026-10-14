@@ -99,6 +99,79 @@ Supported actions:
   "<bundle id>"`; `launch` takes `launch_arguments`.
 - `open_url`: `simctl openurl` with `url` (deep links, universal links).
 
+### Gestures, keyboard, controls, assertions and device state
+
+A gesture target is a selector (the same keys as `wait`) on the action itself, `x`/`y`, or
+for `drag` a `from`/`to` that is either a selector mapping or an `[x, y]` point. Where an
+engine cannot do an action it fails with a message naming the one that can. Columns: Sim =
+`fastSimulatorTest`, iPhone = `fastDeviceTest`.
+
+| Action | Keys | Sim | iPhone |
+|---|---|---|---|
+| `long_press` | target, `duration` (1.0 s) | ✓ | ✓ |
+| `double_tap` | target | ✓ | ✓ |
+| `two_finger_tap` | optional selector (default: whole app) | – | ✓ |
+| `drag` | `from`, `to`, `hold` (0.6 s still before moving: reorder, drag-and-drop, Home Screen icons), `duration` (0.8 s) | ✓ | ✓ |
+| `pinch` | optional selector, `scale` (>1 zooms in), `velocity` | – | ✓ |
+| `rotate_gesture` | optional selector, `degrees` (90) | – | ✓ |
+| `swipe` on an element | selector + `direction`: the swipe stays inside that frame (swipe-to-delete a row) | ✓ | ✓ |
+| `back` | swipe from the left edge | ✓ | ✓ |
+| `edge_swipe` | `edge`: `left`/`right`/`top` (Notification Center)/`bottom` (home indicator) | ✓ | ✓ |
+| `pull_to_refresh` | optional selector of the list | ✓ | ✓ |
+| `type_text` | `text`; optional selector taps the field first; `clear: true` empties it first | ✓ | ✓ |
+| `clear_text` | optional field selector (else the focused field) | ✓ | ✓ |
+| `press_key` | `key`: `return`/`enter`, `delete`/`backspace`, `tab`, `space`, `escape`; Sim also `up`/`down`/`left`/`right`; `count` | ✓ | ✓ (no arrows) |
+| `dismiss_keyboard` | optional `button` (a toolbar "Done"); else Return, repeated while the keyboard stays | ✓ | ✓ |
+| `set_switch` | selector, `on`: true/false; taps only when needed, then waits for the new value; result `toggled` | ✓ | ✓ |
+| `set_slider` | selector, `percent` 0–100, `tolerance` (2) | ✓ | ✓ |
+| `set_picker` | selector, `option` (row text) or `index` (row number) | ✓ | ✓ (`option` only) |
+| `tap_alert` | `button`: a button of a system or app alert, waited for | ✓ | ✓ |
+| `assert_value` | selector, `attribute` (`value`/`label`), `equals` / `not_equals` / `contains` / `matches` (regex); polls until `timeout` | ✓ | ✓ |
+| `assert_count` | selector, `count` / `min` / `max`; a box counts once; result `count` | ✓ | ✓ |
+| `press_button` | `button`: `home`; Sim also `lock`, `side`, `siri`, `apple_pay`; iPhone also `volume_up`, `volume_down`, `action`, `camera` | ✓ | ✓ |
+| `activate` | brings the app (or `app`) to the front without relaunching | ✓ | ✓ |
+| `set_orientation` | `portrait`, `portrait_upside_down`, `landscape_left`, `landscape_right` | – | ✓ |
+| `set_appearance` | `light` / `dark`, mid-flow | ✓ | ✓ |
+| `set_location` | `latitude`, `longitude`, or `clear: true` | ✓ | ✓ (iOS 16.4+) |
+| `set_permission` | `service` (`photos`, `camera`, `location`, `contacts`, `microphone`, …), `action` (required) `grant`/`revoke`/`reset` | ✓ | `reset` only |
+| `push_notification` | `title`/`body`, or a whole APNs `payload`; `app` | ✓ | – |
+| `status_bar` | `time`, `battery_level`, `battery_state`, `wifi_bars`, `cellular_bars`, `data_network`, `operator_name`, …, or `clear: true` | ✓ | – |
+| `set_clipboard` / `assert_clipboard` | `text` / `equals`, `contains`, … | ✓ | ✓ |
+| `open_url` | `url` | ✓ | ✓ (iOS 16.4+) |
+
+Selectors also take `enabled: false` to find a disabled control (`assert_count` with
+`"enabled": false, "max": 0` proves nothing on screen is disabled); `dump` marks disabled nodes.
+
+What the Simulator needs, measured on Xcode 27.0 with AXe 1.8 and iOS 27:
+
+- A switch flips only for a touch held ~0.3 s; AXe's taps, `--tap-style physical` included,
+  leave it alone. `set_switch` does this. AXe reports a switch as `CheckBox` on iOS 27 (it
+  accepts `Switch` too); a scroll view's scroll bars are `Slider`s, so `set_slider` skips them.
+- The back gesture, row swipe actions and edge swipes ignore `axe swipe` (a fling); the engine
+  sends them as `axe drag`, every touch move. Plain `swipe` without a selector is still a fling,
+  so scrolling keeps its momentum.
+- A key is dropped when AXe sends it right as a session opens or closes, like a tap: keys and
+  typed text go out in one `axe batch` with a sleep before and after (a lone `axe type` lost
+  the last character). iOS still applies smart punctuation: `'` and `"` arrive curly, and two
+  spaces become ". ".
+- The status bar may be missing from the AX tree: prove a `status_bar` override with a
+  `screenshot` (simctl shows `9:41` as `09:41`).
+- AX reports an empty text field's value as its placeholder. A SwiftUI `Slider` reports a
+  fraction (`0.5`), a UIKit one a percentage (`50%`); a SwiftUI wheel `Picker` is a `Slider`
+  whose value is the row index, so pick by `index` there, by `option` on a UIKit picker.
+- A system alert that appears while the flow is typing swallows the tap that focused the field.
+  When the app asks for a permission at launch, answer it first with `tap_alert`.
+- SwiftUI `.draggable` / `.dropDestination` never lifts on the Simulator (a 1.5 s hold
+  included); drag-and-drop between views needs the iPhone. Home Screen icons do move with
+  `drag`.
+- `push_notification` fails until the app has notification permission; the error says so.
+- `simctl pbcopy` exits 0 but leaves an iOS 27 simulator's pasteboard empty, so
+  `set_clipboard` fails there with that message; use an Xcode 26 simulator or the iPhone.
+- `double_tap` sends both taps in one AXe session, which is a double tap only while AXe
+  delivers a touch in well under 0.3 s. On a slow Simulator (measured 0.73 s per touch event
+  right after a CoreSimulator restart) the two taps arrive as two single taps; prove double
+  taps on the iPhone, where XCUITest's `doubleTap()` has no such gap.
+
 Any tap or swipe may carry `"settle": true` (or a number of seconds, default 2.5): after the
 gesture the engine polls until two consecutive hierarchies match, then continues. It costs the
 whole timeout on a screen that never stops animating, so it is opt-in per action;

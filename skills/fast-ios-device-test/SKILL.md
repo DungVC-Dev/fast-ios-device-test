@@ -10,7 +10,7 @@ description: Use when asked to run, verify, re-test, or record an iOS screen or 
 | Need | Use |
 |---|---|
 | Prove a behavior, rerun it, run a matrix, record video, report | this skill: `fastSimulatorTest <flow.json>` / `fastDeviceTest <flow.json>` |
-| Explore an unknown screen, pinch/drag/rotate, read the app's console log | a subagent with Xcode 27's `device-interaction` skill (`DeviceInteraction*` MCP tools), on a **different** simulator; then write the flow here |
+| Explore an unknown screen, read the app's console log | a subagent with Xcode 27's `device-interaction` skill (`DeviceInteraction*` MCP tools), on a **different** simulator; then write the flow here |
 | Watch the videos of a `--record` session | `fastUIReview` — read [references/review.md](references/review.md) first |
 | One captioned sheet of chosen screenshots for a PR or ticket | `fastEvidenceSheet <spec.json>` — "Evidence sheet" in [references/usage.md](references/usage.md) |
 | Physical iPhone | read [references/device.md](references/device.md) first |
@@ -60,9 +60,18 @@ Everything the engine needs is in the flow; there is no per-project config.
   nobody else runs the app on. `derived_data` is its own folder, never Xcode's DerivedData;
   `app_path` is the `.app` inside it. `build_inputs` (source folders + `project.pbxproj`) drive
   the build cache; without them every run rebuilds.
-- Selector keys on `wait`, `wait_absent`, `assert_absent`, `tap_first`, `tap_label`, `scroll_to`:
-  `label` (exact), `label_contains`, `id` (accessibilityIdentifier), `value` (a switch's "1"/"0",
-  a field's text), `element_type`, `label_is_empty`, `frame` bounds (`{"min_y": 400}`).
+- Selector keys on `wait`, `wait_absent`, `assert_absent`, `tap_first`, `tap_label`, `scroll_to`
+  and every gesture, control and assertion action: `label` (exact), `label_contains`, `id`
+  (accessibilityIdentifier), `value` (a switch's "1"/"0", a field's text), `element_type`,
+  `enabled`, `label_is_empty`, `frame` bounds (`{"min_y": 400}`).
+- Beyond taps and swipes: `long_press`, `double_tap`, `drag`, `back`, `edge_swipe`,
+  `pull_to_refresh`, `type_text` into a named field (`clear: true`), `clear_text`, `press_key`,
+  `dismiss_keyboard`, `set_switch`, `set_slider`, `set_picker`, `tap_alert`, `assert_value`,
+  `assert_count`, `press_button`, `set_location`, `set_permission`, `push_notification`,
+  `status_bar`, clipboard; on the iPhone also `pinch`, `rotate_gesture`, `two_finger_tap`,
+  `set_orientation`. Keys and which engine runs what: the table in
+  [references/usage.md](references/usage.md#gestures-keyboard-controls-assertions-and-device-state).
+  Prove a control changed with `assert_value`, not by the tap succeeding.
 - `tap_label` matches a `Button`; when the flow sets no `element_type` and exactly one node of
   any type has the label, it taps that node and reports `fallback_type`.
 
