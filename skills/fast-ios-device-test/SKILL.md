@@ -79,9 +79,12 @@ Everything the engine needs is in the flow; there is no per-project config.
 
 1. Write the smallest version-1 flow for the requested behavior in a temporary directory
    (delete it afterwards, one `rm <file>` per file).
-2. Unknown label → one `{"type": "dump"}` at that point: the PASS line prints the visible
-   labels and `<name>-ui.json` has label, type, id, value and tap `center` per node. Never
-   fake a `wait` on an impossible label to get a dump.
+2. Unknown screen → build the flow on the live app instead of rerunning it:
+   `fastSimulatorTest start <draft.json>` (only `app` + `setup`), then one
+   `fastSimulatorTest do '<action json>'` per step (each prints the labels after it, ~1–2 s),
+   then `fastSimulatorTest save <flow.json>`, which writes the steps and verifies them with
+   one full run. For a single unknown label in an existing flow, one `{"type": "dump"}` at
+   that point is enough. Never fake a `wait` on an impossible label to get a dump.
 3. Run `fastSimulatorTest <flow.json>`. It boots the simulator, reuses the cached app when
    build inputs are unchanged, fresh-installs, seeds `setup.preferences`, prints one PASS/FAIL line.
 4. On FAIL the line lists `visible labels: [Add Widget (StaticText), …]` with types, says when
@@ -96,8 +99,13 @@ Everything the engine needs is in the flow; there is no per-project config.
   (max 2.5 s) — use it on screens that keep animating, not by default.
 - "Must not show" → `assert_absent` (`seconds` ≤ 8); "closes" → `wait_absent`. A successful
   tap proves nothing about absence.
-- Fresh install wipes the defaults domain, and the engine removes seeded preferences after every
-  run (`--keep-state` to inspect). Seed Codable values as `{"$json_data": …}`.
+- Fresh install wipes the defaults domain, and the engine undoes what a run changed (seeded
+  preferences, appearance, location, status bar, granted permissions; the app is terminated)
+  even when the run is interrupted (`--keep-state` to inspect). One run per simulator: a second
+  one fails with `simulator busy`. Seed Codable values as `{"$json_data": …}`.
+- A launch permission prompt may never appear right after a boot: answer it with
+  `tap_alert` `"system": true, "optional": true`.
+- Test builds skip SwiftLint (`lint=shimmed`); `"skip_lint": false` in `app` lints.
 - Apple's own sheets are not in the accessibility tree: prove them with `screenshot`.
 - Rerunning a user's existing flow: keep its values, list violations in the report.
 

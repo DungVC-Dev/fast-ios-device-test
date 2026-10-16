@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### Faster to prepare, safer to reuse a simulator
+
+Found and measured with a debate-and-experiment pass on the fixture app (load 20–390 on a
+shared Mac; ratios from interleaved runs):
+
+- **`start` / `do` / `labels` / `save`:** build a flow on the live app one action at a time,
+  then save it and verify it with one fresh-install run. Exploring a screen two steps deep
+  went from 49 s and 5 flow rewrites (rerun + `dump`) to 15 s and one write.
+- **SwiftLint skipped in test builds** through a no-op `swiftlint` shim on `PATH` (no-op
+  build 6–9 s → 2–3 s; a lint error no longer fails the test build). `lint=not-shimmable`
+  names phases the shim cannot reach; `"skip_lint": false` / `FAST_UI_SKIP_LINT=0` lints.
+- **Build failures say why:** the failing phase and first `error:` line (they were read from
+  stderr while `-quiet` prints them on stdout), full log in `<derived_data>/.fastui-build.log`.
+- **No state left for the next run:** a per-simulator lock (`simulator busy`), a journal of
+  what the run changed, undone in teardown and on SIGTERM / SIGHUP / Ctrl-C (`status=interrupted`),
+  and repaired by the next run after a SIGKILL (`WARN dirty=1`). Appearance changed by
+  `set_appearance`, status bar overrides, location and granted permissions no longer leak
+  (a following flow used to PASS wrongly in dark mode). The app is terminated at the end, and
+  relaunched with `--terminate-running-process` when `fresh_install` is false.
+  Keychain reset on fresh install for `fastui-…` simulators or `setup.reset_keychain`.
+- **System alerts:** `optional_permission_labels` taps only buttons inside a system alert,
+  never an in-app button with the same label; `tap_alert` takes `system` and `optional`;
+  an alert left on screen is reported (`WARN system_alert_seen`, `setup.system_alert: "fail"`);
+  `scroll_to` stops at once when a system alert covers the app.
+
 ### Every interaction a real UI test needs
 
 Flows could tap, swipe, type and wait. They can now drive the whole surface of an app, with the
