@@ -91,8 +91,8 @@ Everything the engine needs is in the flow; there is no per-project config.
   run (`--keep-state` to inspect). Seed Codable values as `{"$json_data": …}`.
 - Apple's own sheets are not in the accessibility tree: prove them with `screenshot`, and close
   one that blocks the flow (the App Store review sheet) with `tap_point`.
-- A flow with `open_url` declares `Open` and never `Cancel` in `optional_permission_labels`:
-  `Cancel` dismisses the "Open in …?" prompt and the link never arrives.
+- `open_url` delivers a link with no prompt. A link tapped in Safari asks "Open in …?": that flow
+  declares `Open` and never `Cancel`, or the runner cancels the link.
 - Rerunning a user's existing flow: keep its values, list violations in the report.
 
 Every path the tools print (`artifacts=`, `screenshot=`, `ui=`, `video=`, `path=`) is a `file://`

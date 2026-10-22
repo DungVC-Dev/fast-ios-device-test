@@ -4,9 +4,9 @@
 
 ### Docs
 
-- A flow with `open_url` declares `Open`, not `Cancel`, in `optional_permission_labels`: the
-  StoreKit `Cancel` also dismisses the "Open in …?" prompt, so the deep link never arrived.
 - The App Store review sheet is not in the accessibility tree; close it with `tap_point`.
+- `open_url` delivers a link with no prompt; a link tapped in Safari raises "Open in …?", where the
+  StoreKit `Cancel` label would drop it, so that flow declares `Open`.
 
 ## 1.3.0 — 2026-10-13
 
