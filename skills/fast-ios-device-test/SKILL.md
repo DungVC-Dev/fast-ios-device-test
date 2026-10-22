@@ -89,7 +89,10 @@ Everything the engine needs is in the flow; there is no per-project config.
   tap proves nothing about absence.
 - Fresh install wipes the defaults domain, and the engine removes seeded preferences after every
   run (`--keep-state` to inspect). Seed Codable values as `{"$json_data": …}`.
-- Apple's own sheets are not in the accessibility tree: prove them with `screenshot`.
+- Apple's own sheets are not in the accessibility tree: prove them with `screenshot`, and close
+  one that blocks the flow (the App Store review sheet) with `tap_point`.
+- A flow with `open_url` declares `Open` and never `Cancel` in `optional_permission_labels`:
+  `Cancel` dismisses the "Open in …?" prompt and the link never arrives.
 - Rerunning a user's existing flow: keep its values, list violations in the report.
 
 Every path the tools print (`artifacts=`, `screenshot=`, `ui=`, `video=`, `path=`) is a `file://`

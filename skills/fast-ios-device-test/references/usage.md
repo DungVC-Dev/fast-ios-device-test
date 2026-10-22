@@ -97,7 +97,9 @@ Supported actions:
 - `type_text`: type `text` into the focused field (US keyboard characters).
 - `launch` / `terminate`: `simctl launch` / `terminate` the flow's app, or `"app":
   "<bundle id>"`; `launch` takes `launch_arguments`.
-- `open_url`: `simctl openurl` with `url` (deep links, universal links).
+- `open_url`: `simctl openurl` with `url` (deep links, universal links). A custom scheme first
+  raises "Open in “<App>”?": declare `Open` in `setup.optional_permission_labels`, and leave
+  `Cancel` out of that flow, or the runner cancels the link and the app never receives it.
 
 Any tap or swipe may carry `"settle": true` (or a number of seconds, default 2.5): after the
 gesture the engine polls until two consecutive hierarchies match, then continues. It costs the
@@ -137,7 +139,13 @@ permission (`Allow` / `Don’t Allow`), App Tracking Transparency (`Allow Tracki
 / `Ask App Not to Track`), StoreKit sandbox sign-in "You must enter both your
 Apple Account and password." (`Cancel`). Declare all of them in
 `setup.optional_permission_labels` for any flow that reaches a paywall or
-StoreKit call; the sheet persists across fresh installs.
+StoreKit call; the sheet persists across fresh installs. A flow that uses `open_url` is the
+exception: `Cancel` also matches the "Open in “<App>”?" prompt and silently drops the link, so
+declare `Open` there instead.
+
+The App Store review sheet ("Enjoying <App>? … Not Now", from `requestReview`) is not in the
+accessibility tree, so no label can dismiss it, and it swallows the next tap while it is up. Find
+`Not Now` on a `screenshot` and close it with `tap_point` before the next tap.
 
 `tap_nearest` may declare a `success` selector and one or more `dismiss`
 selectors. If a declared modal appears instead of success, the runner dismisses
