@@ -24,7 +24,10 @@ final class FlowRunner: XCTestCase {
 
     private var apps: [String: XCUIApplication] = [:]
     private var current: XCUIApplication?
-    private var promptLabels: [String] = []
+    // `optional_permission_labels` of the request being served (see PromptRules), and what
+    // the runner tapped on its own; both start empty on every request.
+    private var promptEntries: [Any] = []
+    private var dismissed: [[String: String]] = []
     private var lastLabels: [String] = []
     private var screenBounds = CGRect.infinite
     private var inlineScreenshots = false
@@ -33,12 +36,13 @@ final class FlowRunner: XCTestCase {
 
     func testFlow() throws {
         continueAfterFailure = false
-        let report: [String: Any]
+        var report: [String: Any]
         do {
             report = runFlow(try decode(ProcessInfo.processInfo.environment["FAST_FLOW"]))
         } catch {
             report = ["status": "fail", "step": "prepare", "error": message(error)]
         }
+        if !dismissed.isEmpty { report["dismissed"] = dismissed }
         attachText("zz_result.json", json(report))
     }
 
@@ -61,6 +65,7 @@ final class FlowRunner: XCTestCase {
             screenshots = []
             var response = handle(request.body, isStopped: &isStopped)
             response["screenshots"] = screenshots
+            if !dismissed.isEmpty { response["dismissed"] = dismissed }
             request.reply(json(response, pretty: false))
         }
         server.stop()
@@ -70,13 +75,19 @@ final class FlowRunner: XCTestCase {
 // MARK: - Requests
 private extension FlowRunner {
     func handle(_ body: Data, isStopped: inout Bool) -> [String: Any] {
+        // A request taps only the prompts it declares itself: labels from an earlier flow
+        // would otherwise answer a prompt that a later `do` meant to look at.
+        promptEntries = []
+        dismissed = []
+        var idleNote: [String: Any] = [:]
         do {
             guard let request = try JSONSerialization.jsonObject(with: body) as? [String: Any],
                   let operation = request["op"] as? String else {
                 throw Failure(message: "request needs an op")
             }
+            promptEntries = request["optional_permission_labels"] as? [Any] ?? []
             let skipIdle = (request["wait_for_idle"] as? Bool) == false
-            if skipIdle { Quiescence.disable() }
+            if skipIdle { idleNote["wait_for_idle"] = Quiescence.disable() ? false : "unsupported" }
             defer { if skipIdle { Quiescence.restore() } }
             switch operation {
             case "ping":
@@ -92,15 +103,15 @@ private extension FlowRunner {
                 guard current != nil else { throw Failure(message: "no current app: add \"app\" to the action") }
                 let result = try execute(action, index: 1) ?? [:]
                 _ = snapshotNodes()
-                return ["status": "pass", "result": result, "labels": lastLabels]
+                return ["status": "pass", "result": result, "labels": lastLabels].merging(idleNote) { first, _ in first }
             case "actions":
-                return runActions(request["actions"] as? [[String: Any]] ?? [])
+                return runActions(request["actions"] as? [[String: Any]] ?? []).merging(idleNote) { first, _ in first }
             default:
                 throw Failure(message: "unknown op '\(operation)'")
             }
         } catch {
             if current != nil { _ = snapshotNodes() }
-            return ["status": "fail", "error": message(error), "labels": lastLabels]
+            return ["status": "fail", "error": message(error), "labels": lastLabels].merging(idleNote) { first, _ in first }
         }
     }
 
@@ -134,7 +145,7 @@ private extension FlowRunner {
         do {
             let app = flow["app"] as? [String: Any] ?? [:]
             guard let bundleID = app["bundle_id"] as? String else { throw Failure(message: "missing app.bundle_id") }
-            promptLabels = setup["optional_permission_labels"] as? [String] ?? []
+            promptEntries = setup["optional_permission_labels"] as? [Any] ?? []
             switch setup["appearance"] as? String {
             case "dark": XCUIDevice.shared.appearance = .dark
             case "light": XCUIDevice.shared.appearance = .light
@@ -149,6 +160,7 @@ private extension FlowRunner {
             } else {
                 target.activate()
             }
+            awaitForeground(target)
 
             let actions = flow["actions"] as? [[String: Any]] ?? []
             for (offset, action) in actions.enumerated() {
@@ -180,9 +192,11 @@ private extension FlowRunner {
         switch kind {
         case "activate":
             app.activate()
+            awaitForeground(app)
         case "launch":
             if let arguments = action["launch_arguments"] as? [String] { app.launchArguments = arguments }
             app.launch()
+            awaitForeground(app)
         case "terminate":
             app.terminate()
         case "wait":
@@ -219,18 +233,21 @@ private extension FlowRunner {
                 }
                 node = resolveTapTarget(nodes, selector, explicitType: explicitType)
             }
-            if let node {
-                tap(node.frame.midX, node.frame.midY, postDelay)
-                if let expected = selector["element_type"] as? String, !typeMatches(node.type, expected) {
-                    return ["fallback_type": node.type]
+            if let found = node {
+                let target = try settled(found) { self.resolveTapTarget($0, selector, explicitType: explicitType) }
+                tap(target.frame.midX, target.frame.midY, postDelay)
+                if let expected = selector["element_type"] as? String, !typeMatches(target.type, expected) {
+                    return ["fallback_type": target.type]
                 }
             }
         case "tap_first":
             let nodes = try waitNodes(timeout) { nodes in nodes.contains { self.matches($0, action) } }
             let keys = action["sort"] as? [String] ?? ["y", "x"]
-            guard let node = sorted(nodes.filter { matches($0, action) }, by: keys).first else {
+            func first(_ nodes: [Node]) -> Node? { sorted(nodes.filter { matches($0, action) }, by: keys).first }
+            guard let found = first(nodes) else {
                 throw Failure(message: "no node matched tap_first at action \(index)")
             }
+            let node = try settled(found, first)
             tap(node.frame.midX, node.frame.midY, postDelay)
         case "tap_nearest":
             try tapNearest(action, timeout: timeout, postDelay: postDelay)
@@ -257,6 +274,7 @@ private extension FlowRunner {
         case "pause":
             Thread.sleep(forTimeInterval: number(action["seconds"]) ?? 1)
         case "screenshot":
+            clearPrompts()
             let name = action["name"] as? String ?? String(format: "step-%02d", index)
             capture(name)
             return ["screenshot": name]
@@ -281,10 +299,7 @@ private extension FlowRunner {
             throw Failure(message: "tap_nearest needs target and anchor selectors")
         }
         let axis = action["axis"] as? String ?? "y"
-        func resolveAndTap() throws {
-            let nodes = try waitNodes(timeout) { nodes in
-                nodes.contains { self.matches($0, target) } && nodes.contains { self.matches($0, anchor) }
-            }
+        func nearest(_ nodes: [Node]) throws -> Node {
             let targets = nodes.filter { matches($0, target) }
             // XCUITest nests a text in containers with the same label and frame; those are one anchor.
             let anchorValues = Set(nodes.filter { matches($0, anchor) }.map { value($0, axis).rounded() })
@@ -294,7 +309,14 @@ private extension FlowRunner {
             guard let nearest = targets.min(by: { abs(value($0, axis) - anchorValue) < abs(value($1, axis) - anchorValue) }) else {
                 throw Failure(message: "tap_nearest found no target")
             }
-            tap(nearest.frame.midX, nearest.frame.midY, postDelay)
+            return nearest
+        }
+        func resolveAndTap() throws {
+            let nodes = try waitNodes(timeout) { nodes in
+                nodes.contains { self.matches($0, target) } && nodes.contains { self.matches($0, anchor) }
+            }
+            let node = try settled(try nearest(nodes)) { try? nearest($0) }
+            tap(node.frame.midX, node.frame.midY, postDelay)
         }
 
         try resolveAndTap()
@@ -377,20 +399,71 @@ private extension FlowRunner {
         throw Failure(message: "timed out waiting for UI selector; visible labels: \(lastLabels)")
     }
 
-    // Permission alerts on a device belong to SpringBoard, not the app under test.
+    // Permission alerts on a device belong to SpringBoard, not the app under test. One
+    // snapshot gives the alert's title and buttons; PromptRules picks the button.
     func dismissPrompt() -> Bool {
-        guard !promptLabels.isEmpty else { return false }
+        guard !promptEntries.isEmpty else { return false }
         for owner in [springboard] + [current].compactMap({ $0 }) {
-            for label in promptLabels {
-                let button = owner.alerts.buttons[label]
-                if button.exists {
-                    button.tap()
-                    Thread.sleep(forTimeInterval: 0.3)
-                    return true
-                }
-            }
+            let alert = owner.alerts.firstMatch
+            guard alert.exists, let snapshot = try? alert.snapshot() else { continue }
+            let parts = descendants(of: snapshot)
+            let title = snapshot.label.isEmpty
+                ? parts.first { $0.elementType == .staticText }?.label ?? ""
+                : snapshot.label
+            let buttons = parts.filter { $0.elementType == .button }.map(\.label)
+            guard let choice = PromptRules.choice(title: title, buttons: buttons, entries: promptEntries) else { continue }
+            alert.buttons[choice].firstMatch.tap()
+            // An alert still animating in can ignore the tap and get it again: report it once.
+            let entry = ["title": title, "tapped": choice]
+            if dismissed.last != entry { dismissed.append(entry) }
+            Thread.sleep(forTimeInterval: 0.3)
+            return true
         }
         return false
+    }
+
+    func descendants(of element: XCUIElementSnapshot) -> [XCUIElementSnapshot] {
+        element.children.flatMap { [$0] + descendants(of: $0) }
+    }
+
+    // With the idle wait off a target can still be sliding in (a push, a sheet): tap it once
+    // two snapshots agree on its frame, or at its latest frame after 1.5 s.
+    func settled(_ node: Node, _ resolve: ([Node]) -> Node?) throws -> Node {
+        guard Quiescence.isActive else { return node }
+        let last = Settle.stable(first: Optional(node), timeout: 1.5, read: { resolve(self.snapshotNodes()) },
+                                 same: { lhs, rhs in
+                                     guard let lhs, let rhs else { return false }
+                                     return self.frameKey(lhs) == self.frameKey(rhs)
+                                 })
+        guard let last else {
+            throw Failure(message: "the target left the screen while it settled; visible labels: \(lastLabels)")
+        }
+        return last
+    }
+
+    // With the idle wait off `launch()` and `activate()` return before the app has drawn its
+    // screen: wait until it is frontmost and its layout stops moving. Only frames count, so a
+    // ticking clock or a counter does not keep it waiting.
+    func awaitForeground(_ app: XCUIApplication) {
+        guard Quiescence.isActive else { return }
+        _ = app.wait(for: .runningForeground, timeout: 10)
+        _ = Settle.stable(first: layout(snapshotNodes()), timeout: 2, read: { self.layout(self.snapshotNodes()) },
+                          same: { !$0.isEmpty && $0 == $1 })
+    }
+
+    func layout(_ nodes: [Node]) -> [String] {
+        nodes.map { "\($0.type) \(frameKey($0))" }
+    }
+
+    func frameKey(_ node: Node) -> String {
+        "\(node.frame.minX.rounded()),\(node.frame.minY.rounded()),\(node.frame.width.rounded()),\(node.frame.height.rounded())"
+    }
+
+    // A screenshot reads no tree, so a prompt raised after the flow's last wait (during a
+    // `pause`) would end up in the image; the 8 s cap matches the Simulator engine.
+    func clearPrompts() {
+        let deadline = Date().addingTimeInterval(8)
+        while dismissPrompt(), Date() < deadline {}
     }
 
     // Port of the Simulator engine's resolve_tap_target: the first full match, else — when the
@@ -404,9 +477,7 @@ private extension FlowRunner {
         // target, and the innermost (last in walk order) is the one to tap. The application
         // and window roots carry the app's name and are never a target.
         let candidates = nodes.filter { matches($0, loose) && !["Application", "Window"].contains($0.type) }
-        let frames = Set(candidates.map {
-            "\($0.frame.minX.rounded()),\($0.frame.minY.rounded()),\($0.frame.width.rounded()),\($0.frame.height.rounded())"
-        })
+        let frames = Set(candidates.map(frameKey))
         guard frames.count == 1 else { return nil }
         return candidates.last
     }

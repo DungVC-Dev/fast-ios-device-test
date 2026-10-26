@@ -11,6 +11,9 @@ import XCTest
 enum Quiescence {
     private static var originals: [(Method, IMP)] = []
 
+    // True while the wait is switched off: taps and launches then settle on their own.
+    static var isActive: Bool { !originals.isEmpty }
+
     @discardableResult
     static func disable() -> Bool {
         guard originals.isEmpty else { return true }

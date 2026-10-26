@@ -7,6 +7,8 @@ from __future__ import annotations
 import importlib.util
 import itertools
 import json
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -149,6 +151,23 @@ class ActionTests(unittest.TestCase):
             result = fast_ui.execute_action({"type": "dump", "name": "home"}, "SIM", artifacts, 3, [])
             self.assertEqual(result["labels"], ["Widgets"])
             self.assertTrue((artifacts / "home-ui.json").exists())
+
+    def test_screenshot_closes_a_declared_prompt_before_capturing(self) -> None:
+        prompt = {"AXLabel": "Don’t Allow", "type": "Button", "frame": {"x": 40, "y": 400, "width": 140, "height": 48}}
+        calls = mock.Mock()
+        with mock.patch.object(fast_ui, "hierarchy", side_effect=[[prompt], []]), \
+                mock.patch.object(fast_ui, "tap_point", calls.tap), \
+                mock.patch.object(fast_ui, "screenshot", calls.screenshot), \
+                mock.patch.object(fast_ui.time, "sleep"):
+            fast_ui.execute_action({"type": "screenshot", "name": "home.png"}, "SIM", Path("/tmp"), 1, ["Don’t Allow"])
+        self.assertEqual([call[0] for call in calls.mock_calls], ["tap", "screenshot"])
+        calls.tap.assert_called_once_with("SIM", 110.0, 424.0, 0.08)
+
+    def test_screenshot_reads_no_tree_when_the_flow_declares_no_prompt(self) -> None:
+        with mock.patch.object(fast_ui, "hierarchy") as tree, mock.patch.object(fast_ui, "screenshot") as shot:
+            fast_ui.execute_action({"type": "screenshot", "name": "home.png"}, "SIM", Path("/tmp"), 1, [])
+        tree.assert_not_called()
+        shot.assert_called_once()
 
     def test_label_contains_matches_a_fragment(self) -> None:
         node = {"AXLabel": "Office, No Internet Connection", "type": "Cell", "frame": {}}
@@ -293,6 +312,53 @@ class ActionTests(unittest.TestCase):
                 fast_ui.wait_selector("SIM", {"label": "Missing"}, 0.01, [])
         self.assertIn("Smart", str(caught.exception))
         self.assertIn("Widgets", str(caught.exception))
+
+
+def prompt_sheet(title: str, *buttons: str) -> list[dict]:
+    """A system prompt as describe-ui reports it on iOS 26: a Sheet titled with the prompt's
+    title, the title again as StaticText, and the buttons stacked inside the sheet."""
+    nodes = [
+        {"AXLabel": title, "type": "Sheet", "frame": {"x": 27.5, "y": 131.5, "width": 320, "height": 404}},
+        {"AXLabel": title, "type": "StaticText", "frame": {"x": 57.5, "y": 245.5, "width": 260, "height": 64.5}},
+    ]
+    for offset, label in enumerate(buttons):
+        nodes.append({"AXLabel": label, "type": "Button",
+                      "frame": {"x": 43.5, "y": 360 + 56 * offset, "width": 288, "height": 48}})
+    return nodes
+
+
+TRACKING = "Allow “App” to track your activity across other companies’ apps and websites?"
+NOTIFICATIONS = "“App” Would Like to Send You Notifications"
+LOCATION = "Allow “App” to use your location?"
+PROMPT_RULES = [
+    {"title_contains": "notifications", "tap": "Allow"},
+    {"title_contains": "track", "tap": "Ask App Not to Track"},
+]
+
+
+class PromptRuleTests(unittest.TestCase):
+    def test_a_button_name_shared_by_two_prompts_follows_each_prompts_rule(self) -> None:
+        tracking = fast_ui.prompt_target(prompt_sheet(TRACKING, "Ask App Not to Track", "Allow"), PROMPT_RULES)
+        notifications = fast_ui.prompt_target(prompt_sheet(NOTIFICATIONS, "Don’t Allow", "Allow"), PROMPT_RULES)
+        self.assertEqual(tracking["AXLabel"], "Ask App Not to Track")
+        self.assertEqual(notifications["AXLabel"], "Allow")
+
+    def test_a_bare_label_never_answers_a_prompt_a_rule_was_written_for(self) -> None:
+        nodes = prompt_sheet(LOCATION, "Allow Once", "Allow While Using App", "Don’t Allow")
+        entries = [{"title_contains": "Location", "tap": "Always Allow"}, "Don’t Allow"]
+        self.assertIsNone(fast_ui.prompt_target(nodes, entries))
+
+    def test_bare_labels_answer_in_the_order_they_are_declared(self) -> None:
+        nodes = prompt_sheet(NOTIFICATIONS, "Don’t Allow", "Allow")
+        self.assertEqual(fast_ui.prompt_target(nodes, ["Allow", "Don’t Allow"])["AXLabel"], "Allow")
+
+    def test_wait_taps_the_rules_button_and_carries_on(self) -> None:
+        sheet = prompt_sheet(TRACKING, "Ask App Not to Track", "Allow")
+        home = [{"AXLabel": "Home", "type": "Button", "frame": {"x": 0, "y": 0, "width": 50, "height": 50}}]
+        with mock.patch.object(fast_ui, "hierarchy", side_effect=[sheet, home]), \
+                mock.patch.object(fast_ui, "tap_point") as tap, mock.patch.object(fast_ui.time, "sleep"):
+            fast_ui.execute_action({"type": "wait", "label": "Home"}, "SIM", Path("/tmp"), 1, PROMPT_RULES)
+        tap.assert_called_once_with("SIM", 187.5, 384.0, 0.08)
 
 
 class AbsenceTests(unittest.TestCase):
@@ -667,6 +733,23 @@ if __name__ == "__main__":
     unittest.main(verbosity=1)
 
 
+@unittest.skipUnless(shutil.which("swiftc"), "needs swiftc (Xcode)")
+class RunnerLogicTests(unittest.TestCase):
+    def test_device_runner_prompt_rules_and_settling(self) -> None:
+        here = Path(__file__).resolve().parent
+        runner = here.parent / "device-runner" / "UITests"
+        with tempfile.TemporaryDirectory() as raw:
+            binary = Path(raw) / "checks"
+            build = subprocess.run(
+                ["swiftc", "-parse-as-library", str(runner / "PromptRules.swift"), str(runner / "Settle.swift"),
+                 str(here / "runner_logic_checks.swift"), "-o", str(binary)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(build.returncode, 0, build.stderr)
+            checks = subprocess.run([str(binary)], capture_output=True, text=True)
+        self.assertEqual(checks.returncode, 0, checks.stdout + checks.stderr)
+
+
 class DeviceLauncherTests(unittest.TestCase):
     def test_save_dumps_writes_nodes_and_keeps_the_report_short(self) -> None:
         import fast_device
@@ -706,6 +789,67 @@ class DeviceLauncherTests(unittest.TestCase):
             fast_device.run_command(["do", '{"type":"wait","label":"A"}', "--out", raw])
         self.assertIs(request.call_args_list[0].args[1]["wait_for_idle"], False)
         self.assertNotIn("wait_for_idle", request.call_args_list[1].args[1])
+
+    def run_do(self, *argv: str, reply: dict | None = None) -> tuple[mock.Mock, str]:
+        import contextlib
+        import io
+        import fast_device
+        reply = reply or {"status": "pass", "results": [], "labels": []}
+        out = io.StringIO()
+        with mock.patch.object(fast_device, "resolve_device", return_value={"udid": "U", "name": "X"}), \
+                mock.patch.object(fast_device, "start_server"), \
+                mock.patch.object(fast_device, "request", return_value=dict(reply)) as request, \
+                tempfile.TemporaryDirectory() as raw, contextlib.redirect_stdout(out):
+            fast_device.run_command(["do", *argv, "--out", raw])
+        return request, out.getvalue()
+
+    def test_do_sends_only_the_prompt_labels_it_declares(self) -> None:
+        request, _ = self.run_do('{"type":"wait","label":"A"}', "--prompt-labels", "Allow, Don’t Allow")
+        self.assertEqual(request.call_args.args[1]["optional_permission_labels"], ["Allow", "Don’t Allow"])
+        request, _ = self.run_do('{"type":"wait","label":"A"}', "--prompt-labels",
+                                 '[{"title_contains":"track","tap":"Ask App Not to Track"},"Cancel"]')
+        self.assertEqual(request.call_args.args[1]["optional_permission_labels"],
+                         [{"title_contains": "track", "tap": "Ask App Not to Track"}, "Cancel"])
+        request, _ = self.run_do('{"type":"wait","label":"A"}')
+        self.assertNotIn("optional_permission_labels", request.call_args.args[1])
+
+    def test_do_refuses_a_prompt_rule_without_a_button(self) -> None:
+        import fast_device
+        with self.assertRaisesRegex(fast_device.FastDeviceError, "tap"):
+            self.run_do('{"type":"wait","label":"A"}', "--prompt-labels", '[{"title_contains":"track"}]')
+
+    def test_do_line_names_each_dismissed_prompt_and_an_idle_wait_it_could_not_skip(self) -> None:
+        reply = {"status": "pass", "results": [], "labels": [], "wait_for_idle": "unsupported",
+                 "dismissed": [{"title": "Allow “App” to use your location?", "tapped": "Allow While Using App"}]}
+        _, out = self.run_do('{"type":"wait","label":"A"}', "--no-idle-wait", reply=reply)
+        self.assertIn("wait_for_idle=unsupported", out)
+        self.assertIn('dismissed=["Allow “App” to use your location? → Allow While Using App"]', out)
+        _, quiet = self.run_do('{"type":"wait","label":"A"}')
+        self.assertNotIn("dismissed=", quiet)
+        self.assertNotIn("wait_for_idle=", quiet)
+
+    def test_flow_refuses_a_prompt_rule_without_a_title(self) -> None:
+        import fast_device
+        with self.assertRaisesRegex(fast_device.FastDeviceError, "title_contains"):
+            fast_device.prepare_flow({"version": 1, "setup": {"optional_permission_labels": [{"tap": "Allow"}]}})
+
+    def test_flow_line_names_each_dismissed_prompt(self) -> None:
+        import contextlib
+        import io
+        import fast_device
+        report = {"status": "pass", "results": [], "labels": [],
+                  "dismissed": [{"title": "“App” Would Like to Send You Notifications", "tapped": "Allow"}]}
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as raw:
+            flow = Path(raw) / "notify.json"
+            flow.write_text(json.dumps({"version": 1, "app": {"bundle_id": "com.example.app"}, "actions": []}))
+            device = {"udid": "U0000000", "name": "X", "os": "26.0", "connected": True}
+            with mock.patch.object(fast_device, "resolve_device", return_value=device), \
+                    mock.patch.object(fast_device, "server_alive", return_value=True), \
+                    mock.patch.object(fast_device, "request", return_value=dict(report)), \
+                    contextlib.redirect_stdout(out):
+                fast_device.run_flow(fast_device.parse_flow_arguments([str(flow), "--artifacts-root", raw]))
+        self.assertIn('dismissed=["“App” Would Like to Send You Notifications → Allow"]', out.getvalue())
 
     def test_build_runner_uses_committed_xcodeproj_without_xcodegen(self) -> None:
         import fast_device

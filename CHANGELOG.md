@@ -2,7 +2,44 @@
 
 ## Unreleased
 
+### Prompt rules
+
+- `optional_permission_labels` takes rules beside bare labels:
+  `{"title_contains": "track", "tap": "Ask App Not to Track"}` answers one kind of prompt,
+  matched by its title, on the Simulator and on the iPhone. Bare labels answered every prompt
+  with the first declared label it carried, so notifications and tracking (both `Allow`) could
+  not get different answers, and a location prompt fell to `Don’t Allow` when its own button was
+  not declared. A rule whose title matches owns the prompt: a missing button taps nothing.
+- Device: each request starts with no prompt labels. A `do` used to keep the labels of the last
+  flow the runner served and tapped those prompts unasked; it now taps only what
+  `--prompt-labels` declares. PASS/FAIL lines list what was answered:
+  `dismissed=["<title> → <button>"]`.
+
+### Idle wait off, safely
+
+- Device, with `wait_for_idle: false` / `--no-idle-wait`: a tap by selector (`tap_label`,
+  `tap_first`, `tap_nearest`) waits until two snapshots agree on the target's frame (up to
+  1.5 s), so it no longer lands on a button still sliding in; `launch` and `activate` wait until
+  the app is frontmost and its layout stops moving (up to 2 s), so the next `screenshot`,
+  `tap_point` or `swipe` no longer acts on the launch screen.
+- `do --no-idle-wait` reports `wait_for_idle=unsupported` when the private API is missing, as
+  flows already did; it used to keep waiting without a word.
+- The runner's pure logic (prompt rules, settling) is checked on the Mac by
+  `RunnerLogicTests`, which compiles it with `swiftc`. The next device run rebuilds the runner by
+  itself (its cache key covers the Swift sources); a runner already started with `serve` keeps
+  the old code until `fastDeviceTest stop`.
+
+### Fixes
+
+- `screenshot` taps away a declared `optional_permission_labels` prompt before capturing, on the
+  Simulator and on the iPhone (the device runner needs `--rebuild-runner` once). It read no tree,
+  so a notification or location request raised after the flow's last `wait` (during a `pause`)
+  ended up in the evidence image. Checked on iOS 26.5 Simulators and an iPhone 11 on iOS 26.7.1.
+
 ### Docs
+
+- Only actions that read the tree (and now `screenshot`) dismiss prompts; `pause`, `tap_point` and
+  `swipe` do not. iOS 26 labels for the tracking (`Ask App Not to Track`) and location prompts.
 
 - The App Store review sheet is not in the accessibility tree; close it with `tap_point`.
 - `open_url` delivers a link with no prompt; a link tapped in Safari raises "Open in …?", where the

@@ -87,7 +87,9 @@ Supported actions:
   Wi-Fi row: `{"type": "tap_nearest", "target": {"label": "More Info"},
   "anchor": {"label": "Office", "element_type": "StaticText"}}`. `axis` is `y`
   (same row, default) or `x` (same column).
-- `screenshot`: save one named image.
+- `screenshot`: save one named image. It first taps away any prompt declared in
+  `setup.optional_permission_labels` that is on screen (one tree read, skipped when the flow
+  declares none), so a prompt raised during a `pause` stays out of the image.
 - `motion`: capture frames and assert a minimum changed-pixel ratio in a
   normalized `[left, top, right, bottom]` region.
 - `dump`: write the on-screen nodes to `<name>-ui.json` (one flat JSON list: `label`,
@@ -131,12 +133,36 @@ a field), `element_type`, and bounds nested under `frame`, such as `{"frame": {"
 key when the app sets identifiers; `tap_label` takes every key too. Missing or ambiguous
 required selectors fail closed. Optional system prompts are declared under
 `setup.optional_permission_labels`. The runner dismisses them from the same UI
-hierarchy polling loop used by selectors, so prompts that appear late do not
-need fixed sleeps or a separate retry loop.
+hierarchy polling loop used by selectors (`wait`, the taps, `dump`, absence checks) and right
+before a `screenshot`, so prompts that appear late do not need fixed sleeps or a separate
+retry loop. `pause`, `tap_point` and `swipe` read no tree: a prompt raised during them stays
+up until the next of those actions. Declare the prompt's label rather than tapping it by
+coordinate; its position moves while it animates in.
+
+Bare labels answer in the order they are declared, so two prompts that share a button name
+get the same answer: notifications and tracking both have `Allow`. A rule names the button
+for one kind of prompt by a fragment of its title (case-insensitive), and is checked before
+the bare labels:
+
+```json
+"optional_permission_labels": [
+  {"title_contains": "Notifications", "tap": "Allow"},
+  {"title_contains": "track", "tap": "Ask App Not to Track"},
+  {"title_contains": "location", "tap": "Allow While Using App"},
+  "Cancel"
+]
+```
+
+A rule whose title matches owns that prompt: when its button is missing (another iOS
+version, another language) nothing is tapped and the step times out showing the prompt's
+labels, instead of a bare `Don’t Allow` answering it. Whichever button is tapped sets that
+permission for the rest of the run (and what analytics records), so declare the answer the
+test needs. A prompt that is itself under test gets its own step, not an entry here.
 
 System sheets that block a Simulator flow and their dismiss labels: notification
-permission (`Allow` / `Don’t Allow`), App Tracking Transparency (`Allow Tracking`
-/ `Ask App Not to Track`), StoreKit sandbox sign-in "You must enter both your
+permission (`Allow` / `Don’t Allow`), App Tracking Transparency (`Ask App Not to Track` /
+`Allow` on iOS 26, `Allow Tracking` before), location (`Allow While Using App` / `Don’t
+Allow`), StoreKit sandbox sign-in "You must enter both your
 Apple Account and password." (`Cancel`). Declare all of them in
 `setup.optional_permission_labels` for any flow that reaches a paywall or
 StoreKit call; the sheet persists across fresh installs. A flow that taps a link in Safari is the

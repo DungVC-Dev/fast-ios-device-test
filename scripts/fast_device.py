@@ -304,8 +304,43 @@ CONTENT_SIZES = {
 }
 
 
+def prompt_entries(entries: Any) -> list[Any]:
+    """Checks optional_permission_labels: bare button labels, or rules that name the button
+    for one kind of prompt, {"title_contains": "track", "tap": "Ask App Not to Track"}."""
+    if not isinstance(entries, list):
+        raise FastDeviceError("optional_permission_labels must be a list")
+    for entry in entries:
+        if isinstance(entry, dict):
+            for key in ("title_contains", "tap"):
+                if not isinstance(entry.get(key), str) or not entry[key]:
+                    raise FastDeviceError(f"prompt rule {json.dumps(entry, ensure_ascii=False)} needs a '{key}' string")
+        elif not isinstance(entry, str):
+            raise FastDeviceError(f"prompt entry {entry!r} is neither a label nor a rule")
+    return entries
+
+
+def parse_prompt_labels(text: str) -> list[Any]:
+    """`--prompt-labels "Allow, Don’t Allow"`, or a JSON array when it carries rules."""
+    if text.lstrip().startswith("["):
+        return prompt_entries(json.loads(text))
+    return [label.strip() for label in text.split(",") if label.strip()]
+
+
+def report_notes(report: dict[str, Any]) -> str:
+    """What the runner did on its own: prompts it answered, and an idle wait it could not skip."""
+    notes = ""
+    if report.get("wait_for_idle") == "unsupported":
+        notes += " wait_for_idle=unsupported"
+    if report.get("dismissed"):
+        taps = [f"{entry.get('title', '')} → {entry.get('tapped', '')}" for entry in report["dismissed"]]
+        notes += f" dismissed={json.dumps(taps, ensure_ascii=False)}"
+    return notes
+
+
 def prepare_flow(spec: dict[str, Any], appearance: str | None = None, content_size: str | None = None) -> dict[str, Any]:
     setup = dict(spec.get("setup", {}))
+    if "optional_permission_labels" in setup:
+        prompt_entries(setup["optional_permission_labels"])
     if appearance:
         setup["appearance"] = appearance
     content_size = content_size or setup.pop("content_size", None)
@@ -590,11 +625,13 @@ def run_flow(args: argparse.Namespace) -> int:
         dumps = [r for r in report.get("results", []) if "labels" in r]
         suffix = f" labels={json.dumps(dumps[-1]['labels'], ensure_ascii=False)}" if dumps else ""
         suffix += f" video={file_link(video)}" if video else ""
+        suffix += report_notes(report)
         print(f"PASS task={name} device={device['name']} mode={mode} total={report['total_seconds']}s{suffix} artifacts={file_link(artifacts)}")
     else:
         print(
             f"FAIL task={name} device={device['name']} mode={mode} step={report.get('step')} "
-            f"error={report.get('error')}{f' video={file_link(video)}' if video else ''} artifacts={file_link(artifacts)}",
+            f"error={report.get('error')}{f' video={file_link(video)}' if video else ''}{report_notes(report)} "
+            f"artifacts={file_link(artifacts)}",
             file=sys.stderr,
         )
     return 0 if report["status"] == "pass" else 1
@@ -651,6 +688,12 @@ def run_command(argv: list[str]) -> int:
             "--no-idle-wait", action="store_true",
             help="Skip XCUITest's wait-for-idle around each event (screens that animate forever)",
         )
+        parser.add_argument(
+            "--prompt-labels",
+            help='Prompt buttons this request may tap on its own: "Allow, Don’t Allow", or a JSON array '
+            'with rules such as [{"title_contains":"track","tap":"Ask App Not to Track"}]. '
+            "Without it the request taps no prompt",
+        )
     args = parser.parse_args(argv[1:])
     device = resolve_device(args.device)
     udid = device["udid"]
@@ -670,12 +713,14 @@ def run_command(argv: list[str]) -> int:
         if args.app and actions and "app" not in actions[0]:
             actions[0]["app"] = args.app
         timeout = 30 + sum(float(a.get("timeout", 6)) + float(a.get("seconds", 0)) for a in actions)
-        idle = {"wait_for_idle": False} if args.no_idle_wait else {}
+        extra: dict[str, Any] = {"wait_for_idle": False} if args.no_idle_wait else {}
+        if args.prompt_labels:
+            extra["optional_permission_labels"] = parse_prompt_labels(args.prompt_labels)
         if isinstance(parsed, list):
-            response = request(udid, {"op": "actions", "actions": actions, **idle}, timeout=timeout)
+            response = request(udid, {"op": "actions", "actions": actions, **extra}, timeout=timeout)
             results = response.get("results", [])
         else:
-            response = request(udid, {"op": "action", "action": actions[0], **idle}, timeout=timeout)
+            response = request(udid, {"op": "action", "action": actions[0], **extra}, timeout=timeout)
             results = [response["result"]] if response.get("result") else []
         args.out.mkdir(parents=True, exist_ok=True)
         shots = save_screenshots(response, args.out)
@@ -692,7 +737,7 @@ def run_command(argv: list[str]) -> int:
         shot = f" screenshot{'s' if len(shots) > 1 else ''}={','.join(map(file_link, shots))}" if shots else ""
         ui = f" ui={','.join(map(file_link, dumps))}" if dumps else ""
         labels = json.dumps(response.get("labels", []), ensure_ascii=False)
-        print(f"{status} {head}{error}{shot}{ui} labels={labels}")
+        print(f"{status} {head}{error}{shot}{ui}{report_notes(response)} labels={labels}")
         return 0 if status == "PASS" else 1
     return 0
 

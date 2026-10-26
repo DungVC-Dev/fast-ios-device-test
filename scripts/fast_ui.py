@@ -300,11 +300,60 @@ def matches(node: dict[str, Any], selector: dict[str, Any]) -> bool:
     return True
 
 
+def prompt_choice(title: str, buttons: list[str], entries: list[Any]) -> str | None:
+    """The button to tap on a prompt with this title, or None. Entries are bare button
+    labels or rules {"title_contains", "tap"}. A rule whose title matches owns the prompt:
+    when its button is missing nothing is tapped, so a bare "Don’t Allow" never answers a
+    prompt a rule was written for. Bare labels answer in the order they are declared.
+    Mirrors PromptRules.choice in the device runner."""
+    owned = False
+    for rule in entries:
+        if isinstance(rule, dict) and str(rule.get("title_contains", "")).casefold() in title.casefold():
+            owned = True
+            if rule.get("tap") in buttons:
+                return rule["tap"]
+    if owned:
+        return None
+    return next((label for label in entries if isinstance(label, str) and label in buttons), None)
+
+
+def prompt_target(nodes: list[dict[str, Any]], entries: list[Any]) -> dict[str, Any] | None:
+    """The declared prompt button to tap. System prompts are Sheets titled with the
+    prompt's title and holding its buttons; a bare label also matches a Button outside any
+    sheet (StoreKit's sign-in alert, Safari's "Open in …?")."""
+    if not entries:
+        return None
+    buttons = [node for node in nodes if node_type(node) == "Button"]
+    in_sheets: list[dict[str, Any]] = []
+    for sheet in (node for node in nodes if node_type(node) == "Sheet"):
+        frame = sheet.get("frame") or {}
+        own = [button for button in buttons if within(button, frame)]
+        in_sheets += own
+        choice = prompt_choice(str(sheet.get("AXLabel") or ""), [str(b.get("AXLabel")) for b in own], entries)
+        if choice is not None:
+            return next(button for button in own if button.get("AXLabel") == choice)
+    labels = [entry for entry in entries if isinstance(entry, str)]
+    return next(
+        (button for button in buttons
+         if button.get("AXLabel") in labels and not any(button is other for other in in_sheets)),
+        None,
+    )
+
+
+def within(node: dict[str, Any], frame: dict[str, Any]) -> bool:
+    try:
+        x, y = frame_center(node)
+        return (float(frame["x"]) <= x <= float(frame["x"]) + float(frame["width"])
+                and float(frame["y"]) <= y <= float(frame["y"]) + float(frame["height"]))
+    except (FastUIError, KeyError, TypeError, ValueError):
+        return False
+
+
 def wait_nodes(
     udid: str,
     predicate: Callable[[list[dict[str, Any]]], bool],
     timeout: float,
-    optional_prompt_labels: list[str] | None = None,
+    optional_prompt_labels: list[Any] | None = None,
     first_poll_max_age: float = 0.0,
 ) -> list[dict[str, Any]]:
     deadline = time.perf_counter() + timeout
@@ -313,15 +362,7 @@ def wait_nodes(
     while time.perf_counter() < deadline:
         nodes = hierarchy(udid, max_age)
         max_age = 0.0
-        prompt = next(
-            (
-                node
-                for node in nodes
-                if node.get("AXLabel") in (optional_prompt_labels or [])
-                and node_type(node) == "Button"
-            ),
-            None,
-        )
+        prompt = prompt_target(nodes, optional_prompt_labels or [])
         if prompt is not None:
             tap_point(udid, *frame_center(prompt), 0.08)
             continue
@@ -332,6 +373,25 @@ def wait_nodes(
     error = FastUIError(f"timed out waiting for UI selector; visible labels: [{labels}]")
     error.nodes = nodes
     raise error
+
+
+# The cap of any later wait: a system sheet can ignore the first tap while it is still animating in.
+PROMPT_CLEAR_TIMEOUT = 8.0
+
+
+def clear_prompts(udid: str, optional_prompt_labels: list[str]) -> None:
+    """Tap away any declared prompt before an action that reads no tree: a prompt raised
+    after the flow's last wait (a notification request during a `pause`) would otherwise
+    end up in the screenshot."""
+    if not optional_prompt_labels:
+        return
+    try:
+        wait_nodes(udid, lambda _: True, PROMPT_CLEAR_TIMEOUT, optional_prompt_labels, HIERARCHY_REUSE)
+    except FastUIError as error:
+        labels = str(error).split("visible labels:")[-1].strip()
+        raise FastUIError(
+            f"a declared prompt is still on screen after {PROMPT_CLEAR_TIMEOUT:g}s; visible labels: {labels}"
+        ) from None
 
 
 CONTAINER_TYPES = ("Application", "Window")
@@ -1057,6 +1117,7 @@ def run_action(
                 resolve_and_tap()
                 wait_selector(udid, success, timeout, optional_prompt_labels)
     elif kind == "screenshot":
+        clear_prompts(udid, optional_prompt_labels)
         path = artifacts / action.get("name", f"step-{index:02d}.png")
         screenshot(udid, path)
         return {"path": str(path)}
