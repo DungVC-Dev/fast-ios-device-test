@@ -60,7 +60,8 @@ Everything the engine needs is in the flow; there is no per-project config.
   nobody else runs the app on. `derived_data` is its own folder, never Xcode's DerivedData;
   `app_path` is the `.app` inside it. `build_inputs` (source folders + `project.pbxproj`) drive
   the build cache; without them every run rebuilds.
-- Selector keys on `wait`, `wait_absent`, `assert_absent`, `tap_first`, `tap_label`, `scroll_to`:
+- Selector keys on `wait`, `wait_absent`, `assert_absent`, `tap_first`, `tap_label`, `long_press`,
+  `scroll_to`:
   `label` (exact), `label_contains`, `id` (accessibilityIdentifier), `value` (a switch's "1"/"0",
   a field's text), `element_type`, `label_is_empty`, `frame` bounds (`{"min_y": 400}`).
 - `tap_label` matches a `Button`; when the flow sets no `element_type` and exactly one node of

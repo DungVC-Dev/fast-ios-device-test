@@ -216,9 +216,13 @@ private extension FlowRunner {
                 }
                 Thread.sleep(forTimeInterval: 0.3)
             } while Date() < deadline
-        case "tap_label":
+        case "long_press" where action["x"] != nil && action["y"] != nil:
+            press(number(action["x"]) ?? 0, number(action["y"]) ?? 0, number(action["duration"]) ?? 1, postDelay)
+        case "tap_label", "long_press":
             guard action["label"] != nil || action["label_contains"] != nil || action["id"] != nil else {
-                throw Failure(message: "missing 'label' or 'id' in action \(index)")
+                throw Failure(message: kind == "long_press"
+                    ? "long_press needs 'label', 'id' or x and y in action \(index)"
+                    : "missing 'label' or 'id' in action \(index)")
             }
             var selector: [String: Any] = [:]
             for key in FlowRunner.selectorKeys { selector[key] = action[key] }
@@ -235,7 +239,11 @@ private extension FlowRunner {
             }
             if let found = node {
                 let target = try settled(found) { self.resolveTapTarget($0, selector, explicitType: explicitType) }
-                tap(target.frame.midX, target.frame.midY, postDelay)
+                if kind == "long_press" {
+                    press(target.frame.midX, target.frame.midY, number(action["duration"]) ?? 1, postDelay)
+                } else {
+                    tap(target.frame.midX, target.frame.midY, postDelay)
+                }
                 if let expected = selector["element_type"] as? String, !typeMatches(target.type, expected) {
                     return ["fallback_type": target.type]
                 }
@@ -612,6 +620,12 @@ private extension FlowRunner {
 
     func tap(_ x: Double, _ y: Double, _ postDelay: Double) {
         point(x, y).tap()
+        Thread.sleep(forTimeInterval: postDelay)
+    }
+
+    // Hold one finger: a context menu, or a Home Screen widget's Edit Widget.
+    func press(_ x: Double, _ y: Double, _ duration: Double, _ postDelay: Double) {
+        point(x, y).press(forDuration: duration)
         Thread.sleep(forTimeInterval: postDelay)
     }
 

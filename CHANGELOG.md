@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Long press
+
+- `long_press` holds for `duration` seconds (default 1) on a selector or on `x`/`y`, on the
+  Simulator (`axe touch --down --up --delay`) and on the iPhone (XCUITest `press(forDuration:)`).
+  It opens a context menu, such as a Home Screen widget's `Edit Widget`; `device.md` has the
+  whole path into the widget's configuration sheet, checked on an iPhone 11 on iOS 26.7.1.
+
 ### Prompt rules
 
 - `optional_permission_labels` takes rules beside bare labels:

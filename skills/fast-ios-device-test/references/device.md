@@ -25,9 +25,16 @@ re-signs it with an existing development profile, and runs the flow on the devic
   them as `Alert` on iOS 26, where AXe on the Simulator says `Sheet`); `screenshot` taps a
   declared one away first, as on the Simulator.
 - Supported actions: `wait`, `wait_absent`, `assert_absent`, `tap_label`,
-  `tap_first`, `tap_nearest`, `tap_point`, `swipe` (points or `direction`),
+  `tap_first`, `tap_nearest`, `tap_point`, `long_press`, `swipe` (points or `direction`),
   `scroll_to`, `type_text`, `pause`, `screenshot`, `dump`, `activate`, `launch`
   (optional `launch_arguments`), `terminate`. `motion` is simulator-only.
+- **Editing a Home Screen widget:** go home with `terminate` on the app, then
+  `long_press` the widget on `com.apple.springboard` (the widget node carries the app's
+  name as `id`), then tap `id`
+  `com.apple.springboardhome.application-shortcut-item.configure-widget` (`Edit Widget`).
+  The sheet that opens is not in SpringBoard's tree: drive it with
+  `"app": "com.apple.WorkflowUI.WidgetConfigurationExtension"`. Close it with a `tap_point`
+  above the sheet on SpringBoard. Checked on an iPhone 11, iOS 26.7.1.
 - Only on-screen nodes match: hidden tabs stay in the SwiftUI tree, and text in a
   list row scrolled out of view reports a made-up frame near the top of the list,
   so a node must also sit inside its own cell. Use `scroll_to` to bring a row in.

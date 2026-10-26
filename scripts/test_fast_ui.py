@@ -233,6 +233,25 @@ class ActionTests(unittest.TestCase):
                 fast_ui.execute_action({"type": "tap_label", "label": "Demo App", "timeout": 0.01}, "SIM", Path("/tmp"), 1, [])
         tap.assert_not_called()
 
+    def test_long_press_holds_the_resolved_node(self) -> None:
+        node = {"AXLabel": "Weather", "type": "Other", "frame": {"x": 0, "y": 0, "width": 10, "height": 10}}
+        with mock.patch.object(fast_ui, "hierarchy", return_value=[node]), mock.patch.object(fast_ui, "axe") as axe, \
+                mock.patch.object(fast_ui.time, "sleep"):
+            result = fast_ui.execute_action({"type": "long_press", "label": "Weather"}, "SIM", Path("/tmp"), 1, [])
+        axe.assert_called_once_with("SIM", "touch", "-x", "5.00", "-y", "5.00", "--down", "--up", "--delay", "1.0")
+        self.assertEqual(result, {"fallback_type": "Other"})
+
+    def test_long_press_at_a_point_takes_a_duration(self) -> None:
+        with mock.patch.object(fast_ui, "hierarchy") as tree, mock.patch.object(fast_ui, "axe") as axe, \
+                mock.patch.object(fast_ui.time, "sleep"):
+            fast_ui.execute_action({"type": "long_press", "x": 40, "y": 80, "duration": 2}, "SIM", Path("/tmp"), 1, [])
+        tree.assert_not_called()
+        axe.assert_called_once_with("SIM", "touch", "-x", "40.00", "-y", "80.00", "--down", "--up", "--delay", "2.0")
+
+    def test_long_press_needs_a_selector_or_a_point(self) -> None:
+        with self.assertRaisesRegex(fast_ui.FastUIError, "long_press needs"):
+            fast_ui.execute_action({"type": "long_press", "x": 40}, "SIM", Path("/tmp"), 1, [])
+
     def test_wait_settled_returns_true_when_two_polls_match(self) -> None:
         a = [{"AXLabel": "A", "type": "Button", "frame": {"x": 0, "y": 0, "width": 1, "height": 1}}]
         b = [{"AXLabel": "A", "type": "Button", "frame": {"x": 0, "y": 5, "width": 1, "height": 1}}]

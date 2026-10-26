@@ -592,6 +592,13 @@ def tap_point(udid: str, x: float, y: float, post_delay: float) -> None:
         time.sleep(remainder)
 
 
+def long_press(udid: str, x: float, y: float, duration: float, post_delay: float) -> None:
+    """Hold one finger for `duration` seconds: a context menu, or a widget's Edit Widget."""
+    invalidate_hierarchy(udid)
+    axe(udid, "touch", "-x", f"{x:.2f}", "-y", f"{y:.2f}", "--down", "--up", "--delay", str(duration))
+    time.sleep(max(post_delay, TAP_SETTLE))
+
+
 def screenshot(udid: str, path: Path) -> None:
     image_type = path.suffix.removeprefix(".").lower() or "png"
     if image_type == "jpg":
@@ -963,7 +970,7 @@ def motion_ratio(first: Path, second: Path, region: list[float], threshold: int)
     return changed / (difference.width * difference.height)
 
 
-GESTURE_KINDS = {"tap_label", "tap_first", "tap_nearest", "tap_point", "swipe", "scroll_to"}
+GESTURE_KINDS = {"tap_label", "tap_first", "tap_nearest", "tap_point", "long_press", "swipe", "scroll_to"}
 
 
 def execute_action(
@@ -1000,8 +1007,12 @@ def run_action(
 
     if kind == "wait":
         wait_selector(udid, action, timeout, optional_prompt_labels)
-    elif kind == "tap_label":
+    elif kind == "long_press" and "x" in action and "y" in action:
+        long_press(udid, float(action["x"]), float(action["y"]), float(action.get("duration", 1)), post_delay)
+    elif kind in ("tap_label", "long_press"):
         if not any(key in action for key in ("label", "label_contains", "id")):
+            if kind == "long_press":
+                raise FastUIError(f"long_press needs 'label', 'id' or x and y in action {index}")
             raise FastUIError(f"missing 'label' or 'id' in action {index}")
         selector = selector_of(action, "Button")
         explicit_type = "element_type" in action
@@ -1018,7 +1029,10 @@ def run_action(
             )
             target = resolve_tap_target(nodes, selector, explicit_type)
         if target is not None:
-            tap_point(udid, *frame_center(target), post_delay)
+            if kind == "long_press":
+                long_press(udid, *frame_center(target), float(action.get("duration", 1)), post_delay)
+            else:
+                tap_point(udid, *frame_center(target), post_delay)
             if node_type(target) != selector["element_type"]:
                 return {"fallback_type": node_type(target)}
     elif kind == "wait_absent":

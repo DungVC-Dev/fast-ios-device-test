@@ -78,6 +78,8 @@ Supported actions:
   instead of swallowing the tap. Pass `optional: true` to skip that resolution and
   tolerate a missing control.
 - `tap_point`: tap a declared coordinate.
+- `long_press`: hold for `duration` seconds (default 1) on a selector, resolved as `tap_label`
+  resolves it, or on `x`/`y`: a context menu, or a Home Screen widget's `Edit Widget`.
 - `swipe`: gesture from `from` to `to` coordinates, or `direction`
   (`up`/`down`/`left`/`right`, the way the finger moves: `up` scrolls content down).
 - `scroll_to`: swipe in `direction` (default `up`) until the selector is on screen,
