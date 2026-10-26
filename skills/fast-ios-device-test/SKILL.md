@@ -71,12 +71,16 @@ Everything the engine needs is in the flow; there is no per-project config.
 
 1. Write the smallest version-1 flow for the requested behavior in a temporary directory
    (delete it afterwards, one `rm <file>` per file).
-2. Unknown label → one `{"type": "dump"}` at that point: the PASS line prints the visible
+2. App driven before → `fastUIMap <bundle id> --find <label>` first: selectors and the steps that
+   reach them, from what earlier runs saw. A hint that may be stale; the flow still verifies.
+   Maps live in `~/Library/Caches/fast-ui-map/` and hold on-screen labels, which can include
+   user data: never copy one into a repo, PR or ticket.
+3. Unknown label → one `{"type": "dump"}` at that point: the PASS line prints the visible
    labels and `<name>-ui.json` has label, type, id, value and tap `center` per node. Never
    fake a `wait` on an impossible label to get a dump.
-3. Run `fastSimulatorTest <flow.json>`. It boots the simulator, reuses the cached app when
+4. Run `fastSimulatorTest <flow.json>`. It boots the simulator, reuses the cached app when
    build inputs are unchanged, fresh-installs, seeds `setup.preferences`, prints one PASS/FAIL line.
-4. On FAIL the line lists `visible labels: [Add Widget (StaticText), …]` with types, says when
+5. On FAIL the line lists `visible labels: [Add Widget (StaticText), …]` with types, says when
    the label exists under another type, and suggests close labels. Fix one selector, rerun
    with `--reuse-app`. After two reruns stop and report with the artifact link.
 

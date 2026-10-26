@@ -25,6 +25,7 @@ HERE = Path(__file__).resolve().parent
 # bin/ holds symlinks in a git checkout but copies in the zip, so look beside scripts/ too.
 sys.path[:0] = [str(HERE), str(HERE.parent / "scripts")]
 from fast_media import VIDEO_SUFFIXES, publish_video, shrink_video  # noqa: E402
+from fast_ui_map import record  # noqa: E402
 RUNNER_SOURCE = HERE.parent / "device-runner"
 CACHE_ROOT = Path(os.environ.get("FAST_DEVICE_CACHE", Path.home() / "Library/Caches/fast-device-test"))
 PROFILE_DIRS = [
@@ -508,6 +509,18 @@ def kill_runners(udid: str) -> None:
     run(["pkill", "-f", f"serve-{udid}.xctestrun"], check=False)
 
 
+def save_trail(report: dict[str, Any]) -> None:
+    """Merge the runner's trail into the screen map (fastUIMap) and keep it out of the report,
+    which an agent reads; a map problem never changes the run's result."""
+    trail = report.pop("trail", None)
+    if not trail:
+        return
+    try:
+        record(trail, "device")
+    except Exception as error:  # noqa: BLE001 - the map is a hint, the run's result stands
+        print(f"map=not-saved ({error})", file=sys.stderr)
+
+
 def save_screenshots(response: dict[str, Any], artifacts: Path) -> list[str]:
     saved = []
     for shot in response.pop("screenshots", []) or []:
@@ -609,6 +622,7 @@ def run_flow(args: argparse.Namespace) -> int:
     else:
         mode = "one-shot"
         report = run_one_shot(device, prepared, artifacts, args.rebuild_runner, args.record)
+    save_trail(report)
     save_dumps(report.get("results", []), artifacts)
     video = publish_recording(artifacts, report["status"] == "pass", args.session)
 
@@ -722,6 +736,7 @@ def run_command(argv: list[str]) -> int:
         else:
             response = request(udid, {"op": "action", "action": actions[0], **extra}, timeout=timeout)
             results = [response["result"]] if response.get("result") else []
+        save_trail(response)
         args.out.mkdir(parents=True, exist_ok=True)
         shots = save_screenshots(response, args.out)
         dumps = save_dumps(results, args.out)

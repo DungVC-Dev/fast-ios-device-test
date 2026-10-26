@@ -225,7 +225,7 @@ class LauncherCopyTests(unittest.TestCase):
             shutil.copytree(here, root / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
             (root / "bin").mkdir()
             for launcher, script in {
-                "fastDeviceTest": "fast_device.py", "fastSimulatorTest": "fast_ui.py", "fastUIReview": "fast_ui_review.py",
+                "fastDeviceTest": "fast_device.py", "fastSimulatorTest": "fast_ui.py", "fastUIReview": "fast_ui_review.py", "fastUIMap": "fast_ui_map.py",
             }.items():
                 shutil.copy(here / script, root / "bin" / launcher)
                 with self.subTest(launcher=launcher):

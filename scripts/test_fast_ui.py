@@ -4,19 +4,23 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import itertools
 import json
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fast_ui  # noqa: E402
+import fast_ui_map  # noqa: E402
 
 # Pillow is optional for the engine (only `motion` needs it), so the suite must run without it.
 HAVE_PILLOW = importlib.util.find_spec("PIL") is not None
@@ -141,7 +145,7 @@ class ActionTests(unittest.TestCase):
                 {"type": "tap_label", "label": "Nope", "optional": True}, "SIM", Path("/tmp"), 1, []
             )
         tap.assert_not_called()
-        self.assertIsNone(result)
+        self.assertEqual(result, {"optional_missing": True})
 
     def test_dump_action_writes_labels_and_hierarchy(self) -> None:
         nodes = [{"AXLabel": "Widgets", "type": "Button", "frame": {"x": 0, "y": 0, "width": 1, "height": 1}}]
@@ -344,6 +348,150 @@ def prompt_sheet(title: str, *buttons: str) -> list[dict]:
         nodes.append({"AXLabel": label, "type": "Button",
                       "frame": {"x": 43.5, "y": 360 + 56 * offset, "width": 288, "height": 48}})
     return nodes
+
+
+def sim_tree(app: str, *nodes: dict) -> str:
+    root = {"AXLabel": app, "type": "Application", "frame": {"x": 0, "y": 0, "width": 400, "height": 800},
+            "children": list(nodes)}
+    return json.dumps([root])
+
+
+def button(label: str, y: float = 300) -> dict:
+    return {"AXLabel": label, "type": "Button", "frame": {"x": 20, "y": y, "width": 200, "height": 44}}
+
+
+class FakeAxe:
+    """describe-ui serves the given trees in order (the last one repeats); gestures succeed."""
+
+    def __init__(self, *trees: str) -> None:
+        self.trees = list(trees)
+        self.calls: list[tuple[str, ...]] = []
+
+    def __call__(self, udid: str, *args: str, check: bool = True) -> mock.Mock:
+        self.calls.append(args)
+        if args[0] == "describe-ui":
+            tree = self.trees.pop(0) if len(self.trees) > 1 else self.trees[0]
+            return mock.Mock(stdout=tree, returncode=0, stderr="")
+        return mock.Mock(stdout="", returncode=0, stderr="")
+
+
+class SimulatorTrailTests(unittest.TestCase):
+    A = sim_tree("Demo", button("Go"), button("Help", 400))
+    B = sim_tree("Demo", button("Done"), button("Back", 400))
+
+    def setUp(self) -> None:
+        fast_ui.invalidate_hierarchy("SIM")
+        fast_ui.TRAIL = fast_ui_map.Trail("com.example.app")
+        self.addCleanup(setattr, fast_ui, "TRAIL", None)
+        sleep = mock.patch.object(fast_ui.time, "sleep")
+        sleep.start()
+        self.addCleanup(sleep.stop)
+
+    def run_actions(self, fake: FakeAxe, *actions: dict, prompts: list | None = None) -> list[dict]:
+        with mock.patch.object(fast_ui, "axe", side_effect=fake):
+            for index, action in enumerate(actions, start=1):
+                fast_ui.execute_action(action, "SIM", Path("/tmp"), index, prompts or [])
+        return fast_ui.TRAIL.finish()
+
+    @staticmethod
+    def kinds(trail: list[dict]) -> list[str]:
+        return [entry["gesture"]["type"] if "gesture" in entry else next(iter(entry)) for entry in trail]
+
+    def test_trail_keeps_the_read_before_each_gesture(self) -> None:
+        loading = sim_tree("Demo", button("Help", 400))
+        trail = self.run_actions(FakeAxe(loading, loading, self.A), {"type": "wait", "label": "Go"},
+                                 {"type": "tap_label", "label": "Go"})
+        self.assertEqual(self.kinds(trail), ["screen", "tap_label"])
+        self.assertEqual([node["label"] for node in trail[0]["screen"]["nodes"]], ["Go", "Help"])
+
+    def test_trail_skips_prompt_taps_and_scroll_inner_swipes(self) -> None:
+        prompt = sim_tree("Demo", *prompt_sheet(NOTIFICATIONS, "Allow", "Don’t Allow"))
+        bottom = sim_tree("Demo", button("Done"), button("Bottom", 700))
+        fake = FakeAxe(prompt, self.A, self.B, self.B, bottom)
+        trail = self.run_actions(fake, {"type": "tap_label", "label": "Go"}, {"type": "scroll_to", "label": "Bottom"},
+                                 prompts=["Allow"])
+        self.assertEqual([entry["gesture"]["type"] for entry in trail if "gesture" in entry], ["tap_label", "scroll_to"])
+        self.assertEqual(sum(1 for call in fake.calls if call[0] == "swipe"), 2)
+
+    def test_trail_marks_gesture_without_read(self) -> None:
+        trail = self.run_actions(FakeAxe(self.A), {"type": "tap_label", "label": "Go"}, {"type": "tap_point", "x": 5, "y": 5})
+        self.assertEqual(self.kinds(trail), ["screen", "tap_label", "tap_point"])
+        self.assertNotIn("from", trail[1])
+        self.assertIsNone(trail[2]["from"])
+
+    def test_tap_nearest_starts_from_the_screen_it_tapped(self) -> None:
+        action = {"type": "tap_nearest", "target": {"label": "Help"}, "anchor": {"label": "Go"}, "success": {"label": "Done"}}
+        trail = self.run_actions(FakeAxe(self.A, self.B), action)
+        self.assertEqual(self.kinds(trail), ["screen", "tap_nearest", "screen"])
+        self.assertEqual(trail[0]["screen"]["nodes"][0]["label"], "Go")
+        self.assertEqual(trail[2]["screen"]["nodes"][0]["label"], "Done")
+
+    def test_timed_out_selector_records_no_gesture(self) -> None:
+        with self.assertRaises(fast_ui.FastUIError):
+            self.run_actions(FakeAxe(self.A), {"type": "tap_label", "label": "Missing", "timeout": 0.01})
+        self.assertEqual(self.kinds(fast_ui.TRAIL.finish()), ["screen"])
+
+    def test_optional_tap_label_without_target_records_no_gesture(self) -> None:
+        with mock.patch.object(fast_ui, "axe", side_effect=FakeAxe(self.A)):
+            result = fast_ui.execute_action({"type": "tap_label", "label": "Missing", "optional": True}, "SIM", Path("/tmp"), 1, [])
+        self.assertEqual(result, {"optional_missing": True})
+        self.assertEqual(self.kinds(fast_ui.TRAIL.finish()), ["screen"])
+
+    def test_reads_of_another_app_break_the_trail(self) -> None:
+        fast_ui.TRAIL.gesture({"type": "launch"})
+        safari = sim_tree("Safari", button("Address"))
+        trail = self.run_actions(FakeAxe(self.A, safari), {"type": "tap_label", "label": "Go"}, {"type": "wait", "label": "Address"})
+        self.assertEqual(self.kinds(trail), ["launch", "screen", "tap_label", "break"])
+        self.assertEqual(trail[1]["screen"]["app"], "com.example.app")
+
+    def test_map_error_keeps_the_run_and_warns(self) -> None:
+        fast_ui.TRAIL.read(json.loads(self.A))
+        stderr = io.StringIO()
+        with mock.patch.object(fast_ui, "record", side_effect=OSError("disk full")) as record, \
+                contextlib.redirect_stderr(stderr):
+            fast_ui.finish_trail(build_only=False, current_step="03_tap_label")
+        record.assert_called_once()
+        self.assertEqual(stderr.getvalue(), "map=not-saved (disk full)\n")
+
+    def test_build_only_prepare_and_fast_ui_map_0_record_nothing(self) -> None:
+        with mock.patch.object(fast_ui, "record") as record:
+            fast_ui.finish_trail(build_only=True, current_step="state_and_launch")
+            fast_ui.finish_trail(build_only=False, current_step="prepare")
+        record.assert_not_called()
+        with mock.patch.dict(fast_ui.os.environ, {"FAST_UI_MAP": "0"}):
+            self.assertIsNone(fast_ui.new_trail("com.example.app"))
+        self.assertIsInstance(fast_ui.new_trail("com.example.app"), fast_ui_map.Trail)
+
+    def test_main_records_the_map_even_when_restoring_ui_settings_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            flow = Path(raw) / "home.json"
+            flow.write_text(json.dumps({"version": 1, "name": "home", "actions": [{"type": "wait", "label": "Go"}],
+                                        "app": {"bundle_id": "com.example.app", "prebuilt": True, "simulator": "SIM",
+                                                "project_root": raw}}))
+            with mock.patch.object(fast_ui.sys, "argv", ["fastSimulatorTest", str(flow)]), \
+                    mock.patch.object(fast_ui, "prepare_app", return_value=(None, False)), \
+                    mock.patch.object(fast_ui, "command"), mock.patch.object(fast_ui, "apply_ui_settings"), \
+                    mock.patch.object(fast_ui, "set_preferences"), mock.patch.object(fast_ui, "reset_preferences"), \
+                    mock.patch.object(fast_ui, "restore_ui_settings", side_effect=RuntimeError("simctl gone")), \
+                    mock.patch.object(fast_ui, "axe", side_effect=FakeAxe(self.A)), \
+                    mock.patch.object(fast_ui, "record") as record, contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(RuntimeError, "simctl gone"):
+                    fast_ui.main()
+        trail, engine = record.call_args.args
+        self.assertEqual(engine, "simulator")
+        self.assertEqual([next(iter(entry)) for entry in trail], ["gesture", "screen"])
+
+    def test_trail_costs_under_50_ms_on_a_large_screen(self) -> None:
+        big = json.loads(sim_tree("Demo", *(button(f"Row {index}", 10 + index) for index in range(600))))
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        started = time.perf_counter()
+        with mock.patch.dict(fast_ui.os.environ, {"FAST_UI_MAP_DIR": directory.name}):
+            for _ in range(3):
+                fast_ui.TRAIL.read(list(fast_ui.flatten(big)))
+                fast_ui.TRAIL.gesture({"type": "tap_point", "x": 1, "y": 1})
+            fast_ui.finish_trail(build_only=False, current_step="03_tap_point")
+        self.assertLess(time.perf_counter() - started, 0.05)
 
 
 TRACKING = "Allow “App” to track your activity across other companies’ apps and websites?"
@@ -760,7 +908,7 @@ class RunnerLogicTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             binary = Path(raw) / "checks"
             build = subprocess.run(
-                ["swiftc", "-parse-as-library", str(runner / "PromptRules.swift"), str(runner / "Settle.swift"),
+                ["swiftc", "-parse-as-library", str(runner / "PromptRules.swift"), str(runner / "Settle.swift"), str(runner / "Trail.swift"),
                  str(here / "runner_logic_checks.swift"), "-o", str(binary)],
                 capture_output=True, text=True,
             )
@@ -869,6 +1017,53 @@ class DeviceLauncherTests(unittest.TestCase):
                     contextlib.redirect_stdout(out):
                 fast_device.run_flow(fast_device.parse_flow_arguments([str(flow), "--artifacts-root", raw]))
         self.assertIn('dismissed=["“App” Would Like to Send You Notifications → Allow"]', out.getvalue())
+
+    TRAIL = [{"screen": {"app": "com.example.app", "title": "Home", "nodes": [{"label": "Go", "type": "Button", "id": ""}]}},
+             {"gesture": {"type": "tap_label", "label": "Go"}}]
+
+    def test_do_records_the_response_trail(self) -> None:
+        import fast_device
+        reply = {"status": "pass", "results": [], "labels": ["Go"], "trail": self.TRAIL}
+        with mock.patch.object(fast_device, "record") as record:
+            _, out = self.run_do('{"type":"tap_label","label":"Go"}', reply=reply)
+        record.assert_called_once_with(self.TRAIL, "device")
+        self.assertTrue(out.startswith("PASS tap_label"))
+
+    def test_do_without_trail_records_nothing(self) -> None:
+        import fast_device
+        err = io.StringIO()
+        with mock.patch.object(fast_device, "record") as record, contextlib.redirect_stderr(err):
+            _, out = self.run_do('{"type":"wait","label":"A"}')
+        record.assert_not_called()
+        self.assertEqual(out, "PASS wait labels=[]\n")
+        self.assertEqual(err.getvalue(), "")
+
+    def test_record_error_keeps_the_pass_line(self) -> None:
+        import fast_device
+        err = io.StringIO()
+        reply = {"status": "pass", "results": [], "labels": [], "trail": self.TRAIL}
+        with mock.patch.object(fast_device, "record", side_effect=OSError("disk full")), contextlib.redirect_stderr(err):
+            _, out = self.run_do('{"type":"tap_label","label":"Go"}', reply=reply)
+        self.assertTrue(out.startswith("PASS tap_label"))
+        self.assertEqual(err.getvalue(), "map=not-saved (disk full)\n")
+
+    def test_flow_records_the_report_trail_and_keeps_it_out_of_the_report(self) -> None:
+        import fast_device
+        report = {"status": "pass", "results": [], "labels": [], "trail": self.TRAIL}
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as raw:
+            flow = Path(raw) / "home.json"
+            flow.write_text(json.dumps({"version": 1, "app": {"bundle_id": "com.example.app"}, "actions": []}))
+            device = {"udid": "U0000000", "name": "X", "os": "26.0", "connected": True}
+            with mock.patch.object(fast_device, "resolve_device", return_value=device), \
+                    mock.patch.object(fast_device, "server_alive", return_value=True), \
+                    mock.patch.object(fast_device, "request", return_value=dict(report)), \
+                    mock.patch.object(fast_device, "record") as record, contextlib.redirect_stdout(out):
+                fast_device.run_flow(fast_device.parse_flow_arguments([str(flow), "--artifacts-root", raw, "--json"]))
+            metrics = json.loads(next(Path(raw).rglob("metrics.json")).read_text())
+        record.assert_called_once_with(self.TRAIL, "device")
+        self.assertNotIn("trail", metrics)
+        self.assertNotIn("trail", json.loads(out.getvalue()))
 
     def test_build_runner_uses_committed_xcodeproj_without_xcodegen(self) -> None:
         import fast_device

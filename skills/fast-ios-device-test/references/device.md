@@ -47,9 +47,10 @@ re-signs it with an existing development profile, and runs the flow on the devic
   every tap. `"setup": {"wait_for_idle": false}` in a flow, or `--no-idle-wait` on
   `fastDeviceTest do`, switches that wait off for the run (private XCTest API, found at
   runtime). The runner then settles on its own: a tap by selector waits until two snapshots
-  agree on the target's frame (up to 1.5 s, ~0.5 s per tap), and `launch` / `activate` wait
+  agree on the target's frame (up to 1.5 s, ~0.5 s per tap), `launch` / `activate` wait
   until the app is frontmost and its layout stops moving (up to 2 s; changing text such as a
-  clock does not count). The PASS/FAIL line says `wait_for_idle=unsupported` when this Xcode
+  clock does not count), and a `do` reads the screen it ends on once the layout stops moving
+  (up to 1.5 s). The PASS/FAIL line says `wait_for_idle=unsupported` when this Xcode
   has no such API and the wait stayed on.
 - **Prompts are per request.** A `do` taps no permission prompt unless it passes
   `--prompt-labels` (`"Allow, Don’t Allow"`, or a JSON array with rules as in
@@ -57,6 +58,11 @@ re-signs it with an existing development profile, and runs the flow on the devic
   prompt the runner answered is listed as `dismissed=["<title> → <button>"]`. When the prompt
   is what you are testing, tap it in its own step (`tap_label` with
   `"app": "com.apple.springboard"`) and leave its labels out.
+- **Screen map:** the runner returns what it read and the steps that succeeded with every
+  response, and the launcher adds them to `fastUIMap` (see [usage.md](usage.md)). A `do` that
+  only taps a point starts from the screen the previous `do` ended on (within 2 minutes). A
+  runner already started with `serve` before this feature records nothing until
+  `fastDeviceTest stop`.
 - `--device` accepts a UDID, the full name, or a unique part of the name (`Blue`); a part
   that matches two iPhones is refused.
 

@@ -32,6 +32,10 @@ final class FlowRunner: XCTestCase {
     private var screenBounds = CGRect.infinite
     private var inlineScreenshots = false
     private var screenshots: [[String: String]] = []
+    // What the request saw and did, for the screen map (Trail.swift), and the bundle id of
+    // `current`, which XCUIApplication does not expose.
+    private var trail = Trail()
+    private var currentBundleID = ""
     private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
 
     func testFlow() throws {
@@ -43,6 +47,7 @@ final class FlowRunner: XCTestCase {
             report = ["status": "fail", "step": "prepare", "error": message(error)]
         }
         if !dismissed.isEmpty { report["dismissed"] = dismissed }
+        report["trail"] = trail.finish()
         attachText("zz_result.json", json(report))
     }
 
@@ -65,6 +70,7 @@ final class FlowRunner: XCTestCase {
             screenshots = []
             var response = handle(request.body, isStopped: &isStopped)
             response["screenshots"] = screenshots
+            response["trail"] = trail.finish()
             if !dismissed.isEmpty { response["dismissed"] = dismissed }
             request.reply(json(response, pretty: false))
         }
@@ -85,6 +91,8 @@ private extension FlowRunner {
                   let operation = request["op"] as? String else {
                 throw Failure(message: "request needs an op")
             }
+            // A `do` goes on from the screen the previous one ended on; a flow starts clean.
+            trail.start(carry: operation == "action" || operation == "actions", now: Date().timeIntervalSinceReferenceDate)
             promptEntries = request["optional_permission_labels"] as? [Any] ?? []
             let skipIdle = (request["wait_for_idle"] as? Bool) == false
             if skipIdle { idleNote["wait_for_idle"] = Quiescence.disable() ? false : "unsupported" }
@@ -99,10 +107,10 @@ private extension FlowRunner {
                 return runFlow(request["flow"] as? [String: Any] ?? [:])
             case "action":
                 let action = request["action"] as? [String: Any] ?? [:]
-                if let bundleID = action["app"] as? String { current = application(bundleID) }
+                if let bundleID = action["app"] as? String { use(bundleID) }
                 guard current != nil else { throw Failure(message: "no current app: add \"app\" to the action") }
                 let result = try execute(action, index: 1) ?? [:]
-                _ = snapshotNodes()
+                finalRead()
                 return ["status": "pass", "result": result, "labels": lastLabels].merging(idleNote) { first, _ in first }
             case "actions":
                 return runActions(request["actions"] as? [[String: Any]] ?? []).merging(idleNote) { first, _ in first }
@@ -129,7 +137,7 @@ private extension FlowRunner {
                 return ["status": "fail", "step": index, "error": message(error), "results": results, "labels": lastLabels]
             }
         }
-        _ = snapshotNodes()
+        finalRead()
         return ["status": "pass", "results": results, "labels": lastLabels]
     }
 
@@ -152,10 +160,11 @@ private extension FlowRunner {
             default: break
             }
 
-            let target = application(bundleID)
-            current = target
+            let target = use(bundleID)
             target.launchArguments = setup["launch_arguments"] as? [String] ?? []
-            if setup["launch"] as? Bool ?? true {
+            let launches = setup["launch"] as? Bool ?? true
+            trail.gesture(["type": launches ? "launch" : "activate"])
+            if launches {
                 target.launch()
             } else {
                 target.activate()
@@ -182,9 +191,19 @@ private extension FlowRunner {
 
 // MARK: - Actions
 private extension FlowRunner {
+    // Runs one action; a gesture that succeeded joins the screen map's trail.
     func execute(_ action: [String: Any], index: Int) throws -> [String: Any]? {
+        trail.startAction()
+        let result = try perform(action, index: index)
+        if let kind = action["type"] as? String, Trail.gestureKinds.contains(kind), result?["optional_missing"] == nil {
+            trail.gesture(action)
+        }
+        return result
+    }
+
+    func perform(_ action: [String: Any], index: Int) throws -> [String: Any]? {
         guard let kind = action["type"] as? String else { throw Failure(message: "action \(index) has no type") }
-        if let bundleID = action["app"] as? String { current = application(bundleID) }
+        if let bundleID = action["app"] as? String { use(bundleID) }
         guard let app = current else { throw Failure(message: "no current app") }
         let timeout = number(action["timeout"]) ?? 6
         let postDelay = number(action["post_delay"]) ?? 0.15
@@ -247,6 +266,8 @@ private extension FlowRunner {
                 if let expected = selector["element_type"] as? String, !typeMatches(target.type, expected) {
                     return ["fallback_type": target.type]
                 }
+            } else {
+                return ["optional_missing": true]
             }
         case "tap_first":
             let nodes = try waitNodes(timeout) { nodes in nodes.contains { self.matches($0, action) } }
@@ -350,6 +371,7 @@ private extension FlowRunner {
         if let from = action["from"] as? [Any], let to = action["to"] as? [Any],
            let fromX = number(from.first), let fromY = number(from.last),
            let toX = number(to.first), let toY = number(to.last) {
+            trail.touch()
             point(fromX, fromY).press(forDuration: 0.05, thenDragTo: point(toX, toY))
             return
         }
@@ -366,12 +388,21 @@ private extension FlowRunner {
         case "right": points = (left, y, right, y)
         default: throw Failure(message: "swipe needs from/to [x, y] or direction up|down|left|right")
         }
+        trail.touch()
         point(points.0, points.1).press(forDuration: 0.05, thenDragTo: point(points.2, points.3))
     }
 }
 
 // MARK: - Hierarchy
 private extension FlowRunner {
+    @discardableResult
+    func use(_ bundleID: String) -> XCUIApplication {
+        let app = application(bundleID)
+        current = app
+        currentBundleID = bundleID
+        return app
+    }
+
     func application(_ bundleID: String) -> XCUIApplication {
         if let app = apps[bundleID] { return app }
         let app = XCUIApplication(bundleIdentifier: bundleID)
@@ -383,7 +414,11 @@ private extension FlowRunner {
         guard let root = try? current?.snapshot() else { return [] }
         screenBounds = root.frame
         var nodes: [Node] = []
+        var bars: [(frame: CGRect, title: String)] = []
         func walk(_ element: XCUIElementSnapshot, cell: CGRect?) {
+            if element.elementType == .navigationBar {
+                bars.append((element.frame, element.identifier.isEmpty ? element.label : element.identifier))
+            }
             let value = element.value.map { ($0 as? String) ?? String(describing: $0) } ?? ""
             nodes.append(Node(label: element.label, type: typeName(element.elementType), frame: element.frame,
                               cell: cell, identifier: element.identifier, value: value))
@@ -392,6 +427,10 @@ private extension FlowRunner {
         }
         walk(root, cell: nil)
         lastLabels = visibleLabels(nodes)
+        let title = Trail.title(bars.filter { screenBounds.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) }.map(\.title))
+        trail.read(app: currentBundleID, title: title,
+                   nodes: nodes.filter(isOnScreen).map { TrailNode(label: $0.label, type: $0.type, id: $0.identifier) },
+                   now: Date().timeIntervalSinceReferenceDate)
         return nodes
     }
 
@@ -456,6 +495,18 @@ private extension FlowRunner {
         guard Quiescence.isActive else { return }
         _ = app.wait(for: .runningForeground, timeout: 10)
         _ = Settle.stable(first: layout(snapshotNodes()), timeout: 2, read: { self.layout(self.snapshotNodes()) },
+                          same: { !$0.isEmpty && $0 == $1 })
+    }
+
+    // The read a request ends on: its labels and the screen map's destination. With the idle
+    // wait off it would land mid-animation (a push still sliding in shows both screens), so it
+    // waits for the layout to stop moving, as a launch does.
+    func finalRead() {
+        guard Quiescence.isActive else {
+            _ = snapshotNodes()
+            return
+        }
+        _ = Settle.stable(first: layout(snapshotNodes()), timeout: 1.5, read: { self.layout(self.snapshotNodes()) },
                           same: { !$0.isEmpty && $0 == $1 })
     }
 
@@ -619,12 +670,14 @@ private extension FlowRunner {
     }
 
     func tap(_ x: Double, _ y: Double, _ postDelay: Double) {
+        trail.touch()
         point(x, y).tap()
         Thread.sleep(forTimeInterval: postDelay)
     }
 
     // Hold one finger: a context menu, or a Home Screen widget's Edit Widget.
     func press(_ x: Double, _ y: Double, _ duration: Double, _ postDelay: Double) {
+        trail.touch()
         point(x, y).press(forDuration: duration)
         Thread.sleep(forTimeInterval: postDelay)
     }

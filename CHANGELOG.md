@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Screen map
+
+- Both engines now keep what their runs already read: the screens of each app, the nodes a
+  flow can select on them (label, id, element type per engine) and the steps that led from one
+  screen to the next, in `~/Library/Caches/fast-ui-map/<bundle id>.json`. No extra tree read,
+  tap or crawl.
+- `fastUIMap <bundle id>` lists the screens with the steps from launch; `--find <text>` prints a
+  selector, its types and the steps to reach it; `--screen`, `clear <bundle id>|--all`. Agents
+  look there before exploring with `dump`.
+- Only steps that succeeded become paths. Screens unseen for 60 days drop out, at most 400 per
+  app. `FAST_UI_MAP=0` turns it off; a map that cannot be saved prints `map=not-saved` and never
+  changes PASS/FAIL. Maps hold on-screen labels and stay on the Mac.
+- An optional `tap_label` that finds nothing reports `optional_missing` in its step result.
+
 ### Long press
 
 - `long_press` holds for `duration` seconds (default 1) on a selector or on `x`/`y`, on the
@@ -29,6 +43,8 @@
   1.5 s), so it no longer lands on a button still sliding in; `launch` and `activate` wait until
   the app is frontmost and its layout stops moving (up to 2 s), so the next `screenshot`,
   `tap_point` or `swipe` no longer acts on the launch screen.
+- `do --no-idle-wait` reads the screen it ends on only once the layout stops moving (up to
+  1.5 s): its labels used to show two screens mid-push (checked on an iPhone 11, iOS 26.7.1).
 - `do --no-idle-wait` reports `wait_for_idle=unsupported` when the private API is missing, as
   flows already did; it used to keep waiting without a word.
 - The runner's pure logic (prompt rules, settling) is checked on the Mac by

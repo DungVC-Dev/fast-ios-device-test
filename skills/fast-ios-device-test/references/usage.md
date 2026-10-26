@@ -335,6 +335,34 @@ An app that pins its own theme (e.g. an `appThemeMode` setting) or uses fixed po
 sizes ignores these; seed the theme via preferences, and treat text that does
 not grow at `accessibility-*` sizes as a product finding.
 
+## Screen map (`fastUIMap`)
+
+Every `fastSimulatorTest` flow and every `fastDeviceTest` flow or `do` adds what it read anyway
+to a map of the app: which screens it saw, the selectable nodes on each (label, id, element
+type per engine), and which step led from one screen to the next. Nothing extra is read or
+tapped. The map lives in `~/Library/Caches/fast-ui-map/<bundle id>.json`, one per app, shared
+by Simulator and iPhone runs.
+
+```bash
+fastUIMap                                    # every app with a map, size and file
+fastUIMap com.apple.Preferences              # one line per screen and the steps from launch
+fastUIMap com.apple.Preferences --find about # selector, types and steps for a label or id
+fastUIMap com.apple.Preferences --screen s4  # every node of one screen
+fastUIMap clear com.apple.Preferences        # or: fastUIMap clear --all
+```
+
+- A screen is known by its navigation title and its controls; scrolling stays on one screen.
+- Only steps that succeeded become paths; a selector that timed out never does. A step with no
+  tree read before it (a `tap_point` right after a `swipe`) starts from an unknown screen.
+- A flow's last step has no destination unless an action after it read the tree; a `do` always
+  ends with a read.
+- Screens not seen for 60 days are dropped, at most 400 per app. A map is a hint from earlier
+  runs: the flow still verifies, and deleting the folder is always safe.
+- Labels can include user data (names, emails). Long text is not kept, but never copy a map
+  into a repo, PR or ticket.
+- `FAST_UI_MAP=0` turns recording off; a map that cannot be saved prints
+  `map=not-saved (<reason>)` and never changes PASS/FAIL.
+
 ## Environment variables
 
 - `FAST_UI_ROOT`: artifacts root for `fastSimulatorTest` (runs, screenshots, videos).
@@ -347,6 +375,8 @@ not grow at `accessibility-*` sizes as a product finding.
 - `FAST_DEVICE_DEVELOPER_DIR`: Xcode to build/run the device runner with.
 - `FAST_DEVICE_PORT` / `FAST_DEVICE_IDLE`: runner port (8765) and idle timeout in seconds (1800).
 - `FAST_DEVICE_CACHE`: runner cache root.
+- `FAST_UI_MAP=0`: no screen map recording; `FAST_UI_MAP_DIR`: map folder
+  (`~/Library/Caches/fast-ui-map`).
 
 ## Cache model
 

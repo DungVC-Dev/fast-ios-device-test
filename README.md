@@ -32,7 +32,7 @@ anywhere and run its `install.sh` (no flag). That copies the tool to
 Either way the installer unpacks the bundled `axe` into `~/.local/share/axe` when none
 new enough is on PATH, installs Pillow if it can (only video review needs it), and
 links the skill into `~/.claude/skills`, the commands into `~/.claude/commands` and
-the launchers (`fastSimulatorTest`, `fastDeviceTest`, `fastUIReport`, `fastUIReview`)
+the launchers (`fastSimulatorTest`, `fastDeviceTest`, `fastUIReport`, `fastUIReview`, `fastUIMap`)
 into `~/.local/bin`. `install.sh --check` prints what it sees and what is missing,
 without changing anything.
 
@@ -62,11 +62,12 @@ shows the smallest complete flow.
 - `skills/fast-ios-device-test/references/review.md` — reviewing recorded runs with fastUIReview
 - `skills/fast-ios-device-test/references/usage.md` — flow action reference, matrix, cache model, troubleshooting
 - `commands/` — the three slash commands
-- `bin/` — launchers (`fastSimulatorTest`, `fastDeviceTest`, `fastUIReport`, `fastUIReview`, `fastEvidenceSheet`) for the plugin install
+- `bin/` — launchers (`fastSimulatorTest`, `fastDeviceTest`, `fastUIReport`, `fastUIReview`, `fastEvidenceSheet`, `fastUIMap`) for the plugin install
 - `scripts/fast_ui.py` — Simulator flow engine (`scripts/test_fast_ui.py` tests it); `--record`, `--session`
 - `scripts/fast_ui_report.py` — collates a fan-out session into a flow × simulator table (`fastUIReport`)
 - `scripts/fast_ui_review.py` — contact sheets and review notes for recorded runs (`fastUIReview`)
 - `scripts/fast_evidence_sheet.py` — captioned evidence sheet for a PR (`fastEvidenceSheet`; `scripts/test_fast_evidence_sheet.py`)
+- `scripts/fast_ui_map.py` — screen map recorded from both engines' runs, and its `fastUIMap` launcher (`scripts/test_fast_ui_map.py`)
 - `scripts/fast_media.py` — review-quality video re-encode and the one-final-clip rule, shared by both engines (`scripts/test_fast_media.py`)
 - `scripts/fast_device.py` + `device-runner/` — physical-iPhone flow runner (XCUITest, auto-signed; the `.xcodeproj` is committed, regenerate with `xcodegen generate` after editing `project.yml`)
 - `vendor/` — the AXe release tarball `install.sh` unpacks when no `axe` ≥ 1.8.0 is on PATH (MIT, see `vendor/AXe-LICENSE`)

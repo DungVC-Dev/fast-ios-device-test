@@ -33,6 +33,7 @@ mỗi flow chỉ 6–12 giây. Có gì mới: xem [CHANGELOG.md](CHANGELOG.md).
 | `/fastDeviceTest <mô tả>` | Test trên iPhone thật, kể cả Settings / Shortcuts |
 | `/fastUIReview <session>` | Xem lại video đã quay |
 | `fastEvidenceSheet <spec.json>` | Ghép ảnh chụp thành một ảnh có chú thích để đính kèm PR (agent tự viết spec) |
+| `fastUIMap <bundle id> [--find <chữ>]` | Xem bản đồ màn hình app mà các lần chạy trước đã ghi lại (selector, đường đi) |
 
 ## Ví dụ
 

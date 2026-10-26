@@ -25,6 +25,7 @@ from typing import Any, Callable, Iterator
 # bin/ holds symlinks in a git checkout but copies in the zip, so look beside scripts/ too.
 sys.path[:0] = [str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parent.parent / "scripts")]
 from fast_media import publish_video, shrink_video  # noqa: E402
+from fast_ui_map import NOISE_LABEL, SCROLL_BAR_LABEL, Trail, record  # noqa: E402
 
 
 BUILD_SUFFIXES = {
@@ -170,6 +171,8 @@ DESCRIBE_UI_ATTEMPTS = 3
 # this, taken by the wait that just succeeded, is still the screen the tap lands on.
 HIERARCHY_REUSE = 0.3
 _HIERARCHY_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+# The running flow's screen-map trail (fast_ui_map.Trail); None when FAST_UI_MAP=0.
+TRAIL: Trail | None = None
 
 
 def invalidate_hierarchy(udid: str) -> None:
@@ -188,15 +191,13 @@ def hierarchy(udid: str, max_age: float = 0.0) -> list[dict[str, Any]]:
             result = axe(udid, "describe-ui")
             nodes = list(flatten(json.loads(result.stdout)))
             _HIERARCHY_CACHE[udid] = (time.perf_counter(), nodes)
+            if TRAIL is not None:
+                TRAIL.read(nodes)
             return nodes
         except (FastUIError, json.JSONDecodeError) as error:
             last_error = error
             time.sleep(0.4 * (attempt + 1))
     raise FastUIError(f"describe-ui failed {DESCRIBE_UI_ATTEMPTS} times: {last_error}")
-
-
-NOISE_LABEL = re.compile(r"^[\d:.,%\s]*$")
-SCROLL_BAR_LABEL = re.compile(r"^(Vertical|Horizontal) scroll bar, \d+ pages?$")
 
 
 def visible_labels(nodes: list[dict[str, Any]], limit: int = 40) -> list[str]:
@@ -554,6 +555,8 @@ def swipe_points(action: dict[str, Any], nodes: list[dict[str, Any]], index: int
 
 def swipe(udid: str, start: list[float], end: list[float], duration: float, post_delay: float) -> None:
     invalidate_hierarchy(udid)
+    if TRAIL is not None:
+        TRAIL.touch()
     axe(
         udid, "swipe", "--start-x", str(start[0]), "--start-y", str(start[1]),
         "--end-x", str(end[0]), "--end-y", str(end[1]),
@@ -583,6 +586,8 @@ def split_post_delay(post_delay: float) -> tuple[float, float]:
 
 def tap_point(udid: str, x: float, y: float, post_delay: float) -> None:
     invalidate_hierarchy(udid)
+    if TRAIL is not None:
+        TRAIL.touch()
     capped, remainder = split_post_delay(max(post_delay, TAP_SETTLE))
     axe(
         udid, "tap", "-x", f"{x:.2f}", "-y", f"{y:.2f}",
@@ -595,6 +600,8 @@ def tap_point(udid: str, x: float, y: float, post_delay: float) -> None:
 def long_press(udid: str, x: float, y: float, duration: float, post_delay: float) -> None:
     """Hold one finger for `duration` seconds: a context menu, or a widget's Edit Widget."""
     invalidate_hierarchy(udid)
+    if TRAIL is not None:
+        TRAIL.touch()
     axe(udid, "touch", "-x", f"{x:.2f}", "-y", f"{y:.2f}", "--down", "--up", "--delay", str(duration))
     time.sleep(max(post_delay, TAP_SETTLE))
 
@@ -971,6 +978,8 @@ def motion_ratio(first: Path, second: Path, region: list[float], threshold: int)
 
 
 GESTURE_KINDS = {"tap_label", "tap_first", "tap_nearest", "tap_point", "long_press", "swipe", "scroll_to"}
+# Steps the screen map records as a way from one screen to the next.
+TRAIL_GESTURES = GESTURE_KINDS | {"type_text", "launch", "activate", "terminate", "open_url"}
 
 
 def execute_action(
@@ -985,7 +994,11 @@ def execute_action(
     """Run one action; `defaults` carries flow-wide keys such as `settle` from `setup`,
     `bundle_id` is the app under test for `launch`/`terminate` without an `app` key."""
     kind = required(action, "type", f"action {index}")
+    if TRAIL is not None:
+        TRAIL.start_action()
     result = run_action(action, udid, artifacts, index, optional_prompt_labels, bundle_id)
+    if TRAIL is not None and kind in TRAIL_GESTURES and not (result or {}).get("optional_missing"):
+        TRAIL.gesture(action)
     settle = action.get("settle", (defaults or {}).get("settle"))
     if kind in GESTURE_KINDS and settle:
         timeout = SETTLE_TIMEOUT if isinstance(settle, bool) else float(settle)
@@ -1035,6 +1048,8 @@ def run_action(
                 tap_point(udid, *frame_center(target), post_delay)
             if node_type(target) != selector["element_type"]:
                 return {"fallback_type": node_type(target)}
+        else:
+            return {"optional_missing": True}
     elif kind == "wait_absent":
         wait_absent(udid, action, timeout, optional_prompt_labels)
     elif kind == "assert_absent":
@@ -1224,7 +1239,22 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def new_trail(bundle_id: str) -> Trail | None:
+    return None if os.environ.get("FAST_UI_MAP") == "0" else Trail(bundle_id)
+
+
+def finish_trail(build_only: bool, current_step: str) -> None:
+    """Merge the run's trail into the screen map; a map problem never changes the run's result."""
+    if TRAIL is None or build_only or current_step == "prepare":
+        return
+    try:
+        record(TRAIL.finish(), "simulator")
+    except Exception as error:  # noqa: BLE001 - the map is a hint, the run's result stands
+        print(f"map=not-saved ({error})", file=sys.stderr)
+
+
 def main() -> int:
+    global TRAIL
     args = parse_arguments()
     flow_path = args.flow.expanduser().resolve()
     try:
@@ -1241,6 +1271,7 @@ def main() -> int:
     name = variant_name(required(spec, "name", "flow"), variant)
     udid = required(app, "simulator", "app")
     bundle_id = required(app, "bundle_id", "app")
+    TRAIL = new_trail(bundle_id)
     # A prebuilt app is driven as installed; a fresh install needs an .app to put back.
     fresh_install = bool(setup.get("fresh_install", not app.get("prebuilt")))
     if fresh_install and app.get("prebuilt") and not app.get("app_path"):
@@ -1292,6 +1323,8 @@ def main() -> int:
                 recorder.start()
             launch = ["xcrun", "simctl", "launch", udid, bundle_id]
             launch += [str(value) for value in setup.get("launch_arguments", [])]
+            if TRAIL is not None:
+                TRAIL.gesture({"type": "launch"})
             command(launch)
 
         optional_prompt_labels = setup.get("optional_permission_labels", [])
@@ -1368,6 +1401,7 @@ def main() -> int:
             print(f"FAIL task={name} step={current_step} total={metrics.total:.1f}s error={error}{video_suffix} artifacts={file_link(artifacts)}", file=sys.stderr)
         return 1
     finally:
+        finish_trail(args.build_only, current_step)
         restore_ui_settings(udid, previous_ui)
         if not args.build_only and not args.keep_state:
             reset_preferences(udid, bundle_id, setup.get("preferences", {}), fresh_install)
