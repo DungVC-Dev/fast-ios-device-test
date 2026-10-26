@@ -72,7 +72,8 @@ Everything the engine needs is in the flow; there is no per-project config.
 1. Write the smallest version-1 flow for the requested behavior in a temporary directory
    (delete it afterwards, one `rm <file>` per file).
 2. App driven before → `fastUIMap <bundle id> --find <label>` first: selectors and the steps that
-   reach them, from what earlier runs saw. A hint that may be stale; the flow still verifies.
+   reach them, from what earlier runs saw; `--path-to <screen>` prints them as one guarded `do`
+   request. A hint that may be stale; the flow still verifies.
    Maps live in `~/Library/Caches/fast-ui-map/` and hold on-screen labels, which can include
    user data: never copy one into a repo, PR or ticket.
 3. Unknown label → one `{"type": "dump"}` at that point: the PASS line prints the visible
@@ -97,6 +98,10 @@ launch) and print one PASS/FAIL line with the visible labels after the actions.
   at the first screen that is not the expected one. A destructive-looking step (Delete, Pay,
   Send, Sign Out…) in an array is refused unless it says `"confirm": true`.
 - Between steps, one line of reasoning; turn a path that worked into a flow for reruns.
+- A screen visited before: `fastUIMap <bundle id> --path-to <screen>` gives the whole way as one
+  guarded request. A search of about six steps or more: hand it to the `ui-explorer` subagent
+  (Haiku, `FAST_GUARD_SINGLE=1`, returns the guarded request) and decide only the hard steps
+  yourself — experimental, check its result before relying on it.
 
 ### Timing rules
 

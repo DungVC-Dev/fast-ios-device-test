@@ -578,11 +578,13 @@ class SimulatorTrailTests(unittest.TestCase):
         err = io.StringIO()
         fake = FakeAxe(*(trees or (self.A, self.B)))
         with tempfile.TemporaryDirectory() as raw, mock.patch.dict(fast_ui.os.environ, env or {}), \
-                mock.patch.object(fast_ui, "ensure_booted") as booted, mock.patch.object(fast_ui, "command") as cmd, \
+                mock.patch.object(fast_ui, "ensure_booted") as booted, mock.patch.object(fast_ui, "ensure_device_hub") as hub, \
+                mock.patch.object(fast_ui, "command") as cmd, \
                 mock.patch.object(fast_ui, "axe", side_effect=fake) as axe, mock.patch.object(fast_ui, "record") as record, \
                 contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = fast_ui.run_do([*argv, "--out", raw])
         axe.err = err.getvalue()
+        axe.hub = hub
         axe.record = record
         axe.booted = booted
         axe.command = cmd
@@ -591,7 +593,9 @@ class SimulatorTrailTests(unittest.TestCase):
     def test_sim_do_acts_on_the_current_screen(self) -> None:
         code, out, axe = self.sim_do('{"type":"tap_label","label":"Go"}', "--simulator", "SIM")
         self.assertEqual((code, out), (0, 'PASS tap_label labels=["Demo", "Done", "Back"]\n'))
-        axe.booted.assert_called_once_with("SIM")
+        # A booted simulator skips `simctl bootstatus` (0.3 s a step); Device Hub is still checked.
+        axe.booted.assert_not_called()
+        axe.hub.assert_called_once_with("SIM")
         axe.command.assert_not_called()  # no build, install, launch or preferences
         axe.record.assert_not_called()  # no --app: no screen map
 
@@ -606,7 +610,7 @@ class SimulatorTrailTests(unittest.TestCase):
         code, out, axe = self.sim_do('{"type":"tap_label","label":"Go"}',
                                      env={"FAST_SIMULATOR": "SIM-ENV", "FAST_UI_APP": "com.example.app"})
         self.assertEqual(code, 0)
-        axe.booted.assert_called_once_with("SIM-ENV")
+        axe.hub.assert_called_once_with("SIM-ENV")
         trail, engine = axe.record.call_args.args
         self.assertEqual((engine, trail[0]["screen"]["app"]), ("simulator", "com.example.app"))
         with mock.patch.dict(fast_ui.os.environ, {}, clear=False):
@@ -652,6 +656,43 @@ class SimulatorTrailTests(unittest.TestCase):
         code, _, axe = self.sim_do('{"type":"wait","label":"Go"}', "--simulator", "SIM", trees=(self.A,))
         self.assertEqual(code, 0)
         self.assertEqual(sum(1 for call in axe.call_args_list if call.args[1] == "describe-ui"), 1)
+
+    def test_sim_do_boots_a_shut_down_simulator_and_runs_from_the_start(self) -> None:
+        good = FakeAxe(self.A, self.B)
+
+        def shut_down_once(udid, *args, check=True):
+            if not shut_down_once.booted:
+                raise fast_ui.FastUIError("Error: Cannot run accessibility commands against SIM as it is not booted")
+            return good(udid, *args, check=check)
+        shut_down_once.booted = False
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as raw, mock.patch.object(fast_ui, "ensure_device_hub"), \
+                mock.patch.object(fast_ui, "ensure_booted", side_effect=lambda udid: setattr(shut_down_once, "booted", True)) as booted, \
+                mock.patch.object(fast_ui, "axe", side_effect=shut_down_once), mock.patch.object(fast_ui.time, "sleep") as sleep, \
+                contextlib.redirect_stdout(out):
+            code = fast_ui.run_do(['{"type":"tap_label","label":"Go"}', "--simulator", "SIM", "--out", raw])
+        self.assertEqual((code, out.getvalue()), (0, 'PASS tap_label labels=["Demo", "Done", "Back"]\n'))
+        booted.assert_called_once_with("SIM")
+        self.assertNotIn(mock.call(0.4), sleep.call_args_list)  # "not booted" is not retried like a flaky read
+
+    def test_sim_do_boots_when_a_later_step_finds_the_simulator_shut_down(self) -> None:
+        # `terminate` on a shut-down simulator passes (it ignores errors); `launch` is the first to fail.
+        state = {"booted": False}
+
+        def simctl(arguments, check=True, **kwargs):
+            if arguments[2] == "launch" and not state["booted"]:
+                raise fast_ui.FastUIError("command failed (149) xcrun simctl launch: Unable to lookup in current state: Shutdown")
+            return mock.Mock(returncode=0, stdout="", stderr="")
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as raw, mock.patch.object(fast_ui, "ensure_device_hub"), \
+                mock.patch.object(fast_ui, "ensure_booted", side_effect=lambda udid: state.update(booted=True)) as booted, \
+                mock.patch.object(fast_ui, "command", side_effect=simctl), \
+                mock.patch.object(fast_ui, "axe", side_effect=FakeAxe(self.A)), mock.patch.object(fast_ui.time, "sleep"), \
+                contextlib.redirect_stdout(out):
+            code = fast_ui.run_do(['[{"type":"terminate"},{"type":"launch"},{"type":"wait","label":"Go"}]',
+                                   "--simulator", "SIM", "--app", "com.example.app", "--out", raw])
+        self.assertEqual(code, 0, out.getvalue())
+        booted.assert_called_once_with("SIM")
 
     def test_sim_do_lists_screenshots(self) -> None:
         code, out, _ = self.sim_do('{"type":"screenshot","name":"now.png"}', "--simulator", "SIM")
@@ -1140,7 +1181,7 @@ class RunnerLogicTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             binary = Path(raw) / "checks"
             build = subprocess.run(
-                ["swiftc", "-parse-as-library", str(runner / "PromptRules.swift"), str(runner / "Settle.swift"), str(runner / "Trail.swift"), str(runner / "Gestures.swift"),
+                ["swiftc", "-parse-as-library", str(runner / "PromptRules.swift"), str(runner / "Settle.swift"), str(runner / "Trail.swift"), str(runner / "Gestures.swift"), str(runner / "Requests.swift"),
                  str(here / "runner_logic_checks.swift"), "-o", str(binary)],
                 capture_output=True, text=True,
             )
@@ -1393,6 +1434,119 @@ FlowRunner.swift:403: Expected failure in -[FastDeviceUITests.FlowRunner testSer
                                   ('{"type":"tap_label","label":"Go","expect":"Done"}', "expect must be a selector object")):
             with self.subTest(argument=argument), self.assertRaisesRegex(fast_device.FastDeviceError, message):
                 self.run_do(argument)
+
+    def test_a_locked_iphone_fails_fast_and_leaves_no_runner(self) -> None:
+        import fast_device
+        device = {"udid": "U", "name": "tester’s iPhone", "os": "26.7.1", "connected": True}
+        with tempfile.TemporaryDirectory() as raw:
+            log = Path(raw) / "server-U.log"
+
+            def start(*args, **kwargs):
+                log.write_text('Error Domain=com.apple.dt.deviceprep Code=-3 "Unlock tester’s iPhone to Continue" '
+                               "NSLocalizedRecoverySuggestion=Xcode cannot launch FastDeviceUITests on tester’s iPhone "
+                               "because the device is locked.\n")
+                process = mock.Mock(pid=4242)
+                process.poll.return_value = None
+                return process
+            with mock.patch.object(fast_device, "CACHE_ROOT", Path(raw)), \
+                    mock.patch.object(fast_device, "server_alive", return_value=False), \
+                    mock.patch.object(fast_device, "run", return_value=mock.Mock(returncode=1)), \
+                    mock.patch.object(fast_device, "developer_dir_for", return_value="/Xcode"), \
+                    mock.patch.object(fast_device, "pick_signing", return_value={}), \
+                    mock.patch.object(fast_device, "build_runner", return_value=Path(raw) / "r.xctestrun"), \
+                    mock.patch.object(fast_device.shutil, "copy"), \
+                    mock.patch.object(fast_device, "tunnel_address", return_value="::1"), \
+                    mock.patch.object(fast_device.subprocess, "Popen", side_effect=start) as popen, \
+                    mock.patch.object(fast_device, "kill_runners") as kill, \
+                    mock.patch.object(fast_device.time, "sleep"):
+                started = time.perf_counter()
+                with self.assertRaisesRegex(fast_device.FastDeviceError, "tester’s iPhone is locked: unlock it"):
+                    fast_device.start_server(device, rebuild=False)
+                self.assertLess(time.perf_counter() - started, 5)
+            kill.assert_called_once_with("U")
+            self.assertFalse((Path(raw) / "server-U.json").exists())
+
+    def run_device_flow(self, *flags: str) -> tuple[mock.Mock, mock.Mock]:
+        import fast_device
+        report = {"status": "pass", "results": [], "labels": []}
+        with tempfile.TemporaryDirectory() as raw:
+            flow = Path(raw) / "f.json"
+            flow.write_text(json.dumps({"version": 1, "app": {"bundle_id": "com.example.app"}, "actions": []}))
+            device = {"udid": "U0000000", "name": "X", "os": "26.0", "connected": True}
+            with mock.patch.object(fast_device, "resolve_device", return_value=device), \
+                    mock.patch.object(fast_device, "start_server") as start, \
+                    mock.patch.object(fast_device, "server_alive", side_effect=lambda udid: start.called), \
+                    mock.patch.object(fast_device, "request", return_value=dict(report)), \
+                    mock.patch.object(fast_device, "run_one_shot", return_value=dict(report)) as one_shot, \
+                    mock.patch.object(fast_device, "publish_recording", return_value=None), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                fast_device.run_flow(fast_device.parse_flow_arguments([str(flow), "--artifacts-root", raw, *flags]))
+        return start, one_shot
+
+    def test_a_flow_starts_or_reuses_the_runner_unless_recording_or_one_shot(self) -> None:
+        start, one_shot = self.run_device_flow()
+        start.assert_called_once()
+        one_shot.assert_not_called()
+        for flag in ("--record", "--one-shot"):
+            with self.subTest(flag=flag):
+                start, one_shot = self.run_device_flow(flag)
+                start.assert_not_called()
+                one_shot.assert_called_once()
+
+    def test_a_dead_runner_of_ours_is_cleared_but_a_live_or_foreign_one_is_busy(self) -> None:
+        import fast_device
+        device = {"udid": "U", "name": "tester’s iPhone", "os": "26.7.1", "connected": True}
+
+        class Building(Exception):
+            pass
+        with tempfile.TemporaryDirectory() as raw:
+            state = Path(raw) / "server-U.json"
+            state.write_text(json.dumps({"pid": 4242}))
+            old = time.time() - 600
+            fast_device.os.utime(state, (old, old))
+            pgrep = mock.Mock(returncode=0, stdout="4242\n")
+            with mock.patch.object(fast_device, "CACHE_ROOT", Path(raw)), \
+                    mock.patch.object(fast_device, "server_alive", return_value=False), \
+                    mock.patch.object(fast_device, "run", return_value=pgrep), \
+                    mock.patch.object(fast_device, "kill_runners") as kill, \
+                    mock.patch.object(fast_device, "developer_dir_for", side_effect=Building):
+                # Ours (the state file's pid), older than a start, and silent: a runner left behind.
+                with self.assertRaises(Building):
+                    fast_device.start_server(device, rebuild=False)
+                kill.assert_called_once_with("U")
+                # A process this state file does not name belongs to someone else.
+                state.write_text(json.dumps({"pid": 1}))
+                fast_device.os.utime(state, (old, old))
+                with self.assertRaisesRegex(fast_device.FastDeviceError, "busy"):
+                    fast_device.start_server(device, rebuild=False)
+                # Ours but just written: maybe still starting for another agent; never killed.
+                state.write_text(json.dumps({"pid": 4242}))
+                kill.reset_mock()
+                with self.assertRaisesRegex(fast_device.FastDeviceError, "busy"):
+                    fast_device.start_server(device, rebuild=False)
+                kill.assert_not_called()
+
+    def test_the_runner_idles_out_after_five_minutes_by_default(self) -> None:
+        import fast_device
+
+        class Started(Exception):
+            pass
+        calls = []
+        with tempfile.TemporaryDirectory() as raw, \
+                mock.patch.object(fast_device, "CACHE_ROOT", Path(raw)), \
+                mock.patch.object(fast_device, "server_alive", return_value=False), \
+                mock.patch.object(fast_device, "run", side_effect=lambda args, **kw: calls.append(args) or mock.Mock(returncode=1)), \
+                mock.patch.object(fast_device, "developer_dir_for", return_value="/X"), \
+                mock.patch.object(fast_device, "pick_signing", return_value={}), \
+                mock.patch.object(fast_device, "build_runner", return_value=Path(raw) / "r.xctestrun"), \
+                mock.patch.object(fast_device.shutil, "copy"), \
+                mock.patch.object(fast_device.subprocess, "Popen", side_effect=Started), \
+                mock.patch.dict(fast_device.os.environ, {}, clear=False):
+            fast_device.os.environ.pop("FAST_DEVICE_IDLE", None)
+            with self.assertRaises(Started):
+                fast_device.start_server({"udid": "U", "name": "X", "os": "26.0"}, rebuild=False)
+        idle = [args for args in calls if any("FAST_IDLE" in str(part) for part in args)]
+        self.assertIn("300", idle[0])
 
     def test_do_refuses_a_destructive_step_in_a_batch(self) -> None:
         import fast_device

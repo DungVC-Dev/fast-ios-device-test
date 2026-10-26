@@ -1,7 +1,7 @@
 import Foundation
 
 // Checks for the device runner's pure logic (PromptRules.swift, Settle.swift, Trail.swift,
-// Gestures.swift). The
+// Gestures.swift, Requests.swift). The
 // runner itself only runs on an iPhone, so test_fast_ui.RunnerLogicTests compiles these files
 // with this one for the Mac and runs the result.
 @main
@@ -20,6 +20,7 @@ struct RunnerLogicChecks {
         checkSettle()
         checkTrail()
         checkGestures()
+        checkRequests()
         if failures > 0 { exit(1) }
         print("OK")
     }
@@ -184,5 +185,16 @@ struct RunnerLogicChecks {
               && kept == [["count", "key", "type"], ["from", "hold", "to", "type"], ["key", "modifiers", "type"],
                           ["button", "type"]],
               "the new gestures join the screen map with their parameters")
+    }
+
+    static func checkRequests() {
+        check(Requests.endsWithRead(["type": "wait", "label": "A"]) && Requests.endsWithRead(["type": "dump"])
+              && Requests.endsWithRead(["type": "scroll_to", "label": "A"])
+              && Requests.endsWithRead(["type": "tap_label", "label": "A", "expect": ["label": "B"]])
+              && Requests.endsWithRead(["type": "tap_nearest", "success": ["label": "B"]]),
+              "a step that reads the tree last leaves a fresh read: the request needs no closing one")
+        check(!Requests.endsWithRead(["type": "tap_label", "label": "A"]) && !Requests.endsWithRead(["type": "swipe"])
+              && !Requests.endsWithRead(["type": "screenshot"]) && !Requests.endsWithRead([:]),
+              "a gesture, a screenshot or nothing still needs the closing read")
     }
 }

@@ -73,7 +73,7 @@ final class FlowRunner: XCTestCase {
         inlineScreenshots = true
         let environment = ProcessInfo.processInfo.environment
         let port = NWEndpoint.Port(rawValue: UInt16(environment["FAST_PORT"] ?? "") ?? 8765) ?? 8765
-        let idleLimit = Double(environment["FAST_IDLE"] ?? "1800") ?? 1800
+        let idleLimit = Double(environment["FAST_IDLE"] ?? "300") ?? 300
         let server = try RequestServer(port: port)
         server.start()
         var lastRequest = Date()
@@ -127,7 +127,7 @@ private extension FlowRunner {
                 if let bundleID = action["app"] as? String { use(bundleID) }
                 guard current != nil else { throw Failure(message: "no current app: add \"app\" to the action") }
                 let result = try execute(action, index: 1) ?? [:]
-                finalRead()
+                if !Requests.endsWithRead(action) { finalRead() }
                 return ["status": "pass", "result": result, "labels": lastLabels].merging(idleNote) { first, _ in first }
             case "actions":
                 return runActions(request["actions"] as? [[String: Any]] ?? []).merging(idleNote) { first, _ in first }
@@ -154,7 +154,7 @@ private extension FlowRunner {
                 return ["status": "fail", "step": index, "error": message(error), "results": results, "labels": lastLabels]
             }
         }
-        finalRead()
+        if !Requests.endsWithRead(actions.last ?? [:]) { finalRead() }
         return ["status": "pass", "results": results, "labels": lastLabels]
     }
 

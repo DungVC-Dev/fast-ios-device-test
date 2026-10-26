@@ -47,6 +47,16 @@ class RiskyStepTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"FAST_GUARD_WORDS": "archive, block"}):
             self.assertEqual(fast_guard.risky_step(actions), (2, "Archive Chat"))
 
+    def test_single_steps_are_checked_when_asked(self) -> None:
+        import os
+        from unittest import mock
+        alone = [{"type": "tap_label", "label": "Sign Out"}]
+        self.assertIsNone(fast_guard.risky_step(alone))
+        # An explorer subagent sends one step at a time; with FAST_GUARD_SINGLE=1 those count too.
+        with mock.patch.dict(os.environ, {"FAST_GUARD_SINGLE": "1"}):
+            self.assertEqual(fast_guard.risky_step(alone), (1, "Sign Out"))
+            self.assertIsNone(fast_guard.risky_step([{**alone[0], "confirm": True}]))
+
     def test_requests_are_checked_for_shape(self) -> None:
         with self.assertRaisesRegex(ValueError, "step 2: each action must be a JSON object"):
             fast_guard.check_actions([{"type": "wait", "label": "a"}, "b"])

@@ -396,6 +396,8 @@ def record(trail: list[dict[str, Any]], engine: str, now: datetime | None = None
 
 
 PATH_LIMIT = 6
+# Labels and ids most pushed screens show, useless as proof of having arrived somewhere.
+SCREEN_CHROME = {"backbutton", "back", "chevron", "close", "cancel", "done", "edit", "more", "search"}
 INDEX_LABELS = 8
 
 
@@ -408,21 +410,95 @@ def compact(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
-def shortest_paths(map_: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
-    """Gestures from an entry screen to every reachable screen, breadth first, at most 6 steps."""
-    paths = {key: [] for key, screen in map_["screens"].items() if screen.get("entry")}
-    frontier = list(paths)
+def shortest_routes(map_: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """The edges from an entry screen to every reachable screen, breadth first, at most 6."""
+    routes: dict[str, list[dict[str, Any]]] = {key: [] for key, screen in map_["screens"].items() if screen.get("entry")}
+    frontier = list(routes)
     while frontier:
         following = []
         for origin in frontier:
-            if len(paths[origin]) >= PATH_LIMIT:
+            if len(routes[origin]) >= PATH_LIMIT:
                 continue
             for edge in map_["edges"]:
-                if edge["from"] == origin and edge["to"] not in paths:
-                    paths[edge["to"]] = paths[origin] + [edge["gesture"]]
+                if edge["from"] == origin and edge["to"] not in routes:
+                    routes[edge["to"]] = routes[origin] + [edge]
                     following.append(edge["to"])
         frontier = following
-    return paths
+    return routes
+
+
+def shortest_paths(map_: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """Gestures from an entry screen to every reachable screen."""
+    return {key: [edge["gesture"] for edge in route] for key, route in shortest_routes(map_).items()}
+
+
+def screen_name(screens: dict[str, Any], key: str) -> str:
+    screen = screens[key]
+    first = next((node.get("id") for node in screen["nodes"] if node.get("id")), None)
+    labels = [node_label(node) for node in screen["nodes"] if node_label(node) and node_types(node) & INTERACTIVE]
+    return f'{key} "{screen.get("title") or first or (labels[0] if labels else key)}"'
+
+
+def node_selector(node: dict[str, Any]) -> dict[str, Any]:
+    key = "id" if node.get("id") else "label" if node.get("label") else "label_contains"
+    return {key: node[key]}
+
+
+def expect_for(target: dict[str, Any], before: dict[str, Any]) -> dict[str, Any] | None:
+    """A selector the target screen shows and the screen before it does not, so the guard
+    cannot pass before the step has moved (Settings has a "General" row; General's title is no
+    proof of arriving there)."""
+    seen = {before.get("title") or ""} | {node_label(node) for node in before["nodes"]} | {
+        str(node.get("id")) for node in before["nodes"] if node.get("id")}
+    seen |= {value.lower() for value in seen}
+
+    def label_of(node: dict[str, Any]) -> dict[str, Any]:
+        return node_selector({key: value for key, value in node.items() if key != "id"})
+
+    # The title, then a row or button only this screen has, then an id, then any text; never
+    # the chrome every pushed screen shows (a back button proves nothing).
+    candidates = ([{"label": target["title"]}] if target.get("title") else []) + [
+        label_of(node) for node in target["nodes"] if node_label(node) and node_types(node) & INTERACTIVE] + [
+        {"id": node["id"]} for node in target["nodes"] if node.get("id")] + [
+        label_of(node) for node in target["nodes"] if node_label(node)]
+    usable = [candidate for candidate in candidates if (value := str(next(iter(candidate.values())))) not in seen
+              and value.lower() not in seen and value.lower() not in SCREEN_CHROME]
+    # Text without digits first: a version, a count or a date differs on the next iPhone.
+    return next((candidate for candidate in usable if not any(ch.isdigit() for ch in str(next(iter(candidate.values()))))),
+                usable[0] if usable else None)
+
+
+def path_to(app: str, stored: dict[str, Any], text: str) -> int:
+    """`--path-to`: a guarded request from an entry screen to the screen that has `text` as
+    its title (else a node), ready for `do`."""
+    screens, needle = stored["screens"], text.lower()
+    by_title = [key for key, screen in screens.items() if needle in str(screen.get("title") or "").lower()]
+    by_node = [(key, node) for key, screen in screens.items() for node in screen["nodes"]
+               if needle in node_label(node).lower() or needle in str(node.get("id", "")).lower()]
+    candidates = by_title or [key for key, _ in by_node]
+    if not candidates:
+        print(f"PATH none text={text}")
+        return 0
+    routes = shortest_routes(stored)
+    reachable = sorted((key for key in candidates if key in routes),
+                       key=lambda key: (len(routes[key]), -parse_time(screens[key]["last_seen"]).timestamp()))
+    if not reachable:
+        print(f"PATH none text={text} seen={screen_name(screens, candidates[0])} (no recorded way there)")
+        return 0
+    key = reachable[0]
+    route = routes[key]
+    start = route[0]["from"] if route else key
+    select = "" if by_title else f" select={compact(node_selector(next(node for k, node in by_node if k == key)))}"
+    request = []
+    for edge in route:
+        step = dict(edge["gesture"])
+        expected = expect_for(screens[edge["to"]], screens[edge["from"]])
+        if expected:
+            step["expect"] = expected
+        request.append(step)
+    print(f"PATH app={app} to={screen_name(screens, key)} from={screen_name(screens, start)} steps={len(route)}{select}")
+    print(compact(request))
+    return 0
 
 
 def path_text(paths: dict[str, list[dict[str, Any]]], key: str) -> str:
@@ -449,7 +525,7 @@ def list_maps() -> int:
     return 0
 
 
-def show_map(app: str, find: str | None, screen_key: str | None) -> int:
+def show_map(app: str, find: str | None, screen_key: str | None, path_text_to: str | None = None) -> int:
     path = map_path(app)
     if not path.exists():
         print(f"MAP none app={app}")
@@ -458,14 +534,13 @@ def show_map(app: str, find: str | None, screen_key: str | None) -> int:
     if stored is None:
         print(f"MAP bad app={app} path={file_link(path)}")
         return 1
+    if path_text_to is not None:
+        return path_to(app, stored, path_text_to)
     paths = shortest_paths(stored)
     screens = stored["screens"]
 
     def name(key: str) -> str:
-        screen = screens[key]
-        first = next((node.get("id") for node in screen["nodes"] if node.get("id")), None)
-        labels = [node_label(node) for node in screen["nodes"] if node_label(node) and node_types(node) & INTERACTIVE]
-        return f'{key} "{screen.get("title") or first or (labels[0] if labels else key)}"'
+        return screen_name(screens, key)
 
     if screen_key:
         if screen_key not in screens:
@@ -542,10 +617,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("app", nargs="?", help="Bundle id; without it, list every map")
     parser.add_argument("--find", help="Nodes whose label or id contains this text, with a selector and the path")
     parser.add_argument("--screen", help="Every node of one screen key (s12)")
+    parser.add_argument("--path-to", help="A guarded do request (each step with an expect) from an entry screen to "
+                        "the screen titled with this text, else the one showing it")
     args = parser.parse_args(arguments)
     if not args.app:
         return list_maps()
-    return show_map(args.app, args.find, args.screen)
+    return show_map(args.app, args.find, args.screen, args.path_to)
 
 
 if __name__ == "__main__":

@@ -518,7 +518,10 @@ def start_server(device: dict[str, Any], rebuild: bool) -> None:
     if device.get("serving") or server_alive(udid):
         remember_device(udid, device)
         return
-    if run(["pgrep", "-f", f"serve-{udid}.xctestrun"], check=False).returncode == 0:
+    holders = run(["pgrep", "-f", f"serve-{udid}.xctestrun"], check=False)
+    if holders.returncode == 0 and left_behind(udid, holders.stdout):
+        end_runner(udid)
+    elif holders.returncode == 0:
         raise FastDeviceError(
             f"{device['name']} is busy: another runner holds it (maybe another agent). "
             "Reuse it, or `fastDeviceTest stop` only if it is yours"
@@ -527,7 +530,7 @@ def start_server(device: dict[str, Any], rebuild: bool) -> None:
     xctestrun = build_runner(developer_dir, pick_signing(udid), rebuild)
     serve_xctestrun = xctestrun.with_name(f"serve-{udid}.xctestrun")
     shutil.copy(xctestrun, serve_xctestrun)
-    for key, value in {"FAST_PORT": str(SERVER_PORT), "FAST_IDLE": os.environ.get("FAST_DEVICE_IDLE", "1800")}.items():
+    for key, value in {"FAST_PORT": str(SERVER_PORT), "FAST_IDLE": os.environ.get("FAST_DEVICE_IDLE", "300")}.items():
         run(["plutil", "-replace", f"{TEST_TARGET}.TestingEnvironmentVariables.{key}", "-string", value, str(serve_xctestrun)])
     log = CACHE_ROOT / f"server-{udid}.log"
     process = subprocess.Popen(
@@ -551,8 +554,33 @@ def start_server(device: dict[str, Any], rebuild: bool) -> None:
             raise FastDeviceError(f"runner exited before serving: {tail}")
         if server_alive(udid):
             return
+        # A locked iPhone makes xcodebuild wait for the passcode for as long as it takes.
+        if "because the device is locked" in log.read_text(errors="replace"):
+            end_runner(udid)
+            raise FastDeviceError(f"{device['name']} is locked: unlock it and run again "
+                                  "(Auto-Lock › Never keeps a test phone usable)")
         time.sleep(1)
+    end_runner(udid)
     raise FastDeviceError(f"runner did not answer on port {SERVER_PORT} within 120s; log {log}")
+
+
+def left_behind(udid: str, pgrep_output: str) -> bool:
+    """A runner this Mac's state file names, that no longer answers, and that started longer
+    ago than a start can take: what an idle-out leaves while xcodebuild collects diagnostics.
+    Anything else (another agent's runner, one still starting) stays "busy"."""
+    path = server_state_path(udid)
+    try:
+        pid = json.loads(path.read_text()).get("pid")
+        age = time.time() - path.stat().st_mtime
+    except (OSError, ValueError):
+        return False
+    return str(pid) in pgrep_output.split() and age > 130
+
+
+def end_runner(udid: str) -> None:
+    """End a runner this launcher just started and that never served, so the iPhone is free."""
+    kill_runners(udid)
+    server_state_path(udid).unlink(missing_ok=True)
 
 
 def stop_server(udid: str) -> None:
@@ -620,7 +648,12 @@ def parse_flow_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--device", help="UDID or name; required when several iPhones are connected")
     parser.add_argument("--install", help="Install this .app on the device before the run")
     parser.add_argument("--rebuild-runner", action="store_true", help="Rebuild and re-sign the cached runner")
-    parser.add_argument("--serve", action="store_true", help="Start the persistent runner if it is not running")
+    parser.add_argument("--serve", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--one-shot", action="store_true",
+        help="Do not start the persistent runner: without one running, the flow runs through one "
+        "xcodebuild test (a running runner is still used)",
+    )
     parser.add_argument("--appearance", choices=["light", "dark"])
     parser.add_argument("--content-size", choices=list(CONTENT_SIZES))
     parser.add_argument("--artifacts-root", type=Path, default=os.environ.get("FAST_DEVICE_ROOT") or None)
@@ -665,7 +698,10 @@ def run_flow(args: argparse.Namespace) -> int:
         raise FastDeviceError(f"{device['name']} is not connected; unlock it and plug it in or join the same Wi-Fi")
     if args.install or app.get("install_path"):
         install_app(device["udid"], str(Path(args.install or app["install_path"]).expanduser()))
-    if args.serve:
+    # A flow starts or reuses the persistent runner (~5 s once, then 4–6 s a flow instead of
+    # 14–20 s one-shot); the runner idles out after FAST_DEVICE_IDLE (5 min). A recording needs
+    # a one-shot run.
+    if not (args.record or args.one_shot):
         start_server(device, args.rebuild_runner)
     if args.record and server_alive(device["udid"]):
         raise FastDeviceError(

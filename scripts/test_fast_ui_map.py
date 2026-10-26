@@ -387,6 +387,50 @@ class CommandTests(MapDirTestCase):
         self.assertTrue(self.path.with_name(f"{APP}.json.bad").exists())
         self.assertEqual(len(json.loads(self.path.read_text())["screens"]), 1)
 
+    def test_cli_path_to_prints_a_guarded_request(self) -> None:
+        self.walk()
+        code, output = self.run_main(APP, "--path-to", "about")
+        header, request = output.splitlines()
+        self.assertEqual(code, 0)
+        self.assertEqual(header, 'PATH app=com.apple.Preferences to=s3 "About" from=s1 "Settings" steps=2')
+        # Each expect names something the screen before does not show: Settings has a General row,
+        # so "General" would match before the tap; General has an About row.
+        self.assertEqual(json.loads(request), [
+            {"type": "tap_label", "label": "General", "expect": {"label": "About"}},
+            {"type": "tap_label", "label": "About", "expect": {"label": "Name"}},
+        ])
+
+    def test_expect_skips_screen_chrome_and_prefers_labels(self) -> None:
+        before = {"title": "Settings", "nodes": [{"label": "General", "types": {"device": "Cell"}}]}
+        target = {"title": "General", "nodes": [{"id": "BackButton", "label": "Settings", "types": {"device": "Button"}},
+                                                {"label": "chevron", "types": {"device": "Button"}},
+                                                {"id": "ABOUT_ID", "label": "About", "types": {"device": "Cell"}}]}
+        # Every pushed screen has a back button; a row only this screen shows is the proof.
+        self.assertEqual(fast_ui_map.expect_for(target, before), {"label": "About"})
+
+    def test_expect_prefers_text_without_numbers(self) -> None:
+        before = {"title": "General", "nodes": [{"label": "About", "types": {"simulator": "Button"}}]}
+        target = {"title": "General", "nodes": [{"label": "iOS Version, 26.5", "types": {"simulator": "Button"}},
+                                                {"label": "Legal & Regulatory", "types": {"simulator": "Button"}}]}
+        # A version, a count or a date differs on the next iPhone; a fixed caption does not.
+        self.assertEqual(fast_ui_map.expect_for(target, before), {"label": "Legal & Regulatory"})
+
+    def test_cli_path_to_a_node_ends_on_its_screen_and_names_it(self) -> None:
+        self.walk()
+        code, output = self.run_main(APP, "--path-to", "storage")
+        header, request = output.splitlines()
+        self.assertEqual(header, 'PATH app=com.apple.Preferences to=s2 "General" from=s1 "Settings" steps=1 select={"label":"Storage"}')
+        self.assertEqual(json.loads(request), [{"type": "tap_label", "label": "General", "expect": {"label": "About"}}])
+
+    def test_cli_path_to_an_entry_unknown_or_unreachable_screen(self) -> None:
+        self.walk()
+        fast_ui_map.record([screen("Orphan", "Lonely")], "simulator", NOW)
+        self.assertEqual(self.run_main(APP, "--path-to", "Settings")[1].splitlines()[0],
+                         'PATH app=com.apple.Preferences to=s1 "Settings" from=s1 "Settings" steps=0')
+        self.assertEqual(self.run_main(APP, "--path-to", "lonely"),
+                         (0, 'PATH none text=lonely seen=s4 "Orphan" (no recorded way there)\n'))
+        self.assertEqual(self.run_main(APP, "--path-to", "nowhere"), (0, "PATH none text=nowhere\n"))
+
     def test_cli_missing_map_is_not_an_error(self) -> None:
         self.assertEqual(self.run_main("com.example.none"), (0, "MAP none app=com.example.none\n"))
 

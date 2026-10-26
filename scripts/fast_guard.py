@@ -37,8 +37,9 @@ def check_actions(actions: list[Any]) -> None:
 
 def risky_step(actions: list[dict[str, Any]]) -> tuple[int, str] | None:
     """(step, label) of the first destructive-looking gesture in a request of several actions
-    that does not say `"confirm": true`; None when the request may run."""
-    if len(actions) < 2:
+    (of any size with FAST_GUARD_SINGLE=1, for an explorer that sends one step at a time) that
+    does not say `"confirm": true`; None when the request may run."""
+    if len(actions) < 2 and os.environ.get("FAST_GUARD_SINGLE") != "1":
         return None
     for index, action in enumerate(actions, start=1):
         if action.get("type") not in GESTURES or action.get("confirm") is True:

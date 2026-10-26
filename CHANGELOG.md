@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+- `fastUIMap <bundle id> --path-to <text>` prints the recorded way from an entry screen to a
+  screen as one `do` request, each step with an `expect` that only the next screen shows (a
+  title the screen before also lists, such as Settings' "General" row, is skipped). A screen
+  visited before is reached in one request and one model turn.
+- `fastSimulatorTest do` skips `simctl bootstatus` (0.3 s a step): a shut-down simulator fails
+  the first step before it acts, and only then is it booted and the request run again.
+- `fastDeviceTest do` skips its closing read when the last step already read the screen (a
+  `wait`, a `dump`, an `expect`): with the idle wait off that read settled for up to 1.5 s.
+- `expect` from `--path-to` names something only the next screen shows, never chrome (Back,
+  chevron, Close, Done…) and text with digits last (a version differs on the next iPhone).
+- iPhone flows start or reuse the persistent runner (14–20 s one-shot → 4–6 s); `--one-shot`
+  and `--record` keep the old way. The runner idles out after 5 min instead of 30. A runner this
+  Mac started that stopped answering is replaced instead of reported "busy", and a locked
+  iPhone fails in seconds ("is locked: unlock it") instead of after 120 s, leaving no runner.
+- `agents/ui-explorer.md` (experimental): a Haiku subagent for long step-by-step searches that
+  returns one guarded request; `FAST_GUARD_SINGLE=1` applies the destructive-step refusal to
+  one-action requests too. `install.sh` links it into `~/.claude/agents`.
+
 ## 1.5.0 — 2026-10-26
 
 ### Faster step-by-step runs

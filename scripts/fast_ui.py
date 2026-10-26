@@ -180,6 +180,12 @@ def invalidate_hierarchy(udid: str) -> None:
     _HIERARCHY_CACHE.pop(udid, None)
 
 
+def not_booted(error: Exception) -> bool:
+    """AXe and simctl on a shut-down simulator; retrying a read will not boot it."""
+    text = str(error)
+    return "not booted" in text or "current state: Shutdown" in text
+
+
 def hierarchy(udid: str, max_age: float = 0.0) -> list[dict[str, Any]]:
     cached = _HIERARCHY_CACHE.get(udid)
     if cached is not None and max_age > 0 and time.perf_counter() - cached[0] <= max_age:
@@ -196,6 +202,8 @@ def hierarchy(udid: str, max_age: float = 0.0) -> list[dict[str, Any]]:
                 TRAIL.read(nodes)
             return nodes
         except (FastUIError, json.JSONDecodeError) as error:
+            if not_booted(error):
+                raise
             last_error = error
             time.sleep(0.4 * (attempt + 1))
     raise FastUIError(f"describe-ui failed {DESCRIBE_UI_ATTEMPTS} times: {last_error}")
@@ -1489,16 +1497,27 @@ def run_do(argv: list[str]) -> int:
     results: list[dict[str, Any]] = []
     failed: tuple[int, dict[str, Any], Exception] | None = None
     read_error: Exception | None = None
-    try:
-        ensure_booted(udid)
+
+    def run_steps() -> tuple[tuple[int, dict[str, Any], Exception] | None, list[dict[str, Any]]]:
+        done: list[dict[str, Any]] = []
         for index, action in enumerate(actions, start=1):
             try:
                 result = execute_action(action, udid, args.out, index, prompts, {}, args.app)
             except (FastUIError, OSError, subprocess.TimeoutExpired, ValueError, TypeError, KeyError) as error:
-                failed = (index, action, error)
-                break
+                return (index, action, error), done
             if result:
-                results.append({"step": index, **result})
+                done.append({"step": index, **result})
+        return None, done
+
+    try:
+        # No `simctl bootstatus` (0.3 s a step): on a shut-down simulator no step can act (a
+        # `terminate` passes as a no-op), so the first one that says so boots it and the request
+        # runs again from the start.
+        ensure_device_hub(udid)
+        failed, results = run_steps()
+        if failed and not_booted(failed[2]):
+            ensure_booted(udid)
+            failed, results = run_steps()
         # A `wait` or `expect` that just read the tree already shows where the steps ended. The
         # steps ran even when this read fails, so that alone is not a FAIL (resending would tap twice).
         try:

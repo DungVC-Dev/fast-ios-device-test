@@ -11,6 +11,7 @@ INSTALL_DIR="${FAST_IOS_INSTALL_DIR:-$HOME/.local/share/fast-ios-device-test}"
 SKILLS_DIR="${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"
 COMMANDS_DIR="${CLAUDE_COMMANDS_DIR:-$HOME/.claude/commands}"
 BIN_DIR="${FAST_IOS_BIN_DIR:-$HOME/.local/bin}"
+AGENTS_DIR="${CLAUDE_AGENTS_DIR:-$HOME/.claude/agents}"
 AXE_HOME="${FAST_IOS_AXE_DIR:-$HOME/.local/share/axe}"
 MODE="copy"
 case "${1:-}" in
@@ -102,7 +103,7 @@ link() {
 }
 
 [[ -n "$xcode_major" ]] || { echo "error: Xcode command line tools not found"; exit 1; }
-mkdir -p "$SKILLS_DIR" "$COMMANDS_DIR" "$BIN_DIR"
+mkdir -p "$SKILLS_DIR" "$COMMANDS_DIR" "$BIN_DIR" "$AGENTS_DIR"
 axe_ok || install_axe
 python3 -c "import PIL" 2>/dev/null || python3 -m pip install --user pillow >/dev/null 2>&1 \
     || echo "note: Pillow not installed; only fastUIReview, fastEvidenceSheet and the motion action need it (python3 -m pip install --user pillow)"
@@ -111,6 +112,7 @@ link "$HERE/skills/fast-ios-device-test" "$SKILLS_DIR/fast-ios-device-test"
 link "$HERE/commands/fastSimulatorTest.md" "$COMMANDS_DIR/fastSimulatorTest.md"
 link "$HERE/commands/fastDeviceTest.md" "$COMMANDS_DIR/fastDeviceTest.md"
 link "$HERE/commands/fastUIReview.md" "$COMMANDS_DIR/fastUIReview.md"
+link "$HERE/agents/ui-explorer.md" "$AGENTS_DIR/ui-explorer.md"
 link "$HERE/scripts/fast_ui.py" "$BIN_DIR/fastSimulatorTest"
 link "$HERE/scripts/fast_ui.py" "$BIN_DIR/fastUITest"
 link "$HERE/scripts/fast_device.py" "$BIN_DIR/fastDeviceTest"

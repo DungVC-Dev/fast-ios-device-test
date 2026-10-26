@@ -419,9 +419,14 @@ fastUIMap                                    # every app with a map, size and fi
 fastUIMap com.apple.Preferences              # one line per screen and the steps from launch
 fastUIMap com.apple.Preferences --find about # selector, types and steps for a label or id
 fastUIMap com.apple.Preferences --screen s4  # every node of one screen
+fastUIMap com.apple.Preferences --path-to about  # a guarded request to that screen, for `do`
 fastUIMap clear com.apple.Preferences        # or: fastUIMap clear --all
 ```
 
+- `--path-to <text>` prints `PATH … steps=N [select=…]` and one JSON array: the recorded steps
+  from an entry screen (launch the app first) to the screen titled with the text (else the one
+  showing it), each with an `expect` that only the next screen shows. Paste it into `do`: one
+  request, one stop at the first surprise.
 - A screen is known by its navigation title and its controls; scrolling stays on one screen.
 - Only steps that succeeded become paths; a selector that timed out never does. A step with no
   tree read before it (a `tap_point` right after a `swipe`) starts from an unknown screen.
@@ -444,7 +449,9 @@ fastUIMap clear com.apple.Preferences        # or: fastUIMap clear --all
 - `FAST_DEVICE_ROOT`: artifacts root for `fastDeviceTest`.
 - `FAST_DEVICE_PROFILE`: provisioning profile UUID or path for the device runner.
 - `FAST_DEVICE_DEVELOPER_DIR`: Xcode to build/run the device runner with.
-- `FAST_DEVICE_PORT` / `FAST_DEVICE_IDLE`: runner port (8765) and idle timeout in seconds (1800).
+- `FAST_DEVICE_PORT` / `FAST_DEVICE_IDLE`: runner port (8765) and idle timeout in seconds (300).
+- `FAST_GUARD_WORDS` / `FAST_GUARD_SINGLE=1`: more destructive words; check one-action `do`
+  requests too (the `ui-explorer` subagent sets it).
 - `FAST_DEVICE_CACHE`: runner cache root.
 - `FAST_DEVICE` / `FAST_SIMULATOR` / `FAST_UI_APP`: defaults for `--device`, `--simulator` and
   `--app` (step-by-step `do`).

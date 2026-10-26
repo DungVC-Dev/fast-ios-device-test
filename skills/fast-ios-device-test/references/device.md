@@ -89,7 +89,7 @@ fastDeviceTest flow.json --device <d> --record --session pr-12
 ```
 
 - One-shot runs only: the persistent runner is one long test, so its clip would span the
-  whole session. `--record` with `--serve`, or while `serve` holds the iPhone, is refused.
+  whole session. `--record` runs one-shot; while `serve` holds the iPhone it is refused.
   A recorded flow costs one-shot time (~20 s) plus ~2 s to re-encode.
 - The clip is re-encoded at review quality (H.264 MP4, long side 960 px, ~800 kbit/s:
   17 s of a 1290×2796 recording goes from 20 MB to ~1.4 MB). A PASS keeps
@@ -105,9 +105,11 @@ fastDeviceTest flow.json --device <d> --record --session pr-12
 
 ### Persistent runner — use it for anything beyond one run
 
-`fastDeviceTest serve --device <udid|name>` starts the runner once (~5 s) and keeps
-it answering on the CoreDevice tunnel (port 8765, idles out after 30 min). While
-it is up, a flow takes ~4–6 s instead of ~14 s, and single actions ~1 s:
+A flow and every `do` start the runner if it is not up (`fastDeviceTest serve --device
+<udid|name>` does it alone, ~5 s) and reuse it; it answers on the CoreDevice tunnel (port
+8765) and idles out after 5 min (`FAST_DEVICE_IDLE`). While it is up, a flow takes ~4–6 s
+instead of ~14–20 s, and single actions ~1 s; `--one-shot` (and `--record`) run a flow
+through one xcodebuild test instead:
 
 ```bash
 fastDeviceTest do '{"type":"tap_label","label":"Lyrics","element_type":"RadioButton"}' --device <d>
@@ -135,11 +137,11 @@ fastDeviceTest do '[{"type":"terminate"},{"type":"launch"},
 `dump` writes the on-screen nodes with type and frame to `<out>/<name>-ui.json`
 (`ui=` in the PASS line); the frame keys are the selector keys, so a dump feeds
 `frame` bounds, `tap_point` and `tap_nearest` directly. In a flow they land in the
-run's artifacts folder. `--serve` on a flow run starts the server
-if needed. Always `stop` when done: the runner holds the device, and another
-agent's xcodebuild run on the same iPhone will collide with it. `serve` refuses a
-device that already has a runner ("is busy"); pick another iPhone, never `stop`
-a runner you did not start.
+run's artifacts folder. Always `stop` when done: the runner holds the device, and another
+agent's xcodebuild run on the same iPhone will collide with it. A device that already has a
+runner is refused ("is busy"); pick another iPhone, never `stop` a runner you did not start.
+A runner this Mac started that no longer answers (after an idle-out, while xcodebuild
+collects diagnostics) is ended and replaced; a locked iPhone is reported in seconds.
 
 - Artifacts: `<project_root>/build/fast-device/<task>/<run>/` with screenshots,
   `failure.png`, `failure-ui.txt`, `metrics.json`, the `.xcresult` and, with `--record`,
