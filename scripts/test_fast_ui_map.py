@@ -115,9 +115,20 @@ class MatchTests(unittest.TestCase):
 class GestureTests(unittest.TestCase):
     def test_kept_gesture_never_keeps_text(self) -> None:
         self.assertEqual(fast_ui_map.kept_gesture({"type": "type_text", "text": "secret"}), {"type": "type_text"})
+        self.assertEqual(fast_ui_map.kept_gesture({"type": "press_button", "button": "siri", "text": "call mum"}),
+                         {"type": "press_button", "button": "siri"})
         nearest = {"type": "tap_nearest", "target": {"label": "More Info"}, "anchor": {"label": "Office"}, "timeout": 3}
         self.assertEqual(fast_ui_map.kept_gesture(nearest), {k: v for k, v in nearest.items() if k != "timeout"})
         self.assertEqual(fast_ui_map.kept_gesture({"type": "launch", "launch_arguments": ["-token", "x"]}), {"type": "launch"})
+
+    def test_kept_gesture_keeps_the_new_gestures_parameters(self) -> None:
+        for action in ({"type": "edge_swipe", "edge": "top", "at": 0.9}, {"type": "pinch", "scale": 2.0, "id": "map"},
+                       {"type": "rotate", "radians": 1.2}, {"type": "orientation", "value": "landscape_left"},
+                       {"type": "press_key", "key": "delete", "count": 3}, {"type": "press_button", "button": "home"},
+                       {"type": "set_picker", "value": "7", "index": 1}, {"type": "drag", "from": [1, 2], "to": [3, 4], "hold": 1},
+                       {"type": "key_combo", "key": "a", "modifiers": ["command"]}, {"type": "two_finger_tap", "taps": 2}):
+            with self.subTest(action=action["type"]):
+                self.assertEqual(fast_ui_map.kept_gesture(action), action)
 
     def test_kept_gesture_keeps_what_makes_a_path_pasteable(self) -> None:
         link = {"type": "open_url", "url": "myapp://settings"}

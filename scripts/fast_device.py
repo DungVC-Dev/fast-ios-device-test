@@ -439,8 +439,39 @@ def request(udid: str, payload: dict[str, Any], timeout: float) -> dict[str, Any
             if chunk.endswith(b"\n"):
                 break
     if not chunks:
-        raise FastDeviceError("server closed the connection without a reply")
+        reason = runner_end_reason(Path(state.get("log", "")))
+        # This request's runner is gone (it answers every request it reads to the end); its
+        # xcodebuild lingers collecting diagnostics and would make the next request find the
+        # iPhone busy. Ended by the pattern `stop` uses, never by a pid that may be reused, and
+        # the state file goes only while it still names that runner.
+        kill_runners(udid)
+        try:
+            if json.loads(state_path.read_text()).get("pid") == state.get("pid"):
+                state_path.unlink()
+        except (OSError, ValueError):
+            pass
+        raise FastDeviceError(
+            "the runner ended without a reply" + (f": {reason}" if reason else "")
+            + "; the next request starts it again"
+        )
     return json.loads(b"".join(chunks))
+
+
+RUNNER_FAILURE = re.compile(r"(?:error:|Expected failure in)\s*-\[[^\]]*\]\s*:\s*(.+)")
+
+
+def runner_end_reason(log: Path) -> str:
+    """The last XCTest failure in the runner's log: a UI Automation failure (a picker value the
+    wheel does not have) ends the whole test, and with it the persistent runner."""
+    try:
+        lines = log.read_text(errors="replace").splitlines()[-400:]
+    except OSError:
+        return ""
+    for line in reversed(lines):
+        found = RUNNER_FAILURE.search(line)
+        if found:
+            return found.group(1).split("Reason: (")[0].strip()[:300]
+    return ""
 
 
 def server_alive(udid: str) -> bool:

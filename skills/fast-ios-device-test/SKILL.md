@@ -61,7 +61,7 @@ Everything the engine needs is in the flow; there is no per-project config.
   `app_path` is the `.app` inside it. `build_inputs` (source folders + `project.pbxproj`) drive
   the build cache; without them every run rebuilds.
 - Selector keys on `wait`, `wait_absent`, `assert_absent`, `tap_first`, `tap_label`, `long_press`,
-  `scroll_to`:
+  `double_tap`, `scroll_to` (gestures such as `drag`, `pinch`, `set_slider` are in usage.md):
   `label` (exact), `label_contains`, `id` (accessibilityIdentifier), `value` (a switch's "1"/"0",
   a field's text), `element_type`, `label_is_empty`, `frame` bounds (`{"min_y": 400}`).
 - `tap_label` matches a `Button`; when the flow sets no `element_type` and exactly one node of

@@ -80,6 +80,53 @@ Supported actions:
 - `tap_point`: tap a declared coordinate.
 - `long_press`: hold for `duration` seconds (default 1) on a selector, resolved as `tap_label`
   resolves it, or on `x`/`y`: a context menu, or a Home Screen widget's `Edit Widget`.
+- `double_tap`: two taps on a selector or `x`/`y` (zoom a photo, like a post).
+- `drag`: one finger from `from` to `to`, each `[x, y]` or a selector (the first match, top-left
+  first). It rests `hold` seconds on `from` first (default 0.6; `0` drags at once), which a drag
+  and drop or a list reorder needs; `duration` is the move (on the iPhone, XCUITest's own speed
+  when it is left out). `edge_swipe` takes `duration` the same way.
+- `edge_swipe`: from one point inside `edge` (`left`, `right`, `top`, `bottom`), `at` (0–1, default
+  0.5) along it, `distance` (0–1, default 0.8; a back swipe that stops at half the screen springs back) of
+  the screen inward: back swipe (`left`), Control
+  Center (`top`, `at` 0.9), Notification Center (`top`, `at` 0.3), home (`bottom`).
+- `press_key`: `key` `delete`, `return`, `tab`, `escape`, `space`, `up`, `down`, `left` or `right`,
+  `count` times.
+- `key_combo`: `key` (one letter or digit, or a `press_key` name) held with `modifiers`, a list of
+  `command`, `shift`, `option`, `control`: `{"type": "key_combo", "key": "a", "modifiers":
+  ["command"]}` selects all in a field; iPad and hardware-keyboard shortcuts.
+- `clear_text`: taps the text field a selector names (a caption with the same label is skipped;
+  else the first text field on screen) near its trailing edge, selects all and deletes. The
+  iPhone fails if text is left; the Simulator, where AXe shows a placeholder as the value,
+  returns what the field shows afterwards as `value`.
+- On the iPhone, `type_text`, `press_key`, `key_combo` and `clear_text` need a focused field and
+  say so otherwise (XCUITest would end the runner).
+- Simulator edge swipes, measured on iOS 26.5: back (`left`), Control Center (`top`, `at` 0.9) and
+  the lock screen's swipe up (`bottom`) work; Notification Center never opens; go home with
+  `press_button` `home`, since a `bottom` swipe with the keyboard up stays in the app and on the
+  Home Screen it can start icon editing.
+- `press_button`: `home` (it does not close an open Control Center; `edge_swipe` `bottom` does;
+  on the iPhone the next steps act on SpringBoard until an action names another `app`);
+  `siri` (on the iPhone with the request as `text`, which the screen map never keeps);
+  `lock` on the Simulator only (a locked iPhone needs its passcode; a second `lock` wakes the
+  Simulator on its lock screen and `edge_swipe` `bottom` unlocks it); `volume_up` /
+  `volume_down` on the iPhone only.
+- `set_slider`: the slider matched by `id` or `label` (required on both engines) to `value` from
+  0 to 1. On the iPhone it
+  lands within a few percent (0.7 read back 73 %). On the Simulator AXe refuses a slider whose
+  selector matches two nested elements, which SwiftUI often makes; move its thumb with `drag`.
+- iPhone only (the Simulator says why): `two_finger_tap` on a selector or `element_type`
+  (`{"type": "two_finger_tap", "element_type": "Map"}` zooms a map out; `taps`, default 1),
+  `pinch` with `scale` (above 1 zooms in) and `rotate` with `radians` (two fingers; on the
+  element a selector or `element_type` names — `Map`, `ScrollView`, `WebView`, `Image`, `Cell`,
+  `Table`, …; an unknown name is refused — else the whole app; XCUITest starts a zoom-out with
+  the fingers near the element's edges, so on a full-screen map under a sheet it drags the sheet
+  instead), `orientation` with
+  `value` `portrait`, `landscape_left`, `landscape_right` or `portrait_upside_down` (a flow turns
+  the iPhone back to portrait when it ends; a `do` leaves it; apps that only run upright, such as
+  Settings, do not turn), `set_picker` with the wheel's own text as `value` (`07`, not `7`) and
+  its `index` (default 0). A value the wheel does not have ends XCTest's whole test: the FAIL
+  line quotes XCTest's list of the wheel's values, and the next request starts a new runner.
+- Simulator only: `shake` (the Simulator's Shake). XCUITest has no shake on an iPhone.
 - `swipe`: gesture from `from` to `to` coordinates, or `direction`
   (`up`/`down`/`left`/`right`, the way the finger moves: `up` scrolls content down).
 - `scroll_to`: swipe in `direction` (default `up`) until the selector is on screen,

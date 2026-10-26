@@ -29,11 +29,14 @@ struct Trail {
     // fast_device's TRAIL_GESTURES and fast_ui_map.GESTURE_KEYS.
     static let gestureKinds: Set<String> = [
         "tap_label", "tap_first", "tap_nearest", "tap_point", "long_press", "swipe", "scroll_to",
-        "type_text", "launch", "activate", "terminate", "open_url",
+        "type_text", "launch", "activate", "terminate", "open_url", "double_tap", "drag", "edge_swipe", "pinch",
+        "rotate", "orientation", "press_key", "press_button", "set_slider", "set_picker", "shake", "two_finger_tap",
+        "key_combo", "clear_text",
     ]
     static let interactiveTypes = keptTypes.subtracting(["StaticText", "Heading"])
     static let gestureKeys = [
         "label", "label_contains", "id", "element_type", "target", "anchor", "x", "y", "direction", "from", "to", "url",
+        "hold", "edge", "at", "scale", "radians", "value", "index", "key", "count", "button", "modifiers", "taps",
     ]
     // fast_ui_map.LABEL_LIMIT and NODES_PER_SCREEN: long text never leaves the iPhone whole.
     static let labelLimit = 40

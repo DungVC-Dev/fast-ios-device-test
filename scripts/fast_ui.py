@@ -527,18 +527,41 @@ def wait_settled(
         time.sleep(interval)
 
 
-def swipe_points(action: dict[str, Any], nodes: list[dict[str, Any]], index: int) -> tuple[list[float], list[float]]:
-    """`from`/`to` points, or a `direction` the finger moves in ("up" scrolls content down)."""
-    if "direction" not in action:
-        return required(action, "from", f"action {index}"), required(action, "to", f"action {index}")
-    # The application node spans the whole screen, so the largest frame is the screen.
-    screen = max(
+def screen_box(nodes: list[dict[str, Any]]) -> tuple[float, float, float, float]:
+    """x, y, width, height of the screen: the application node's frame. Without one, the largest
+    frame; a scroll view's content can be taller than the screen, so never prefer it."""
+    root = next((node.get("frame") for node in nodes if node.get("type") == "Application" and node.get("frame")), None)
+    screen = root or max(
         ((node.get("frame") or {}) for node in nodes),
         key=lambda frame: float(frame.get("width", 0)) * float(frame.get("height", 0)),
         default={},
     )
-    x0, y0 = float(screen.get("x", 0)), float(screen.get("y", 0))
-    width, height = float(screen.get("width", 0)), float(screen.get("height", 0))
+    return (float(screen.get("x", 0)), float(screen.get("y", 0)),
+            float(screen.get("width", 0)), float(screen.get("height", 0)))
+
+
+def edge_points(edge: str, at: float, distance: float, box: tuple[float, float, float, float]) -> tuple[list[float], list[float]]:
+    """A swipe that starts one point inside `edge`, `at` (0-1) along it, and travels `distance`
+    (0-1) of the screen inward: the back swipe, Control Center (top, at 0.9), going home (bottom)."""
+    x0, y0, width, height = box
+    along_x, along_y = x0 + width * at, y0 + height * at
+    points = {
+        "left": ([x0 + 1, along_y], [x0 + width * distance, along_y]),
+        "right": ([x0 + width - 1, along_y], [x0 + width * (1 - distance), along_y]),
+        "top": ([along_x, y0 + 1], [along_x, y0 + height * distance]),
+        "bottom": ([along_x, y0 + height - 1], [along_x, y0 + height * (1 - distance)]),
+    }
+    if edge not in points:
+        raise FastUIError(f"edge must be left, right, top or bottom, not {edge!r}")
+    start, end = points[edge]
+    return [round(value, 2) for value in start], [round(value, 2) for value in end]
+
+
+def swipe_points(action: dict[str, Any], nodes: list[dict[str, Any]], index: int) -> tuple[list[float], list[float]]:
+    """`from`/`to` points, or a `direction` the finger moves in ("up" scrolls content down)."""
+    if "direction" not in action:
+        return required(action, "from", f"action {index}"), required(action, "to", f"action {index}")
+    x0, y0, width, height = screen_box(nodes)
     mid_x, mid_y = x0 + width / 2, y0 + height / 2
     top, bottom = y0 + height * 0.3, y0 + height * 0.7
     left, right = x0 + width * 0.2, x0 + width * 0.8
@@ -603,6 +626,33 @@ def long_press(udid: str, x: float, y: float, duration: float, post_delay: float
     if TRAIL is not None:
         TRAIL.touch()
     axe(udid, "touch", "-x", f"{x:.2f}", "-y", f"{y:.2f}", "--down", "--up", "--delay", str(duration))
+    time.sleep(max(post_delay, TAP_SETTLE))
+
+
+def double_tap(udid: str, x: float, y: float, post_delay: float) -> None:
+    """Both taps in one AXe session: two `axe tap` processes are too far apart to count as one."""
+    invalidate_hierarchy(udid)
+    if TRAIL is not None:
+        TRAIL.touch()
+    step = f"tap -x {x:.2f} -y {y:.2f}"
+    axe(udid, "batch", "--step", step, "--step", step)
+    time.sleep(max(post_delay, TAP_SETTLE))
+
+
+def drag(udid: str, start: list[float], end: list[float], hold: float, duration: float, post_delay: float) -> None:
+    """Move one finger from `start` to `end`; with `hold`, rest on `start` first, as a drag and
+    drop or a reorder needs (AXe's own drag starts moving at once)."""
+    invalidate_hierarchy(udid)
+    if TRAIL is not None:
+        TRAIL.touch()
+    (sx, sy), (ex, ey) = start, end
+    if hold <= 0:
+        axe(udid, "drag", "--start-x", f"{sx:.2f}", "--start-y", f"{sy:.2f}", "--end-x", f"{ex:.2f}",
+            "--end-y", f"{ey:.2f}", "--duration", str(duration))
+    else:
+        axe(udid, "batch", "--step", f"touch -x {sx:.2f} -y {sy:.2f} --down", "--step", f"sleep {hold}",
+            "--step", f"swipe --start-x {sx:.2f} --start-y {sy:.2f} --end-x {ex:.2f} --end-y {ey:.2f} --duration {duration}",
+            "--step", f"touch -x {ex:.2f} -y {ey:.2f} --up")
     time.sleep(max(post_delay, TAP_SETTLE))
 
 
@@ -977,9 +1027,43 @@ def motion_ratio(first: Path, second: Path, region: list[float], threshold: int)
     return changed / (difference.width * difference.height)
 
 
-GESTURE_KINDS = {"tap_label", "tap_first", "tap_nearest", "tap_point", "long_press", "swipe", "scroll_to"}
+GESTURE_KINDS = {
+    "tap_label", "tap_first", "tap_nearest", "tap_point", "long_press", "double_tap", "drag", "edge_swipe", "swipe",
+    "scroll_to",
+}
 # Steps the screen map records as a way from one screen to the next.
-TRAIL_GESTURES = GESTURE_KINDS | {"type_text", "launch", "activate", "terminate", "open_url"}
+TRAIL_GESTURES = GESTURE_KINDS | {
+    "type_text", "launch", "activate", "terminate", "open_url", "double_tap", "drag", "edge_swipe", "pinch", "rotate",
+    "orientation", "press_key", "press_button", "set_slider", "set_picker", "shake", "two_finger_tap", "key_combo",
+    "clear_text",
+}
+# HID keycodes for `press_key` and `key_combo` (AXe on the Simulator).
+KEY_CODES = {
+    "delete": 42, "return": 40, "tab": 43, "escape": 41, "space": 44,
+    "right": 79, "left": 80, "down": 81, "up": 82,
+}
+MODIFIER_CODES = {"control": 224, "shift": 225, "option": 226, "command": 227}
+FIELD_TYPES = ("TextField", "SecureTextField", "SearchField", "TextView")
+# What AXe on the Simulator cannot do; the iPhone runner can.
+IPHONE_ONLY = {
+    "pinch": "it needs two fingers and AXe has one",
+    "rotate": "it needs two fingers and AXe has one",
+    "orientation": "the Simulator has no command to rotate the device",
+    "set_picker": "AXe cannot set a picker wheel",
+    "two_finger_tap": "it needs two fingers and AXe has one",
+}
+
+
+def hid_code(key: Any) -> int:
+    """A named key (`return`, `left`), a letter or a digit as its USB HID keycode."""
+    name = str(key).lower()
+    if name in KEY_CODES:
+        return KEY_CODES[name]
+    if len(name) == 1 and "a" <= name <= "z":
+        return 4 + ord(name) - ord("a")
+    if len(name) == 1 and name.isdigit():
+        return 39 if name == "0" else 29 + int(name)
+    raise FastUIError(f"key must be a letter, a digit or one of {', '.join(KEY_CODES)}, not {key!r}")
 
 
 def execute_action(
@@ -1006,6 +1090,34 @@ def execute_action(
     return result
 
 
+def text_field(node: dict[str, Any], selector: dict[str, Any]) -> bool:
+    """A field `clear_text` can empty: a text field the selector names (a caption with the same
+    label is not one), or any node of the selector's own `element_type`."""
+    if selector and not matches(node, selector):
+        return False
+    return "element_type" in selector or node_type(node) in FIELD_TYPES
+
+
+def press_at(kind: str, action: dict[str, Any], udid: str, x: float, y: float, post_delay: float) -> None:
+    if kind == "long_press":
+        long_press(udid, x, y, float(action.get("duration", 1)), post_delay)
+    elif kind == "double_tap":
+        double_tap(udid, x, y, post_delay)
+    else:
+        tap_point(udid, x, y, post_delay)
+
+
+def point_of(spec: Any, udid: str, timeout: float, optional_prompt_labels: list[Any]) -> list[float]:
+    """An `[x, y]` point, or the centre of the first node (top-left first) a selector matches."""
+    if isinstance(spec, list) and len(spec) == 2:
+        return [float(spec[0]), float(spec[1])]
+    if not isinstance(spec, dict):
+        raise FastUIError(f"a drag end must be [x, y] or a selector, not {spec!r}")
+    nodes = wait_selector(udid, spec, timeout, optional_prompt_labels, first_poll_max_age=HIERARCHY_REUSE)
+    found = sort_nodes([node for node in nodes if matches(node, spec)], ["y", "x"])
+    return list(frame_center(found[0]))
+
+
 def run_action(
     action: dict[str, Any],
     udid: str,
@@ -1020,12 +1132,14 @@ def run_action(
 
     if kind == "wait":
         wait_selector(udid, action, timeout, optional_prompt_labels)
-    elif kind == "long_press" and "x" in action and "y" in action:
-        long_press(udid, float(action["x"]), float(action["y"]), float(action.get("duration", 1)), post_delay)
-    elif kind in ("tap_label", "long_press"):
+    elif kind in IPHONE_ONLY:
+        raise FastUIError(f"{kind} works on an iPhone only, not on the Simulator: {IPHONE_ONLY[kind]}")
+    elif kind in ("long_press", "double_tap") and "x" in action and "y" in action:
+        press_at(kind, action, udid, float(action["x"]), float(action["y"]), post_delay)
+    elif kind in ("tap_label", "long_press", "double_tap"):
         if not any(key in action for key in ("label", "label_contains", "id")):
-            if kind == "long_press":
-                raise FastUIError(f"long_press needs 'label', 'id' or x and y in action {index}")
+            if kind != "tap_label":
+                raise FastUIError(f"{kind} needs 'label', 'id' or x and y in action {index}")
             raise FastUIError(f"missing 'label' or 'id' in action {index}")
         selector = selector_of(action, "Button")
         explicit_type = "element_type" in action
@@ -1042,10 +1156,7 @@ def run_action(
             )
             target = resolve_tap_target(nodes, selector, explicit_type)
         if target is not None:
-            if kind == "long_press":
-                long_press(udid, *frame_center(target), float(action.get("duration", 1)), post_delay)
-            else:
-                tap_point(udid, *frame_center(target), post_delay)
+            press_at(kind, action, udid, *frame_center(target), post_delay)
             if node_type(target) != selector["element_type"]:
                 return {"fallback_type": node_type(target)}
         else:
@@ -1196,6 +1307,79 @@ def run_action(
         invalidate_hierarchy(udid)
     elif kind == "open_url":
         command(["xcrun", "simctl", "openurl", udid, required(action, "url", f"action {index}")])
+        invalidate_hierarchy(udid)
+    elif kind == "drag":
+        start = point_of(required(action, "from", f"action {index}"), udid, timeout, optional_prompt_labels)
+        end = point_of(required(action, "to", f"action {index}"), udid, timeout, optional_prompt_labels)
+        drag(udid, start, end, float(action.get("hold", 0.6)), float(action.get("duration", 0.6)), post_delay)
+    elif kind == "edge_swipe":
+        box = screen_box(hierarchy(udid, HIERARCHY_REUSE))
+        start, end = edge_points(str(action.get("edge")), float(action.get("at", 0.5)), float(action.get("distance", 0.8)), box)
+        # Measured on iOS 26.5: a plain `axe swipe` or `axe drag` misses the system edge gestures
+        # (home swipe on the lock screen: 1 in 3); a finger put down first, then moved, gets them.
+        drag(udid, start, end, 0.05, float(action.get("duration", 0.3)), post_delay)
+    elif kind == "press_key":
+        key = action.get("key")
+        if key not in KEY_CODES:
+            raise FastUIError(f"action {index}: key must be one of {', '.join(KEY_CODES)}, not {key!r}")
+        axe(udid, "key-sequence", "--keycodes", ",".join([str(hid_code(key))] * max(int(action.get("count", 1)), 1)))
+        invalidate_hierarchy(udid)
+    elif kind == "press_button":
+        button = action.get("button")
+        if button in ("volume_up", "volume_down"):
+            raise FastUIError(f"action {index}: AXe has no volume buttons on the Simulator; use an iPhone")
+        if button not in ("home", "lock", "siri"):
+            raise FastUIError(f"action {index}: button must be home, lock, siri, volume_up or volume_down, not {button!r}")
+        # AXe's default press locks the screen but is too short to wake it again, and Siri
+        # answers only a held press.
+        hold = {"lock": "0.3", "siri": "1.5"}.get(button)
+        axe(udid, "button", button, *(["--duration", hold] if hold else []))
+        invalidate_hierarchy(udid)
+    elif kind == "set_slider":
+        target = [("--id", action["id"])] if "id" in action else [("--label", action["label"])] if "label" in action else []
+        if not target:
+            raise FastUIError(f"action {index}: set_slider needs 'id' or 'label'")
+        if TRAIL is not None:
+            TRAIL.touch()
+        try:
+            axe(udid, "slider", *target[0], "--value", str(round(float(required(action, "value", f"action {index}")) * 100)))
+        except FastUIError as error:
+            if "Multiple" not in str(error):
+                raise
+            # SwiftUI often nests the slider in a container with the same id and frame.
+            raise FastUIError(
+                f"action {index}: AXe found several elements for this slider and cannot set one; "
+                "move its thumb with `drag`, or run set_slider on an iPhone"
+            ) from error
+        invalidate_hierarchy(udid)
+    elif kind == "key_combo":
+        modifiers = action.get("modifiers") or []
+        if not modifiers or any(name not in MODIFIER_CODES for name in modifiers):
+            raise FastUIError(f"action {index}: modifiers must be a list of {', '.join(MODIFIER_CODES)}")
+        axe(udid, "key-combo", "--modifiers", ",".join(str(MODIFIER_CODES[name]) for name in modifiers),
+            "--key", str(hid_code(required(action, "key", f"action {index}"))))
+        invalidate_hierarchy(udid)
+    elif kind == "clear_text":
+        selector = {key: action[key] for key in SELECTOR_KEYS if key in action}
+        nodes = wait_nodes(
+            udid, lambda value: any(text_field(node, selector) for node in value), timeout, optional_prompt_labels,
+            HIERARCHY_REUSE,
+        )
+        field = sort_nodes([node for node in nodes if text_field(node, selector)], ["y", "x"])[0]
+        # Near the trailing edge, then select all: the caret position and the text's length
+        # stop mattering, and an empty field's placeholder is never "deleted".
+        box = field.get("frame") or {}
+        tap_point(udid, float(box["x"]) + float(box["width"]) * 0.85, frame_center(field)[1], post_delay)
+        axe(udid, "key-combo", "--modifiers", str(MODIFIER_CODES["command"]), "--key", str(hid_code("a")))
+        axe(udid, "key-sequence", "--keycodes", str(KEY_CODES["delete"]))
+        invalidate_hierarchy(udid)
+        # AXe reports an empty field's placeholder as its value, so say what the field shows now.
+        after = [node for node in hierarchy(udid) if text_field(node, selector)]
+        nearest = min(after, key=lambda node: abs(frame_center(node)[1] - frame_center(field)[1]), default={})
+        return {"value": str(nearest.get("AXValue") or "")}
+    elif kind == "shake":
+        # UIKit on the Simulator listens for this notification; Hardware › Shake posts it too.
+        command(["xcrun", "simctl", "spawn", udid, "notifyutil", "-p", "com.apple.UIKit.SimulatorShake"])
         invalidate_hierarchy(udid)
     else:
         raise FastUIError(f"unsupported action type '{kind}'")
@@ -1365,7 +1549,7 @@ def main() -> int:
                 suffix += f" video={file_link(video)}"
             print(f"PASS task={name} total={metrics.total:.1f}s build={'yes' if built else 'skip'}{suffix} artifacts={file_link(artifacts)}")
         return 0
-    except (FastUIError, OSError, subprocess.TimeoutExpired) as error:
+    except (FastUIError, OSError, subprocess.TimeoutExpired, ValueError, TypeError, KeyError) as error:
         failed_at = recorder.elapsed() if recorder else 0.0
         if recorder:
             try:

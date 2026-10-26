@@ -35,6 +35,7 @@ SCROLL_GESTURES = ("swipe", "scroll_to")
 ENTRY_GESTURES = ("launch", "activate")
 GESTURE_KEYS = (
     "label", "label_contains", "id", "element_type", "target", "anchor", "x", "y", "direction", "from", "to", "url",
+    "hold", "edge", "at", "scale", "radians", "value", "index", "key", "count", "button", "modifiers", "taps",
 )
 
 

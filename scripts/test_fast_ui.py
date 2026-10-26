@@ -256,6 +256,124 @@ class ActionTests(unittest.TestCase):
         with self.assertRaisesRegex(fast_ui.FastUIError, "long_press needs"):
             fast_ui.execute_action({"type": "long_press", "x": 40}, "SIM", Path("/tmp"), 1, [])
 
+    def run_gesture(self, action: dict, nodes: list | None = None) -> mock.Mock:
+        with mock.patch.object(fast_ui, "hierarchy", return_value=nodes or []), \
+                mock.patch.object(fast_ui, "axe") as axe, mock.patch.object(fast_ui, "command") as cmd, \
+                mock.patch.object(fast_ui.time, "sleep"):
+            fast_ui.execute_action(action, "SIM", Path("/tmp"), 1, [])
+        axe.command = cmd
+        return axe
+
+    SCREEN = [{"AXLabel": "Demo", "type": "Application", "frame": {"x": 0, "y": 0, "width": 400, "height": 800}}]
+
+    def test_double_tap_sends_both_taps_in_one_batch(self) -> None:
+        node = {"AXLabel": "Photo", "type": "Image", "frame": {"x": 0, "y": 0, "width": 10, "height": 10}}
+        axe = self.run_gesture({"type": "double_tap", "label": "Photo"}, [node])
+        axe.assert_called_once_with("SIM", "batch", "--step", "tap -x 5.00 -y 5.00", "--step", "tap -x 5.00 -y 5.00")
+        axe = self.run_gesture({"type": "double_tap", "x": 40, "y": 80})
+        axe.assert_called_once_with("SIM", "batch", "--step", "tap -x 40.00 -y 80.00", "--step", "tap -x 40.00 -y 80.00")
+        with self.assertRaisesRegex(fast_ui.FastUIError, "double_tap needs"):
+            self.run_gesture({"type": "double_tap", "x": 40})
+
+    def test_drag_moves_between_points_or_selectors(self) -> None:
+        axe = self.run_gesture({"type": "drag", "from": [10, 20], "to": [30, 40], "hold": 0})
+        axe.assert_called_once_with("SIM", "drag", "--start-x", "10.00", "--start-y", "20.00", "--end-x", "30.00",
+                                    "--end-y", "40.00", "--duration", "0.6")
+        row = {"AXLabel": "Milk", "type": "Cell", "frame": {"x": 0, "y": 100, "width": 400, "height": 40}}
+        axe = self.run_gesture({"type": "drag", "from": {"label": "Milk"}, "to": [200, 400]}, [row])
+        axe.assert_called_once_with("SIM", "batch", "--step", "touch -x 200.00 -y 120.00 --down", "--step", "sleep 0.6",
+                                    "--step", "swipe --start-x 200.00 --start-y 120.00 --end-x 200.00 --end-y 400.00 --duration 0.6",
+                                    "--step", "touch -x 200.00 -y 400.00 --up")
+
+    def test_screen_is_the_application_frame_not_a_taller_scroll_content(self) -> None:
+        content = {"AXLabel": "", "type": "Group", "frame": {"x": 0, "y": -900, "width": 400, "height": 2400}}
+        self.assertEqual(fast_ui.screen_box(self.SCREEN + [content]), (0.0, 0.0, 400.0, 800.0))
+        self.assertEqual(fast_ui.swipe_points({"direction": "up"}, [content] + self.SCREEN, 1), ([200.0, 560.0], [200.0, 240.0]))
+
+    def test_edge_swipe_starts_on_the_edge(self) -> None:
+        self.assertEqual(fast_ui.edge_points("left", 0.5, 0.5, (0, 0, 400, 800)), ([1.0, 400.0], [200.0, 400.0]))
+        self.assertEqual(fast_ui.edge_points("top", 0.9, 0.5, (0, 0, 400, 800)), ([360.0, 1.0], [360.0, 400.0]))
+        self.assertEqual(fast_ui.edge_points("bottom", 0.5, 0.25, (0, 0, 400, 800)), ([200.0, 799.0], [200.0, 600.0]))
+        self.assertEqual(fast_ui.edge_points("right", 0.25, 0.5, (0, 0, 400, 800)), ([399.0, 200.0], [200.0, 200.0]))
+        # Measured on iOS 26.5: a plain `axe swipe` or `axe drag` misses the system edge gestures
+        # (home swipe on the lock screen: 1 in 3); a finger put down first, then moved, gets them.
+        # The default travel is 80 %: on an iPhone a back swipe that stops at half the screen springs back.
+        for edge, start, end in (("left", [1.0, 400.0], [320.0, 400.0]), ("bottom", [200.0, 799.0], [200.0, 160.0])):
+            with mock.patch.object(fast_ui, "drag") as drag, mock.patch.object(fast_ui, "hierarchy", return_value=self.SCREEN):
+                fast_ui.execute_action({"type": "edge_swipe", "edge": edge}, "SIM", Path("/tmp"), 1, [])
+            drag.assert_called_once_with("SIM", start, end, 0.05, 0.3, 0.15)
+        with self.assertRaisesRegex(fast_ui.FastUIError, "edge must be"):
+            fast_ui.edge_points("middle", 0.5, 0.5, (0, 0, 400, 800))
+
+    def test_iphone_only_gestures_say_so_on_the_simulator(self) -> None:
+        for action in ({"type": "pinch", "scale": 2}, {"type": "rotate", "radians": 1}, {"type": "two_finger_tap"},
+                       {"type": "orientation", "value": "landscape_left"}, {"type": "set_picker", "value": "10"},
+                       {"type": "press_button", "button": "volume_up"}):
+            with self.subTest(action=action["type"]), self.assertRaisesRegex(fast_ui.FastUIError, "Simulator"):
+                self.run_gesture(action)
+
+    def test_key_combo_holds_the_modifiers(self) -> None:
+        self.run_gesture({"type": "key_combo", "key": "a", "modifiers": ["command"]}).assert_called_once_with(
+            "SIM", "key-combo", "--modifiers", "227", "--key", "4")
+        self.run_gesture({"type": "key_combo", "key": "left", "modifiers": ["option", "shift"]}).assert_called_once_with(
+            "SIM", "key-combo", "--modifiers", "226,225", "--key", "80")
+        self.run_gesture({"type": "key_combo", "key": "0", "modifiers": ["control"]}).assert_called_once_with(
+            "SIM", "key-combo", "--modifiers", "224", "--key", "39")
+        with self.assertRaisesRegex(fast_ui.FastUIError, "modifiers must be"):
+            self.run_gesture({"type": "key_combo", "key": "a", "modifiers": ["hyper"]})
+        with self.assertRaisesRegex(fast_ui.FastUIError, "key must be"):
+            self.run_gesture({"type": "key_combo", "key": "ab", "modifiers": ["command"]})
+
+    def test_press_key_has_arrows_and_siri_is_a_button(self) -> None:
+        self.run_gesture({"type": "press_key", "key": "up", "count": 2}).assert_called_once_with(
+            "SIM", "key-sequence", "--keycodes", "82,82")
+        # Siri answers a held press, as on an iPhone; AXe's default tap of the button does nothing.
+        self.run_gesture({"type": "press_button", "button": "siri"}).assert_called_once_with(
+            "SIM", "button", "siri", "--duration", "1.5")
+
+    def test_clear_text_selects_all_in_the_field_and_reports_what_is_left(self) -> None:
+        caption = {"AXLabel": "Name", "type": "StaticText", "frame": {"x": 0, "y": 60, "width": 200, "height": 20}}
+        field = {"AXLabel": "Name", "type": "TextField", "AXValue": "hello", "frame": {"x": 0, "y": 100, "width": 200, "height": 40}}
+        emptied = {**field, "AXValue": "Your name"}
+        trees = [self.SCREEN + [caption, field], self.SCREEN + [caption, emptied]]
+        with mock.patch.object(fast_ui, "hierarchy", side_effect=lambda udid, max_age=0.0: trees.pop(0) if len(trees) > 1 else trees[0]), \
+                mock.patch.object(fast_ui, "tap_point") as tap, mock.patch.object(fast_ui, "axe") as axe, \
+                mock.patch.object(fast_ui.time, "sleep"):
+            result = fast_ui.execute_action({"type": "clear_text", "label": "Name"}, "SIM", Path("/tmp"), 1, [])
+        # The field, not the caption above it; near its trailing edge, where the caret should go.
+        self.assertEqual(tap.call_args.args[:3], ("SIM", 170.0, 120.0))
+        self.assertEqual(axe.call_args_list, [mock.call("SIM", "key-combo", "--modifiers", "227", "--key", "4"),
+                                              mock.call("SIM", "key-sequence", "--keycodes", "42")])
+        # AXe shows a placeholder as the value, so the engine reports what the field shows now.
+        self.assertEqual(result, {"value": "Your name"})
+
+    def test_press_key_count_zero_still_presses_once(self) -> None:
+        self.run_gesture({"type": "press_key", "key": "tab", "count": 0}).assert_called_once_with(
+            "SIM", "key-sequence", "--keycodes", "43")
+
+    def test_slider_ax_cannot_pick_says_what_to_do(self) -> None:
+        ambiguous = fast_ui.FastUIError("command failed (1) axe slider: Error: Multiple (2) accessibility elements matched --id 'S'.")
+        with mock.patch.object(fast_ui, "axe", side_effect=ambiguous), mock.patch.object(fast_ui.time, "sleep"):
+            with self.assertRaisesRegex(fast_ui.FastUIError, "several elements.*drag.*iPhone"):
+                fast_ui.execute_action({"type": "set_slider", "id": "S", "value": 1}, "SIM", Path("/tmp"), 1, [])
+
+    def test_keys_buttons_slider_and_shake(self) -> None:
+        self.run_gesture({"type": "press_key", "key": "delete", "count": 3}).assert_called_once_with(
+            "SIM", "key-sequence", "--keycodes", "42,42,42")
+        self.run_gesture({"type": "press_key", "key": "return"}).assert_called_once_with("SIM", "key-sequence", "--keycodes", "40")
+        with self.assertRaisesRegex(fast_ui.FastUIError, "key must be one of"):
+            self.run_gesture({"type": "press_key", "key": "f13"})
+        self.run_gesture({"type": "press_button", "button": "home"}).assert_called_once_with("SIM", "button", "home")
+        # AXe's default press locks the screen but is too short to wake it again.
+        self.run_gesture({"type": "press_button", "button": "lock"}).assert_called_once_with(
+            "SIM", "button", "lock", "--duration", "0.3")
+        self.run_gesture({"type": "set_slider", "id": "volume", "value": 0.25}).assert_called_once_with(
+            "SIM", "slider", "--id", "volume", "--value", "25")
+        self.run_gesture({"type": "set_slider", "label": "Brightness", "value": 1}).assert_called_once_with(
+            "SIM", "slider", "--label", "Brightness", "--value", "100")
+        axe = self.run_gesture({"type": "shake"})
+        axe.command.assert_called_once_with(["xcrun", "simctl", "spawn", "SIM", "notifyutil", "-p", "com.apple.UIKit.SimulatorShake"])
+
     def test_wait_settled_returns_true_when_two_polls_match(self) -> None:
         a = [{"AXLabel": "A", "type": "Button", "frame": {"x": 0, "y": 0, "width": 1, "height": 1}}]
         b = [{"AXLabel": "A", "type": "Button", "frame": {"x": 0, "y": 5, "width": 1, "height": 1}}]
@@ -461,6 +579,24 @@ class SimulatorTrailTests(unittest.TestCase):
         with mock.patch.dict(fast_ui.os.environ, {"FAST_UI_MAP": "0"}):
             self.assertIsNone(fast_ui.new_trail("com.example.app"))
         self.assertIsInstance(fast_ui.new_trail("com.example.app"), fast_ui_map.Trail)
+
+    def test_a_bad_number_in_an_action_is_a_fail_line_not_a_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            flow = Path(raw) / "bad.json"
+            flow.write_text(json.dumps({"version": 1, "name": "bad", "actions": [{"type": "edge_swipe", "edge": "left", "at": "middle"}],
+                                        "app": {"bundle_id": "com.example.app", "prebuilt": True, "simulator": "SIM",
+                                                "project_root": raw}}))
+            err = io.StringIO()
+            with mock.patch.object(fast_ui.sys, "argv", ["fastSimulatorTest", str(flow)]), \
+                    mock.patch.object(fast_ui, "prepare_app", return_value=(None, False)), \
+                    mock.patch.object(fast_ui, "command"), mock.patch.object(fast_ui, "apply_ui_settings"), \
+                    mock.patch.object(fast_ui, "set_preferences"), mock.patch.object(fast_ui, "reset_preferences"), \
+                    mock.patch.object(fast_ui, "restore_ui_settings"), mock.patch.object(fast_ui, "record"), \
+                    mock.patch.object(fast_ui, "axe", side_effect=FakeAxe(self.A)), \
+                    contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                code = fast_ui.main()
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL task=bad step=01_edge_swipe", err.getvalue())
 
     def test_main_records_the_map_even_when_restoring_ui_settings_fails(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -908,7 +1044,7 @@ class RunnerLogicTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             binary = Path(raw) / "checks"
             build = subprocess.run(
-                ["swiftc", "-parse-as-library", str(runner / "PromptRules.swift"), str(runner / "Settle.swift"), str(runner / "Trail.swift"),
+                ["swiftc", "-parse-as-library", str(runner / "PromptRules.swift"), str(runner / "Settle.swift"), str(runner / "Trail.swift"), str(runner / "Gestures.swift"),
                  str(here / "runner_logic_checks.swift"), "-o", str(binary)],
                 capture_output=True, text=True,
             )
@@ -1064,6 +1200,41 @@ class DeviceLauncherTests(unittest.TestCase):
         record.assert_called_once_with(self.TRAIL, "device")
         self.assertNotIn("trail", metrics)
         self.assertNotIn("trail", json.loads(out.getvalue()))
+
+    RUNNER_LOG = """    t =    49.25s Set value of PickerWheel (Element at index 0) to 7
+XCTExpectFailure: matcher accepted UI Automation Failure: Requested adjust to value '7' which is not one of the possible values 01, 02, 03 for the picker wheel "16 o’clock" PickerWheel
+FlowRunner.swift:403: Expected failure in -[FastDeviceUITests.FlowRunner testServe]: Requested adjust to value '7' which is not one of the possible values 01, 02, 03 for the picker wheel "16 o’clock" PickerWheelReason: (set_picker value not on the wheel)
+\t Executed 1 test, with 0 failures (0 unexpected) in 2.362 (2.364) seconds
+"""
+
+    def test_a_runner_that_ends_mid_request_says_why(self) -> None:
+        import fast_device
+        with tempfile.TemporaryDirectory() as raw:
+            log = Path(raw) / "server.log"
+            log.write_text(self.RUNNER_LOG)
+            state = Path(raw) / "state.json"
+            state.write_text(json.dumps({"pid": 4242, "address": "::1", "port": 1, "log": str(log)}))
+            connection = mock.MagicMock()
+            connection.__enter__.return_value.recv.return_value = b""
+            with mock.patch.object(fast_device, "server_state_path", return_value=state), \
+                    mock.patch.object(fast_device.socket, "create_connection", return_value=connection), \
+                    mock.patch.object(fast_device, "kill_runners") as kill:
+                with self.assertRaises(fast_device.FastDeviceError) as caught:
+                    fast_device.request("U", {"op": "action"}, 5)
+            # The xcodebuild that served this request lingers to collect diagnostics; it is ended,
+            # by the same pattern `stop` uses (never a stored pid that may have been reused), so the
+            # next request can start a runner instead of finding the iPhone busy.
+            kill.assert_called_once_with("U")
+            self.assertFalse(state.exists())
+        message = str(caught.exception)
+        self.assertIn("the runner ended", message)
+        self.assertIn("Requested adjust to value '7' which is not one of the possible values 01, 02, 03", message)
+        self.assertNotIn("PickerWheelReason", message)
+        with tempfile.TemporaryDirectory() as raw:
+            log = Path(raw) / "server.log"
+            log.write_text("FlowRunner.swift:398: error: -[FastDeviceUITests.FlowRunner testServe] : Requested adjust to value '7'\n")
+            self.assertEqual(fast_device.runner_end_reason(log), "Requested adjust to value '7'")
+            self.assertEqual(fast_device.runner_end_reason(Path(raw) / "missing.log"), "")
 
     def test_build_runner_uses_committed_xcodeproj_without_xcodegen(self) -> None:
         import fast_device

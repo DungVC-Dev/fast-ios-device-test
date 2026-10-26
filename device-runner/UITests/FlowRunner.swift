@@ -19,6 +19,21 @@ final class FlowRunner: XCTestCase {
         let value: String
     }
 
+    // `element_type` names a gesture can target by XCUIElement query (pinch, rotate, two_finger_tap,
+    // clear_text, set_slider).
+    static let elementTypes: [String: XCUIElement.ElementType] = [
+        "Button": .button, "StaticText": .staticText, "TextField": .textField, "SecureTextField": .secureTextField,
+        "SearchField": .searchField, "TextView": .textView, "Image": .image, "Cell": .cell, "Switch": .switch,
+        "RadioButton": .radioButton, "Link": .link, "Tab": .tab, "Slider": .slider, "Map": .map,
+        "ScrollView": .scrollView, "WebView": .webView, "Table": .table, "CollectionView": .collectionView, "Other": .other,
+    ]
+
+    // Keys `press_key` and `key_combo` name, as fast_ui.KEY_CODES does on the Simulator.
+    static let namedKeys: [String: XCUIKeyboardKey] = [
+        "delete": .delete, "return": .return, "tab": .tab, "escape": .escape, "space": .space,
+        "up": .upArrow, "down": .downArrow, "left": .leftArrow, "right": .rightArrow,
+    ]
+
     // The selector keys an action may carry, shared with the Simulator engine.
     static let selectorKeys = ["label", "label_contains", "label_is_empty", "id", "value", "element_type", "frame"]
 
@@ -36,6 +51,8 @@ final class FlowRunner: XCTestCase {
     // `current`, which XCUIApplication does not expose.
     private var trail = Trail()
     private var currentBundleID = ""
+    // A flow that turned the iPhone sideways turns it back when it ends.
+    private var orientationChanged = false
     private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
 
     func testFlow() throws {
@@ -147,6 +164,8 @@ private extension FlowRunner {
         let setup = flow["setup"] as? [String: Any] ?? [:]
         let previousAppearance = XCUIDevice.shared.appearance
         defer { XCUIDevice.shared.appearance = previousAppearance }
+        orientationChanged = false
+        defer { if orientationChanged { XCUIDevice.shared.orientation = .portrait } }
         let skipIdle = (setup["wait_for_idle"] as? Bool) == false
         let idleNote: [String: Any] = skipIdle ? ["wait_for_idle": Quiescence.disable() ? false : "unsupported"] : [:]
         defer { if skipIdle { Quiescence.restore() } }
@@ -237,11 +256,13 @@ private extension FlowRunner {
             } while Date() < deadline
         case "long_press" where action["x"] != nil && action["y"] != nil:
             press(number(action["x"]) ?? 0, number(action["y"]) ?? 0, number(action["duration"]) ?? 1, postDelay)
-        case "tap_label", "long_press":
+        case "double_tap" where action["x"] != nil && action["y"] != nil:
+            doubleTap(number(action["x"]) ?? 0, number(action["y"]) ?? 0, postDelay)
+        case "tap_label", "long_press", "double_tap":
             guard action["label"] != nil || action["label_contains"] != nil || action["id"] != nil else {
-                throw Failure(message: kind == "long_press"
-                    ? "long_press needs 'label', 'id' or x and y in action \(index)"
-                    : "missing 'label' or 'id' in action \(index)")
+                throw Failure(message: kind == "tap_label"
+                    ? "missing 'label' or 'id' in action \(index)"
+                    : "\(kind) needs 'label', 'id' or x and y in action \(index)")
             }
             var selector: [String: Any] = [:]
             for key in FlowRunner.selectorKeys { selector[key] = action[key] }
@@ -260,6 +281,8 @@ private extension FlowRunner {
                 let target = try settled(found) { self.resolveTapTarget($0, selector, explicitType: explicitType) }
                 if kind == "long_press" {
                     press(target.frame.midX, target.frame.midY, number(action["duration"]) ?? 1, postDelay)
+                } else if kind == "double_tap" {
+                    doubleTap(target.frame.midX, target.frame.midY, postDelay)
                 } else {
                     tap(target.frame.midX, target.frame.midY, postDelay)
                 }
@@ -298,6 +321,7 @@ private extension FlowRunner {
             }
         case "type_text":
             guard let text = action["text"] as? String else { throw Failure(message: "type_text needs text") }
+            try requireKeyboardFocus(app, kind)
             app.typeText(text)
             Thread.sleep(forTimeInterval: postDelay)
         case "pause":
@@ -312,6 +336,162 @@ private extension FlowRunner {
             let name = action["name"] as? String ?? String(format: "step-%02d", index)
             attachText("\(name)-ui.txt", app.debugDescription)
             return ["name": name, "labels": visibleLabels(nodes), "nodes": visibleNodes(nodes)]
+        case "drag":
+            let start = try pointOf(action["from"], timeout: timeout, index: index)
+            let end = try pointOf(action["to"], timeout: timeout, index: index)
+            trail.touch()
+            // Resting on the start point first is what a drag and drop or a reorder needs.
+            point(start.x, start.y).press(forDuration: max(number(action["hold"]) ?? 0.6, 0.05),
+                                          thenDragTo: point(end.x, end.y), withVelocity: velocity(from: start, to: end, action),
+                                          thenHoldForDuration: 0.2)
+            Thread.sleep(forTimeInterval: postDelay)
+        case "edge_swipe":
+            if screenBounds.isInfinite { _ = snapshotNodes() }
+            guard !screenBounds.isInfinite else {
+                throw Failure(message: "edge_swipe has no screen size: the current app is not running")
+            }
+            guard let points = Gestures.edgePoints(edge: action["edge"] as? String ?? "", at: number(action["at"]) ?? 0.5,
+                                                   distance: number(action["distance"]) ?? 0.8, screen: screenBounds) else {
+                throw Failure(message: "edge must be left, right, top or bottom in action \(index)")
+            }
+            trail.touch()
+            point(points.start.x, points.start.y).press(
+                forDuration: 0.05, thenDragTo: point(points.end.x, points.end.y),
+                withVelocity: velocity(from: (Double(points.start.x), Double(points.start.y)),
+                                       to: (Double(points.end.x), Double(points.end.y)), action),
+                thenHoldForDuration: 0)
+            Thread.sleep(forTimeInterval: postDelay)
+        case "pinch":
+            let target = try element(action, in: app, timeout: timeout)
+            let scale = number(action["scale"]) ?? 2
+            guard scale > 0 else { throw Failure(message: "pinch scale must be above 0 in action \(index)") }
+            trail.touch()
+            target.pinch(withScale: scale, velocity: scale >= 1 ? 1 : -1)
+            Thread.sleep(forTimeInterval: postDelay)
+        case "rotate":
+            let target = try element(action, in: app, timeout: timeout)
+            let radians = number(action["radians"]) ?? Double.pi / 2
+            trail.touch()
+            target.rotate(radians, withVelocity: radians >= 0 ? 1 : -1)
+            Thread.sleep(forTimeInterval: postDelay)
+        case "orientation":
+            let orientations: [String: UIDeviceOrientation] = [
+                "portrait": .portrait, "portrait_upside_down": .portraitUpsideDown,
+                "landscape_left": .landscapeLeft, "landscape_right": .landscapeRight,
+            ]
+            guard let orientation = orientations[action["value"] as? String ?? ""] else {
+                throw Failure(message: "orientation value must be one of \(orientations.keys.sorted()) in action \(index)")
+            }
+            XCUIDevice.shared.orientation = orientation
+            orientationChanged = orientation != .portrait
+            Thread.sleep(forTimeInterval: max(postDelay, 0.5))
+        case "press_key":
+            guard let key = FlowRunner.namedKeys[action["key"] as? String ?? ""] else {
+                throw Failure(message: "key must be one of \(FlowRunner.namedKeys.keys.sorted()) in action \(index)")
+            }
+            let count = max(Int(number(action["count"]) ?? 1), 1)
+            try requireKeyboardFocus(app, kind)
+            if [XCUIKeyboardKey.delete, .return, .space].contains(key) {
+                app.typeText(String(repeating: key.rawValue, count: count))
+            } else {
+                // typeText writes an arrow, tab or escape into the field as a character ("13←2").
+                for _ in 0..<count { app.typeKey(key.rawValue, modifierFlags: []) }
+            }
+            Thread.sleep(forTimeInterval: postDelay)
+        case "press_button":
+            switch action["button"] as? String {
+            case "siri":
+                guard let text = action["text"] as? String, !text.isEmpty else {
+                    throw Failure(message: "press_button siri on an iPhone needs `text`: XCUITest starts Siri with that request")
+                }
+                XCUIDevice.shared.siriService.activate(voiceRecognitionText: text)
+            case "home":
+                // XCUIDevice.press(.home) does nothing on iOS 26.7.1 (iPhone 11); bringing
+                // SpringBoard forward goes home, and the next steps read the Home Screen.
+                use("com.apple.springboard").activate()
+            case "volume_up": XCUIDevice.shared.press(.volumeUp)
+            case "volume_down": XCUIDevice.shared.press(.volumeDown)
+            case "lock":
+                throw Failure(message: "press_button lock is refused on an iPhone: a shared test phone needs its passcode to come back; use the Simulator")
+            default:
+                throw Failure(message: "button must be home, siri, volume_up, volume_down or lock in action \(index)")
+            }
+            Thread.sleep(forTimeInterval: max(postDelay, 0.5))
+        case "set_slider":
+            guard action["id"] != nil || action["label"] != nil || action["label_contains"] != nil else {
+                throw Failure(message: "set_slider needs 'id' or 'label' in action \(index)")
+            }
+            let slider = try element(action, in: app, type: .slider, timeout: timeout)
+            trail.touch()
+            slider.adjust(toNormalizedSliderPosition: CGFloat(number(action["value"]) ?? 0))
+            Thread.sleep(forTimeInterval: postDelay)
+        case "set_picker":
+            guard let value = action["value"] as? String else { throw Failure(message: "set_picker needs a value in action \(index)") }
+            let wheel = app.pickerWheels.element(boundBy: Int(number(action["index"]) ?? 0))
+            guard wheel.waitForExistence(timeout: timeout) else {
+                throw Failure(message: "no picker wheel \(Int(number(action["index"]) ?? 0)) on screen; visible labels: \(lastLabels)")
+            }
+            trail.touch()
+            // A value the wheel does not have is a UI Automation failure that ends the whole test,
+            // and the persistent runner with it (XCTExpectFailure does not stop that); the launcher
+            // then reports XCTest's message, which lists the wheel's values.
+            wheel.adjust(toPickerWheelValue: value)
+            Thread.sleep(forTimeInterval: postDelay)
+            let shown = wheel.value as? String ?? ""
+            guard shown == value || shown.hasPrefix(value + " ") else {
+                throw Failure(message: "set_picker could not turn wheel \(Int(number(action["index"]) ?? 0)) to '\(value)'; it shows '\(shown)' (use the wheel's own text, such as '07')")
+            }
+        case "open_url":
+            guard let text = action["url"] as? String, let url = URL(string: text) else {
+                throw Failure(message: "open_url needs a url in action \(index)")
+            }
+            XCUIDevice.shared.system.open(url)
+            Thread.sleep(forTimeInterval: max(postDelay, 1))
+        case "two_finger_tap":
+            // XCUITest cannot place two fingers on the whole app ("unable to compute coordinates"),
+            // and that UI Automation failure ends the runner, so a target is required.
+            guard ["id", "label", "label_contains", "element_type"].contains(where: { action[$0] != nil }) else {
+                throw Failure(message: "two_finger_tap needs a selector or element_type (Map, ScrollView, WebView, Image) in action \(index)")
+            }
+            let target = try element(action, in: app, timeout: timeout)
+            trail.touch()
+            target.tap(withNumberOfTaps: max(Int(number(action["taps"]) ?? 1), 1), numberOfTouches: 2)
+            Thread.sleep(forTimeInterval: postDelay)
+        case "key_combo":
+            let flags: [String: XCUIElement.KeyModifierFlags] = [
+                "command": .command, "shift": .shift, "option": .option, "control": .control,
+            ]
+            let names = action["modifiers"] as? [String] ?? []
+            guard !names.isEmpty, names.allSatisfy({ flags[$0] != nil }) else {
+                throw Failure(message: "modifiers must be a list of \(flags.keys.sorted()) in action \(index)")
+            }
+            let name = action["key"] as? String ?? ""
+            guard let key = FlowRunner.namedKeys[name]?.rawValue ?? (name.count == 1 ? name : nil) else {
+                throw Failure(message: "key must be one character or one of \(FlowRunner.namedKeys.keys.sorted()) in action \(index)")
+            }
+            try requireKeyboardFocus(app, kind)
+            app.typeKey(key, modifierFlags: XCUIElement.KeyModifierFlags(names.compactMap { flags[$0] }))
+            Thread.sleep(forTimeInterval: postDelay)
+        case "clear_text":
+            let field = try textField(action, in: app, timeout: timeout)
+            trail.touch()
+            // Near the trailing edge, then select all and delete: the caret and the text's length
+            // stop mattering. A secure field may refuse select-all; then delete what it holds.
+            field.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
+            try requireKeyboardFocus(app, kind)
+            func left() -> String {
+                let text = field.value as? String ?? ""
+                return text == field.placeholderValue ? "" : text
+            }
+            if !left().isEmpty {
+                app.typeKey("a", modifierFlags: .command)
+                app.typeText(XCUIKeyboardKey.delete.rawValue)
+            }
+            if !left().isEmpty { app.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: left().count)) }
+            Thread.sleep(forTimeInterval: postDelay)
+            guard left().isEmpty else { throw Failure(message: "clear_text left '\(left())' in the field") }
+        case "shake":
+            throw Failure(message: "shake has no XCUITest API on an iPhone; use the Simulator")
         default:
             throw Failure(message: "unsupported action type '\(kind)' on device")
         }
@@ -673,6 +853,89 @@ private extension FlowRunner {
         trail.touch()
         point(x, y).tap()
         Thread.sleep(forTimeInterval: postDelay)
+    }
+
+    // An action's `duration` as a drag speed; XCUITest's default speed without one.
+    func velocity(from start: (x: Double, y: Double), to end: (x: Double, y: Double),
+                  _ action: [String: Any]) -> XCUIGestureVelocity {
+        guard let duration = number(action["duration"]), duration > 0 else { return .default }
+        return XCUIGestureVelocity(hypot(end.x - start.x, end.y - start.y) / duration)
+    }
+
+    func doubleTap(_ x: Double, _ y: Double, _ postDelay: Double) {
+        trail.touch()
+        point(x, y).doubleTap()
+        Thread.sleep(forTimeInterval: postDelay)
+    }
+
+    // An `[x, y]` point, or the centre of the first node (top-left first) a selector matches.
+    func pointOf(_ spec: Any?, timeout: Double, index: Int) throws -> (x: Double, y: Double) {
+        if let pair = spec as? [Any], pair.count == 2, let x = number(pair[0]), let y = number(pair[1]) { return (x, y) }
+        guard let selector = spec as? [String: Any] else {
+            throw Failure(message: "drag needs 'from' and 'to' as [x, y] or a selector in action \(index)")
+        }
+        let nodes = try waitNodes(timeout) { nodes in nodes.contains { self.matches($0, selector) } }
+        guard let node = sorted(nodes.filter { matches($0, selector) }, by: ["y", "x"]).first else {
+            throw Failure(message: "no node matched \(selector); visible labels: \(lastLabels)")
+        }
+        return (Double(node.frame.midX), Double(node.frame.midY))
+    }
+
+    // The XCUIElement a selector (or `element_type`) names, for gestures a screen point cannot
+    // make (pinch, rotate, a slider); without one the whole app, or the first element of `type`.
+    // XCUITest starts a pinch-in with the fingers near the element's edges: on a full-screen map
+    // under a sheet one finger lands on the sheet, so zooming out needs a smaller element.
+    func element(_ selector: [String: Any], in app: XCUIApplication, type: XCUIElement.ElementType = .any,
+                 timeout: Double) throws -> XCUIElement {
+        var named: XCUIElement.ElementType?
+        if let name = selector["element_type"] as? String {
+            // Never the whole app once a type was named: a two-finger tap there ends the runner.
+            guard let known = FlowRunner.elementTypes[name] else {
+                throw Failure(message: "element_type must be one of \(FlowRunner.elementTypes.keys.sorted()), not '\(name)'")
+            }
+            named = known
+        }
+        let query = app.descendants(matching: named ?? type)
+        let found: XCUIElement
+        if let id = selector["id"] as? String {
+            found = query.matching(NSPredicate(format: "identifier == %@", id)).firstMatch
+        } else if let label = selector["label"] as? String {
+            found = query.matching(NSPredicate(format: "label == %@", label)).firstMatch
+        } else if let fragment = selector["label_contains"] as? String {
+            found = query.matching(NSPredicate(format: "label CONTAINS %@", fragment)).firstMatch
+        } else if type == .any && named == nil {
+            return app
+        } else {
+            found = query.firstMatch
+        }
+        guard found.waitForExistence(timeout: timeout) else {
+            throw Failure(message: "no element matched the selector of \(selector["type"] ?? "action"); visible labels: \(lastLabels)")
+        }
+        return found
+    }
+
+    // The text field a selector names (a caption with the same label is not one), else the first
+    // text field, secure field, search field or text view on screen; `element_type` overrides.
+    func textField(_ selector: [String: Any], in app: XCUIApplication, timeout: Double) throws -> XCUIElement {
+        if selector["element_type"] != nil { return try element(selector, in: app, timeout: timeout) }
+        let named = selector["id"] != nil || selector["label"] != nil || selector["label_contains"] != nil
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            for type in [XCUIElement.ElementType.textField, .secureTextField, .searchField, .textView] {
+                let field = named ? (try? element(selector, in: app, type: type, timeout: 0)) : app.descendants(matching: type).firstMatch
+                if let field, field.exists { return field }
+            }
+            Thread.sleep(forTimeInterval: 0.2)
+        } while Date() < deadline
+        throw Failure(message: "no text field\(named ? " matches the selector" : "") on screen; visible labels: \(lastLabels)")
+    }
+
+    // typeText and typeKey with nothing focused are UI Automation failures, which end the runner.
+    func requireKeyboardFocus(_ app: XCUIApplication, _ kind: String) throws {
+        let focused = app.descendants(matching: .any).matching(NSPredicate(format: "hasKeyboardFocus == true")).firstMatch
+        guard focused.exists else {
+            throw Failure(message: "\(kind) needs a focused field (tap it first); visible labels: \(lastLabels)")
+        }
     }
 
     // Hold one finger: a context menu, or a Home Screen widget's Edit Widget.

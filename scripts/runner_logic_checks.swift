@@ -1,6 +1,7 @@
 import Foundation
 
-// Checks for the device runner's pure logic (PromptRules.swift, Settle.swift, Trail.swift). The
+// Checks for the device runner's pure logic (PromptRules.swift, Settle.swift, Trail.swift,
+// Gestures.swift). The
 // runner itself only runs on an iPhone, so test_fast_ui.RunnerLogicTests compiles these files
 // with this one for the Mac and runs the result.
 @main
@@ -18,6 +19,7 @@ struct RunnerLogicChecks {
         checkPromptRules()
         checkSettle()
         checkTrail()
+        checkGestures()
         if failures > 0 { exit(1) }
         print("OK")
     }
@@ -155,5 +157,32 @@ struct RunnerLogicChecks {
         trail.startAction()
         trail.gesture(["type": "swipe", "direction": "up"])
         check(trail.finish().first?["from"] is NSNull, "a screen older than two minutes is not carried")
+    }
+
+    static func checkGestures() {
+        let screen = CGRect(x: 0, y: 0, width: 400, height: 800)
+        func pair(_ edge: String, _ at: Double, _ distance: Double) -> [Double] {
+            guard let points = Gestures.edgePoints(edge: edge, at: at, distance: distance, screen: screen) else { return [] }
+            return [points.start.x, points.start.y, points.end.x, points.end.y].map { Double($0) }
+        }
+        check(pair("left", 0.5, 0.5) == [1, 400, 200, 400] && pair("top", 0.9, 0.5) == [360, 1, 360, 400]
+              && pair("bottom", 0.5, 0.25) == [200, 799, 200, 600] && pair("right", 0.25, 0.5) == [399, 200, 200, 200],
+              "edge swipes start one point inside the edge, as on the Simulator")
+        check(Gestures.edgePoints(edge: "middle", at: 0.5, distance: 0.5, screen: screen) == nil, "an unknown edge has no points")
+
+        var trail = Trail()
+        trail.start(carry: false, now: 0)
+        trail.startAction()
+        trail.gesture(["type": "press_key", "key": "delete", "count": 3, "timeout": 2])
+        trail.gesture(["type": "drag", "from": [1, 2], "to": [3, 4], "hold": 1])
+        trail.gesture(["type": "key_combo", "key": "a", "modifiers": ["command"]])
+        trail.gesture(["type": "press_button", "button": "siri", "text": "call mum"])
+        let kept = trail.finish().compactMap { ($0["gesture"] as? [String: Any]).map { $0.keys.sorted() } }
+        check(Trail.gestureKinds.isSuperset(of: ["double_tap", "drag", "edge_swipe", "pinch", "rotate", "orientation",
+                                                 "press_key", "press_button", "set_slider", "set_picker", "shake",
+                                                 "two_finger_tap", "key_combo", "clear_text"])
+              && kept == [["count", "key", "type"], ["from", "hold", "to", "type"], ["key", "modifiers", "type"],
+                          ["button", "type"]],
+              "the new gestures join the screen map with their parameters")
     }
 }

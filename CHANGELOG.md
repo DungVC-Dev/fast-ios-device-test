@@ -1,6 +1,40 @@
 # Changelog
 
-## Unreleased
+## 1.4.0 — 2026-10-26
+
+### More gestures
+
+- `double_tap`, `drag` (with a `hold` on the start point for drag and drop and reorders),
+  `edge_swipe` (back swipe, Control Center, Notification Center, home), `press_key` (`delete`,
+  `return`, `tab`, `escape`, `space`), `press_button` (`home`; `lock` on the Simulator,
+  `volume_up`/`volume_down` on the iPhone) and `set_slider`, on the Simulator and the iPhone.
+- iPhone only, where AXe has no way: `pinch`, `rotate` (two fingers), `orientation` (a flow turns
+  the phone back to portrait at its end) and `set_picker`; the Simulator names the reason.
+- `open_url` on the iPhone; `shake` on the Simulator (no XCUITest API on a device).
+- `key_combo` (a key held with `command`, `shift`, `option`, `control`), `clear_text` (deletes what
+  a field holds), arrow keys for `press_key`, `press_button` `siri` (with the request as `text` on
+  the iPhone), and the iPhone-only `two_finger_tap`, which zooms a map out where a pinch cannot.
+- `press_button` `lock` is refused on an iPhone: a shared test phone would wait for its passcode.
+- All of them join the screen map as steps.
+- On the iPhone, `type_text`, `press_key`, `key_combo` and `clear_text` refuse to type with no
+  focused field, and an unknown `element_type` is refused: both would have been UI Automation
+  failures that end the runner. `clear_text` taps near the field's trailing edge and selects all
+  before deleting, skips a caption with the field's label, and fails on the iPhone if text is
+  left. A runner that dies mid-request is ended by the same pattern `stop` uses.
+- Checked on an iOS 26.5 Simulator and an iPhone 11 on iOS 26.7.1, which showed what the first
+  version got wrong:
+  - Simulator edge swipes put the finger down before moving: a plain `axe swipe` or `axe drag`
+    missed the back swipe and the home swipe (1 unlock in 3).
+  - `edge_swipe` travels 80 % of the screen by default; an iPhone back swipe that stops at half
+    the screen springs back.
+  - `press_button` `home` on the iPhone brings SpringBoard forward; `XCUIDevice.press(.home)` did
+    nothing on iOS 26.7.1.
+  - The Simulator's `lock` is a 0.3 s press: AXe's default press locks but never wakes.
+  - A runner that ends mid-request (a `set_picker` value the wheel does not have ends XCTest's
+    test) is cleaned up and the FAIL line quotes XCTest's reason, instead of "server closed the
+    connection"; the next request no longer finds the iPhone busy.
+- `scroll_to` and `swipe` `direction` take the screen from the `Application` node: a scroll
+  view's content taller than the screen sent swipes off screen (y = -277).
 
 ### Screen map
 

@@ -44,7 +44,10 @@ Maintainers: `bash make-zip.sh` builds the release zip next to the folder.
 
 ## What's new
 
-See [CHANGELOG.md](CHANGELOG.md): 1.3.0 records the iPhone screen, keeps every clip light
+See [CHANGELOG.md](CHANGELOG.md): 1.4.0 adds the gestures a tester uses (hold, drag, edge
+swipes, keys, pinch, rotate, orientation, Siri…), a screen map (`fastUIMap`) recorded from
+normal runs, and prompt rules that answer each permission prompt its own way. 1.3.0 records the
+iPhone screen, keeps every clip light
 enough for a PR, and adds `fastEvidenceSheet`. 1.2.0 made the tool faster, made failures
 explain themselves, drove system apps and installed without Homebrew.
 

@@ -25,9 +25,12 @@ re-signs it with an existing development profile, and runs the flow on the devic
   them as `Alert` on iOS 26, where AXe on the Simulator says `Sheet`); `screenshot` taps a
   declared one away first, as on the Simulator.
 - Supported actions: `wait`, `wait_absent`, `assert_absent`, `tap_label`,
-  `tap_first`, `tap_nearest`, `tap_point`, `long_press`, `swipe` (points or `direction`),
-  `scroll_to`, `type_text`, `pause`, `screenshot`, `dump`, `activate`, `launch`
-  (optional `launch_arguments`), `terminate`. `motion` is simulator-only.
+  `tap_first`, `tap_nearest`, `tap_point`, `long_press`, `double_tap`, `drag`, `edge_swipe`,
+  `swipe` (points or `direction`), `scroll_to`, `type_text`, `press_key`, `key_combo`,
+  `clear_text`, `press_button`, `set_slider`, `pause`, `screenshot`, `dump`, `activate`, `launch` (optional
+  `launch_arguments`), `terminate`, `open_url`, and the iPhone-only `two_finger_tap`, `pinch`, `rotate`,
+  `orientation`, `set_picker` (see [usage.md](usage.md)). `motion` and `shake` are
+  simulator-only; `press_button` `lock` is refused (the phone would need its passcode).
 - **Editing a Home Screen widget:** go home with `terminate` on the app, then
   `long_press` the widget on `com.apple.springboard` (the widget node carries the app's
   name as `id`), then tap `id`
@@ -58,6 +61,9 @@ re-signs it with an existing development profile, and runs the flow on the devic
   prompt the runner answered is listed as `dismissed=["<title> → <button>"]`. When the prompt
   is what you are testing, tap it in its own step (`tap_label` with
   `"app": "com.apple.springboard"`) and leave its labels out.
+- `type_text` goes through the iPhone's current keyboard: a Vietnamese Telex keyboard turns
+  `wifi` into other letters. Type digits, or switch the keyboard by hand; the runner never
+  changes the phone's keyboards.
 - **Screen map:** the runner returns what it read and the steps that succeeded with every
   response, and the launcher adds them to `fastUIMap` (see [usage.md](usage.md)). A `do` that
   only taps a point starts from the screen the previous `do` ended on (within 2 minutes). A
