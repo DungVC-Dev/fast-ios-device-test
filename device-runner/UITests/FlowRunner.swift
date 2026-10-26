@@ -214,8 +214,24 @@ private extension FlowRunner {
     func execute(_ action: [String: Any], index: Int) throws -> [String: Any]? {
         trail.startAction()
         let result = try perform(action, index: index)
-        if let kind = action["type"] as? String, Trail.gestureKinds.contains(kind), result?["optional_missing"] == nil {
+        let kind = action["type"] as? String ?? ""
+        if Trail.gestureKinds.contains(kind), result?["optional_missing"] == nil {
             trail.gesture(action)
+        }
+        // A guard on the screen the step leads to: a multi-step request stops at the first
+        // surprise instead of acting on a screen the agent did not plan for. An optional tap that
+        // found nothing changed no screen, so there is nothing to expect.
+        if action["expect"] != nil && !(action["expect"] is [String: Any]) {
+            throw Failure(message: "step \(index): expect must be a selector object")
+        }
+        if let expected = action["expect"] as? [String: Any], result?["optional_missing"] == nil {
+            do {
+                _ = try waitNodes(number(action["expect_timeout"]) ?? 2) { nodes in nodes.contains { self.matches($0, expected) } }
+            } catch {
+                let shown = (try? JSONSerialization.data(withJSONObject: expected, options: [.sortedKeys]))
+                    .flatMap { String(data: $0, encoding: .utf8) } ?? "\(expected)"
+                throw Failure(message: "step \(index): expected \(shown) after \(kind); visible labels: \(lastLabels)")
+            }
         }
         return result
     }

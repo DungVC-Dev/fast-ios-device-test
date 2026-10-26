@@ -126,6 +126,6 @@ case ":$PATH:" in
 *) echo "note: add '$BIN_DIR' to PATH, e.g. echo 'export PATH=\"$BIN_DIR:\$PATH\"' >> ~/.zshrc" ;;
 esac
 
-(cd "$HERE/scripts" && python3 -m unittest test_fast_ui test_fast_media test_fast_ui_map >/dev/null 2>&1) && echo "engine self-test: OK" \
-    || echo "engine self-test: FAILED (cd scripts && python3 -m unittest test_fast_ui test_fast_media test_fast_ui_map)"
+(cd "$HERE/scripts" && python3 -m unittest test_fast_ui test_fast_media test_fast_ui_map test_fast_guard >/dev/null 2>&1) && echo "engine self-test: OK" \
+    || echo "engine self-test: FAILED (cd scripts && python3 -m unittest test_fast_ui test_fast_media test_fast_ui_map test_fast_guard)"
 echo "done. In Claude Code: /fastSimulatorTest <flow>, /fastDeviceTest <flow>, /fastUIReview <session>"

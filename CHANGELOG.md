@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.5.0 — 2026-10-26
+
+### Faster step-by-step runs
+
+- `fastSimulatorTest do '<action or array>'` acts on what the Simulator shows now, like
+  `fastDeviceTest do`: no build, install or launch, one PASS/FAIL line with the labels after the
+  actions. Exploring the Simulator used to re-run a whole flow per step.
+- `expect` on any action waits for the screen the step leads to, so one request can carry the
+  predictable steps of a path and stop at the first surprise.
+- A destructive-looking step (Delete, Pay, Send, Sign Out, Xóa, Đăng xuất…, ids such as
+  `deleteAccountButton` included) inside a multi-action `do` is refused unless it says
+  `"confirm": true`; `FAST_GUARD_WORDS` adds words. A request that is not valid JSON or has a
+  non-object `expect` is refused before it runs.
+- `fastDeviceTest do` resolves a serving iPhone from the runner's state file instead of
+  `xcrun devicectl list devices` on every call, and runs with XCTest's idle wait off by default
+  (`--idle-wait` turns it on). `FAST_DEVICE`, `FAST_SIMULATOR` and `FAST_UI_APP` are defaults.
+- SKILL.md: step-by-step rules (no routine `dump`/`screenshot`/`pause`, guarded arrays).
+
 ## 1.4.0 — 2026-10-26
 
 ### More gestures

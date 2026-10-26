@@ -15,7 +15,8 @@ The engine is:
 "${CLAUDE_PLUGIN_ROOT:-$HOME/.local}/bin/fastSimulatorTest" <flow.json> [--reuse-app|--build-only|--record|--session <name>]
 ```
 
-Decide the shape first: one flow → write and run it; up to about 5 flows on one simulator →
+Exploring or checking one screen step by step → `fastSimulatorTest do '<action or array>' --simulator <udid>`
+(the skill's "Step by step"). Decide the shape first: one flow → write and run it; up to about 5 flows on one simulator →
 `--build-only` once, then run them here with `--reuse-app`; more flows or 2+ simulators →
 the skill's fan-out, collated with `fastUIReport`. "quay"/"record" → `--record`.
 

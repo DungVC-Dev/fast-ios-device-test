@@ -25,6 +25,7 @@ from typing import Any, Callable, Iterator
 # bin/ holds symlinks in a git checkout but copies in the zip, so look beside scripts/ too.
 sys.path[:0] = [str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parent.parent / "scripts")]
 from fast_media import publish_video, shrink_video  # noqa: E402
+from fast_guard import check_actions, parse_prompt_labels, risky_step  # noqa: E402
 from fast_ui_map import NOISE_LABEL, SCROLL_BAR_LABEL, Trail, record  # noqa: E402
 
 
@@ -1083,6 +1084,18 @@ def execute_action(
     result = run_action(action, udid, artifacts, index, optional_prompt_labels, bundle_id)
     if TRAIL is not None and kind in TRAIL_GESTURES and not (result or {}).get("optional_missing"):
         TRAIL.gesture(action)
+    expected = action.get("expect")
+    if expected is not None and not isinstance(expected, dict):
+        raise FastUIError(f"step {index}: expect must be a selector object")
+    # An optional tap that found nothing changed no screen, so there is nothing to expect.
+    if expected and not (result or {}).get("optional_missing"):
+        # A guard on the screen the step leads to: a multi-step request stops at the first
+        # surprise instead of acting on a screen the agent did not plan for.
+        try:
+            wait_selector(udid, expected, float(action.get("expect_timeout", 2)), optional_prompt_labels)
+        except FastUIError as error:
+            shown = json.dumps(expected, ensure_ascii=False, separators=(",", ":"))
+            raise FastUIError(f"step {index}: expected {shown} after {kind}; {error}") from error
     settle = action.get("settle", (defaults or {}).get("settle"))
     if kind in GESTURE_KINDS and settle:
         timeout = SETTLE_TIMEOUT if isinstance(settle, bool) else float(settle)
@@ -1437,8 +1450,88 @@ def finish_trail(build_only: bool, current_step: str) -> None:
         print(f"map=not-saved ({error})", file=sys.stderr)
 
 
+def run_do(argv: list[str]) -> int:
+    """`fastSimulatorTest do`: actions on what the Simulator shows now, one PASS/FAIL line with
+    the labels after them, like `fastDeviceTest do`. No build, install, launch or preferences."""
+    global TRAIL
+    parser = argparse.ArgumentParser(
+        prog="fastSimulatorTest do",
+        description="Run one action, or a JSON array of actions (stops at the first failure), on what the "
+        "Simulator shows now.",
+    )
+    parser.add_argument("action", help='JSON action or array, e.g. \'{"type":"tap_label","label":"Continue"}\'')
+    parser.add_argument("--simulator", default=os.environ.get("FAST_SIMULATOR"), help="UDID (env FAST_SIMULATOR)")
+    parser.add_argument("--app", default=os.environ.get("FAST_UI_APP", ""),
+                        help="Bundle id for launch/terminate and the screen map (env FAST_UI_APP)")
+    parser.add_argument("--out", type=Path, default=Path.cwd(), help="Where screenshots and dumps go")
+    parser.add_argument("--prompt-labels", help='Prompt buttons this request may tap on its own, as for fastDeviceTest do')
+    args = parser.parse_args(argv)
+    # Input refused before anything runs goes to stderr, as `fastDeviceTest do` prints it.
+    if not args.simulator:
+        print("FAIL error=fastSimulatorTest do needs --simulator <udid> or FAST_SIMULATOR", file=sys.stderr)
+        return 1
+    try:
+        parsed = json.loads(args.action)
+        actions = parsed if isinstance(parsed, list) else [parsed]
+        check_actions(actions)
+        prompts = parse_prompt_labels(args.prompt_labels) if args.prompt_labels else []
+    except ValueError as error:
+        print(f"FAIL error={error}", file=sys.stderr)
+        return 1
+    risky = risky_step(actions)
+    if risky:
+        print(f"FAIL error=step {risky[0]}: '{risky[1]}' looks destructive; send it alone or add \"confirm\": true",
+              file=sys.stderr)
+        return 1
+    udid = args.simulator
+    args.out.mkdir(parents=True, exist_ok=True)
+    TRAIL = new_trail(args.app) if args.app else None
+    results: list[dict[str, Any]] = []
+    failed: tuple[int, dict[str, Any], Exception] | None = None
+    read_error: Exception | None = None
+    try:
+        ensure_booted(udid)
+        for index, action in enumerate(actions, start=1):
+            try:
+                result = execute_action(action, udid, args.out, index, prompts, {}, args.app)
+            except (FastUIError, OSError, subprocess.TimeoutExpired, ValueError, TypeError, KeyError) as error:
+                failed = (index, action, error)
+                break
+            if result:
+                results.append({"step": index, **result})
+        # A `wait` or `expect` that just read the tree already shows where the steps ended. The
+        # steps ran even when this read fails, so that alone is not a FAIL (resending would tap twice).
+        try:
+            labels = visible_labels(hierarchy(udid, HIERARCHY_REUSE))
+        except (FastUIError, OSError, subprocess.TimeoutExpired) as error:
+            labels, read_error = [], error
+    except (FastUIError, OSError, subprocess.TimeoutExpired) as error:
+        failed, labels = failed or (0, {}, error), []
+    finally:
+        finish_trail(build_only=False, current_step="do")
+        TRAIL = None
+    if len(actions) > 1:
+        head = f"actions={len(actions)}" + (f" step={failed[0]} type={failed[1].get('type')}" if failed and failed[0] else "")
+    else:
+        head = str(actions[0].get("type")) if actions else "none"
+    shots = [result["path"] for result in results if str(result.get("path", "")).endswith((".png", ".jpg", ".jpeg"))]
+    dumps = [result["path"] for result in results if str(result.get("path", "")).endswith("-ui.json")]
+    line = "FAIL" if failed else "PASS"
+    line += f" {head}" + (f" error={failed[2]}" if failed else "")
+    if read_error and not failed:
+        line += f" read=failed ({read_error})"
+    if shots:
+        line += f" screenshot{'s' if len(shots) > 1 else ''}={','.join(map(file_link, shots))}"
+    if dumps:
+        line += f" ui={','.join(map(file_link, dumps))}"
+    print(f"{line} labels={json.dumps(labels, ensure_ascii=False)}")
+    return 1 if failed else 0
+
+
 def main() -> int:
     global TRAIL
+    if sys.argv[1:2] == ["do"]:
+        return run_do(sys.argv[2:])
     args = parse_arguments()
     flow_path = args.flow.expanduser().resolve()
     try:

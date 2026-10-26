@@ -84,6 +84,20 @@ Everything the engine needs is in the flow; there is no per-project config.
    the label exists under another type, and suggests close labels. Fix one selector, rerun
    with `--reuse-app`. After two reruns stop and report with the artifact link.
 
+## Step by step (exploring, or one quick check)
+
+`fastSimulatorTest do '<action or array>' --simulator <udid> [--app <bundle id>]` and
+`fastDeviceTest do … --device <udid|name>` act on what is on screen now (no build, install or
+launch) and print one PASS/FAIL line with the visible labels after the actions.
+`FAST_SIMULATOR`, `FAST_UI_APP` and `FAST_DEVICE` save the flags.
+
+- The line already lists 40 labels: no `dump`, `screenshot` or `pause` in a routine step.
+- Send the steps you can predict as one array with an `expect` selector on each gesture
+  (`{"type": "tap_label", "label": "General", "expect": {"label": "About"}}`): the request stops
+  at the first screen that is not the expected one. A destructive-looking step (Delete, Pay,
+  Send, Sign Out…) in an array is refused unless it says `"confirm": true`.
+- Between steps, one line of reasoning; turn a path that worked into a flow for reruns.
+
 ### Timing rules
 
 - First `wait` after launch ≤ 20 s; every later `wait`/`tap_*` ≤ 8 s; `post_delay` ≤ 1 s.

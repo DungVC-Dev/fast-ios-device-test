@@ -44,7 +44,9 @@ Maintainers: `bash make-zip.sh` builds the release zip next to the folder.
 
 ## What's new
 
-See [CHANGELOG.md](CHANGELOG.md): 1.4.0 adds the gestures a tester uses (hold, drag, edge
+See [CHANGELOG.md](CHANGELOG.md): 1.5.0 makes step-by-step runs fast on both engines
+(`fastSimulatorTest do`, `expect` guards on multi-step requests, a refusal for destructive steps
+in them). 1.4.0 adds the gestures a tester uses (hold, drag, edge
 swipes, keys, pinch, rotate, orientation, Siri…), a screen map (`fastUIMap`) recorded from
 normal runs, and prompt rules that answer each permission prompt its own way. 1.3.0 records the
 iPhone screen, keeps every clip light

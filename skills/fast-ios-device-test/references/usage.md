@@ -280,8 +280,9 @@ fastDeviceTest stop --device <d>
   generate` after editing `project.yml`) is cached per Xcode + signing profile + runner
   source in `~/Library/Caches/fast-device-test`; `--rebuild-runner` forces a rebuild.
 - `--device` takes a UDID, the full name, or a unique part of the name.
-- `setup.wait_for_idle: false` (flows) or `--no-idle-wait` (`do`) skips XCUITest's
-  wait-for-idle around events on screens that never go idle; the report shows `wait_for_idle`.
+- `do` skips XCUITest's wait-for-idle by default (`--idle-wait` keeps it); a flow skips it with
+  `setup.wait_for_idle: false`. The runner then waits for the layout itself; the report shows
+  `wait_for_idle`.
 - Signing: an existing development profile that lists the device and matches a
   non-revoked keychain identity; never the bundle id of an installed app.
   `FAST_DEVICE_PROFILE=<uuid>` pins one.
@@ -382,6 +383,29 @@ An app that pins its own theme (e.g. an `appThemeMode` setting) or uses fixed po
 sizes ignores these; seed the theme via preferences, and treat text that does
 not grow at `accessibility-*` sizes as a product finding.
 
+## Step-by-step requests (`do`)
+
+`fastSimulatorTest do '<action or array>' [--simulator <udid>] [--app <bundle id>] [--out <dir>]
+[--prompt-labels <labels>]` runs actions on what the Simulator shows now (no build, install,
+launch or preferences) and prints `PASS <type>|actions=N [screenshot=…] [ui=…] labels=[…]` or
+`FAIL … step=K type=… error=… labels=[…]`; `fastDeviceTest do` prints the same on the iPhone.
+
+- An array stops at its first failure. `expect` (a selector object) and `expect_timeout`
+  (default 2 s) on any action wait for the screen the step leads to, so a wrong guess stops
+  there; an `optional` tap that found nothing skips its `expect`.
+- In an array, a gesture whose label, `label_contains` or `id` reads like Delete, Remove, Erase,
+  Reset, Pay, Buy, Purchase, Subscribe, Send, Sign Out, Log Out, Unpair, Forget, Xóa, Gỡ, Đăng
+  xuất, Thanh toán, Mua, Gửi or Đặt lại (`deleteAccountButton` and `btn_delete` count) refuses the
+  whole request before anything runs, unless it carries `"confirm": true`. It is a word list,
+  not an understanding of the app: add words with `FAST_GUARD_WORDS="archive, block"`;
+  `tap_point`, `drag` and `swipe` are never checked; one-action requests and flows are not checked.
+- A request that is not JSON, not objects, or has a non-object `expect` is refused the same way,
+  on stderr. If every step ran but the closing tree read failed, the line says
+  `PASS … read=failed (…)`: do not send the steps again.
+- `FAST_SIMULATOR` / `FAST_UI_APP` are the defaults for `--simulator` / `--app`, `FAST_DEVICE` for
+  `--device` on every `fastDeviceTest` command. `--app` also names the bundle id the screen map
+  records the steps under.
+
 ## Screen map (`fastUIMap`)
 
 Every `fastSimulatorTest` flow and every `fastDeviceTest` flow or `do` adds what it read anyway
@@ -422,6 +446,8 @@ fastUIMap clear com.apple.Preferences        # or: fastUIMap clear --all
 - `FAST_DEVICE_DEVELOPER_DIR`: Xcode to build/run the device runner with.
 - `FAST_DEVICE_PORT` / `FAST_DEVICE_IDLE`: runner port (8765) and idle timeout in seconds (1800).
 - `FAST_DEVICE_CACHE`: runner cache root.
+- `FAST_DEVICE` / `FAST_SIMULATOR` / `FAST_UI_APP`: defaults for `--device`, `--simulator` and
+  `--app` (step-by-step `do`).
 - `FAST_UI_MAP=0`: no screen map recording; `FAST_UI_MAP_DIR`: map folder
   (`~/Library/Caches/fast-ui-map`).
 

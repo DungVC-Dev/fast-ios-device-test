@@ -47,9 +47,9 @@ re-signs it with an existing development profile, and runs the flow on the devic
   nodes carry `id` and `value` when set. `tap_label` falls back to the one node of any
   type with that label when `element_type` is not given (result `fallback_type`).
 - **Screens that never go idle** (a GIF, a ticking clock) make XCUITest wait ~2.5 s after
-  every tap. `"setup": {"wait_for_idle": false}` in a flow, or `--no-idle-wait` on
-  `fastDeviceTest do`, switches that wait off for the run (private XCTest API, found at
-  runtime). The runner then settles on its own: a tap by selector waits until two snapshots
+  every tap. `fastDeviceTest do` runs with that wait off by default (`--idle-wait` turns it
+  on); a flow switches it off with `"setup": {"wait_for_idle": false}` (private XCTest API,
+  found at runtime). The runner then settles on its own: a tap by selector waits until two snapshots
   agree on the target's frame (up to 1.5 s, ~0.5 s per tap), `launch` / `activate` wait
   until the app is frontmost and its layout stops moving (up to 2 s; changing text such as a
   clock does not count), and a `do` reads the screen it ends on once the layout stops moving
@@ -69,8 +69,10 @@ re-signs it with an existing development profile, and runs the flow on the devic
   only taps a point starts from the screen the previous `do` ended on (within 2 minutes). A
   runner already started with `serve` before this feature records nothing until
   `fastDeviceTest stop`.
-- `--device` accepts a UDID, the full name, or a unique part of the name (`Blue`); a part
-  that matches two iPhones is refused.
+- `--device` (or `FAST_DEVICE`) accepts a UDID, the full name, or a unique part of the name
+  (`Blue`); a part that matches two iPhones is refused. An iPhone named by its UDID or full name
+  whose `serve` runner answers is taken from the runner's state file, without `xcrun devicectl
+  list devices` (0.15–1 s); a part of a name always asks devicectl.
 
 ### Screen recording (`--record`)
 

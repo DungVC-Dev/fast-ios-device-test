@@ -562,6 +562,102 @@ class SimulatorTrailTests(unittest.TestCase):
         self.assertEqual(self.kinds(trail), ["launch", "screen", "tap_label", "break"])
         self.assertEqual(trail[1]["screen"]["app"], "com.example.app")
 
+    def test_expect_is_skipped_after_an_optional_tap_that_found_nothing(self) -> None:
+        self.run_actions(FakeAxe(self.A), {"type": "tap_label", "label": "Missing", "optional": True,
+                                          "expect": {"label": "Nope"}, "expect_timeout": 0.01})
+
+    def test_expect_guards_the_screen_an_action_leads_to(self) -> None:
+        self.run_actions(FakeAxe(self.A, self.B), {"type": "tap_label", "label": "Go", "expect": {"label": "Done"}})
+        fast_ui.invalidate_hierarchy("SIM")
+        with self.assertRaisesRegex(fast_ui.FastUIError, r"step 1: expected \{\"label\":\"Nope\"\} after tap_label.*visible labels"):
+            self.run_actions(FakeAxe(self.A, self.B), {"type": "tap_label", "label": "Go", "expect": {"label": "Nope"},
+                                                       "expect_timeout": 0.01})
+
+    def sim_do(self, *argv: str, trees: tuple = (), env: dict | None = None) -> tuple[int, str, mock.Mock]:
+        out = io.StringIO()
+        err = io.StringIO()
+        fake = FakeAxe(*(trees or (self.A, self.B)))
+        with tempfile.TemporaryDirectory() as raw, mock.patch.dict(fast_ui.os.environ, env or {}), \
+                mock.patch.object(fast_ui, "ensure_booted") as booted, mock.patch.object(fast_ui, "command") as cmd, \
+                mock.patch.object(fast_ui, "axe", side_effect=fake) as axe, mock.patch.object(fast_ui, "record") as record, \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = fast_ui.run_do([*argv, "--out", raw])
+        axe.err = err.getvalue()
+        axe.record = record
+        axe.booted = booted
+        axe.command = cmd
+        return code, out.getvalue(), axe
+
+    def test_sim_do_acts_on_the_current_screen(self) -> None:
+        code, out, axe = self.sim_do('{"type":"tap_label","label":"Go"}', "--simulator", "SIM")
+        self.assertEqual((code, out), (0, 'PASS tap_label labels=["Demo", "Done", "Back"]\n'))
+        axe.booted.assert_called_once_with("SIM")
+        axe.command.assert_not_called()  # no build, install, launch or preferences
+        axe.record.assert_not_called()  # no --app: no screen map
+
+    def test_sim_do_stops_at_the_failing_step(self) -> None:
+        code, out, _ = self.sim_do('[{"type":"tap_label","label":"Go"},{"type":"tap_label","label":"Missing","timeout":0.01}]',
+                                   "--simulator", "SIM")
+        self.assertEqual(code, 1)
+        self.assertTrue(out.startswith("FAIL actions=2 step=2 type=tap_label error="), out)
+        self.assertTrue(out.rstrip().endswith('labels=["Demo", "Done", "Back"]'), out)
+
+    def test_sim_do_takes_the_simulator_and_app_from_the_environment(self) -> None:
+        code, out, axe = self.sim_do('{"type":"tap_label","label":"Go"}',
+                                     env={"FAST_SIMULATOR": "SIM-ENV", "FAST_UI_APP": "com.example.app"})
+        self.assertEqual(code, 0)
+        axe.booted.assert_called_once_with("SIM-ENV")
+        trail, engine = axe.record.call_args.args
+        self.assertEqual((engine, trail[0]["screen"]["app"]), ("simulator", "com.example.app"))
+        with mock.patch.dict(fast_ui.os.environ, {}, clear=False):
+            fast_ui.os.environ.pop("FAST_SIMULATOR", None)
+            code, out, axe = self.sim_do('{"type":"wait","label":"Go"}')
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn("needs --simulator", axe.err)
+
+    def test_sim_do_refuses_a_destructive_step_in_a_batch(self) -> None:
+        code, out, axe = self.sim_do('[{"type":"tap_label","label":"Edit"},{"type":"tap_label","label":"Delete"}]',
+                                     "--simulator", "SIM")
+        self.assertEqual(code, 1)
+        self.assertIn("step 2: 'Delete' looks destructive", axe.err)
+        axe.assert_not_called()
+
+    def test_sim_do_reports_bad_input_as_a_fail_line(self) -> None:
+        for argument, message in (("{not json", "Expecting property name"), ('["a"]', "each action must be a JSON object"),
+                                  ('{"type":"tap_label","label":"Go","expect":"Done"}', "expect must be a selector object")):
+            with self.subTest(argument=argument):
+                code, out, axe = self.sim_do(argument, "--simulator", "SIM")
+                self.assertEqual((code, out), (1, ""))
+                self.assertIn(message, axe.err)
+                axe.assert_not_called()
+
+    def test_sim_do_keeps_pass_when_only_the_final_read_fails(self) -> None:
+        good = FakeAxe(self.A)
+
+        def flaky(udid, *args, check=True):
+            if args[0] == "describe-ui" and flaky.reads >= 1:
+                raise fast_ui.FastUIError("describe-ui failed")
+            flaky.reads += args[0] == "describe-ui"
+            return good(udid, *args, check=check)
+        flaky.reads = 0
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as raw, mock.patch.object(fast_ui, "ensure_booted"), \
+                mock.patch.object(fast_ui, "axe", side_effect=flaky), mock.patch.object(fast_ui.time, "sleep"), \
+                contextlib.redirect_stdout(out):
+            code = fast_ui.run_do(['{"type":"tap_label","label":"Go"}', "--simulator", "SIM", "--out", raw])
+        self.assertEqual(code, 0)
+        self.assertTrue(out.getvalue().startswith("PASS tap_label read=failed (describe-ui failed"), out.getvalue())
+
+    def test_sim_do_reuses_the_read_its_last_step_just_made(self) -> None:
+        code, _, axe = self.sim_do('{"type":"wait","label":"Go"}', "--simulator", "SIM", trees=(self.A,))
+        self.assertEqual(code, 0)
+        self.assertEqual(sum(1 for call in axe.call_args_list if call.args[1] == "describe-ui"), 1)
+
+    def test_sim_do_lists_screenshots(self) -> None:
+        code, out, _ = self.sim_do('{"type":"screenshot","name":"now.png"}', "--simulator", "SIM")
+        self.assertEqual(code, 0)
+        self.assertRegex(out, r"^PASS screenshot screenshot=file://.*/now\.png labels=")
+
     def test_map_error_keeps_the_run_and_warns(self) -> None:
         fast_ui.TRAIL.read(json.loads(self.A))
         stderr = io.StringIO()
@@ -1091,7 +1187,14 @@ class DeviceLauncherTests(unittest.TestCase):
             fast_device.run_command(["do", '[{"type":"wait","label":"A"}]', "--no-idle-wait", "--out", raw])
             fast_device.run_command(["do", '{"type":"wait","label":"A"}', "--out", raw])
         self.assertIs(request.call_args_list[0].args[1]["wait_for_idle"], False)
-        self.assertNotIn("wait_for_idle", request.call_args_list[1].args[1])
+        # Off by default too: the runner settles on its own; `--idle-wait` turns XCTest's wait back on.
+        self.assertIs(request.call_args_list[1].args[1]["wait_for_idle"], False)
+        with mock.patch.object(fast_device, "resolve_device", return_value={"udid": "U", "name": "X"}), \
+                mock.patch.object(fast_device, "start_server"), \
+                mock.patch.object(fast_device, "request", return_value=dict(reply)) as request, \
+                tempfile.TemporaryDirectory() as raw:
+            fast_device.run_command(["do", '{"type":"wait","label":"A"}', "--idle-wait", "--out", raw])
+        self.assertNotIn("wait_for_idle", request.call_args.args[1])
 
     def run_do(self, *argv: str, reply: dict | None = None) -> tuple[mock.Mock, str]:
         import contextlib
@@ -1235,6 +1338,66 @@ FlowRunner.swift:403: Expected failure in -[FastDeviceUITests.FlowRunner testSer
             log.write_text("FlowRunner.swift:398: error: -[FastDeviceUITests.FlowRunner testServe] : Requested adjust to value '7'\n")
             self.assertEqual(fast_device.runner_end_reason(log), "Requested adjust to value '7'")
             self.assertEqual(fast_device.runner_end_reason(Path(raw) / "missing.log"), "")
+
+    def test_a_serving_iphone_resolves_without_devicectl(self) -> None:
+        import fast_device
+        tester = {"udid": "00008030-AAAA", "name": "tester’s iPhone", "os": "26.7.1", "connected": True}
+        other = {"udid": "00008101-BBBB", "name": "iPhone 12 purple", "os": "26.6", "connected": True}
+        with tempfile.TemporaryDirectory() as raw:
+            for device in (tester, other):
+                (Path(raw) / f"server-{device['udid']}.json").write_text(json.dumps({"pid": 1, "device": device}))
+            with mock.patch.object(fast_device, "CACHE_ROOT", Path(raw)), \
+                    mock.patch.object(fast_device, "server_alive", return_value=True), \
+                    mock.patch.object(fast_device, "physical_devices", side_effect=AssertionError("devicectl")):
+                for requested in ("00008030-AAAA", "tester’s iPhone"):
+                    self.assertEqual(fast_device.resolve_device(requested)["udid"], tester["udid"])
+                with mock.patch.dict(fast_device.os.environ, {"FAST_DEVICE": "iPhone 12 purple"}):
+                    self.assertEqual(fast_device.resolve_device(None)["udid"], other["udid"])
+            # A part of a name may also match an iPhone that is not serving: only devicectl knows.
+            with mock.patch.object(fast_device, "CACHE_ROOT", Path(raw)), \
+                    mock.patch.object(fast_device, "server_alive", return_value=True), \
+                    mock.patch.object(fast_device, "physical_devices", return_value=[tester, other]) as listed:
+                self.assertEqual(fast_device.resolve_device("tester"), tester)
+            listed.assert_called_once()
+            # A runner that does not answer, or a name two cached iPhones share, asks devicectl.
+            with mock.patch.object(fast_device, "CACHE_ROOT", Path(raw)), \
+                    mock.patch.object(fast_device, "server_alive", return_value=False), \
+                    mock.patch.object(fast_device, "physical_devices", return_value=[tester]) as listed:
+                self.assertEqual(fast_device.resolve_device("tester"), tester)
+            listed.assert_called_once()
+            with mock.patch.object(fast_device, "CACHE_ROOT", Path(raw)), \
+                    mock.patch.object(fast_device, "server_alive", return_value=True), \
+                    mock.patch.object(fast_device, "physical_devices", return_value=[tester, other]) as listed:
+                with self.assertRaises(fast_device.FastDeviceError):
+                    fast_device.resolve_device("iPhone")
+            listed.assert_called_once()
+
+    def test_a_serving_iphone_is_not_pinged_twice_and_old_state_learns_its_device(self) -> None:
+        import fast_device
+        tester = {"udid": "00008030-AAAA", "name": "tester’s iPhone", "os": "26.7.1", "connected": True}
+        with tempfile.TemporaryDirectory() as raw:
+            state = Path(raw) / "server-00008030-AAAA.json"
+            state.write_text(json.dumps({"pid": 1, "address": "::1", "port": 1}))
+            with mock.patch.object(fast_device, "CACHE_ROOT", Path(raw)), \
+                    mock.patch.object(fast_device, "server_alive", return_value=True) as alive:
+                fast_device.start_server(dict(tester), rebuild=False)
+                self.assertEqual(json.loads(state.read_text())["device"], tester)
+                alive.reset_mock()
+                fast_device.start_server({**tester, "serving": True}, rebuild=False)
+                alive.assert_not_called()
+                self.assertNotIn("serving", json.loads(state.read_text())["device"])
+
+    def test_do_reports_bad_json_and_shapes_as_fail_lines(self) -> None:
+        import fast_device
+        for argument, message in (("{not json", "Expecting property name"), ('["a"]', "each action must be a JSON object"),
+                                  ('{"type":"tap_label","label":"Go","expect":"Done"}', "expect must be a selector object")):
+            with self.subTest(argument=argument), self.assertRaisesRegex(fast_device.FastDeviceError, message):
+                self.run_do(argument)
+
+    def test_do_refuses_a_destructive_step_in_a_batch(self) -> None:
+        import fast_device
+        with self.assertRaisesRegex(fast_device.FastDeviceError, "step 2: 'Sign Out' looks destructive"):
+            request, _ = self.run_do('[{"type":"tap_label","label":"Account"},{"type":"tap_label","label":"Sign Out"}]')
 
     def test_build_runner_uses_committed_xcodeproj_without_xcodegen(self) -> None:
         import fast_device

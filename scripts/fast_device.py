@@ -25,6 +25,7 @@ HERE = Path(__file__).resolve().parent
 # bin/ holds symlinks in a git checkout but copies in the zip, so look beside scripts/ too.
 sys.path[:0] = [str(HERE), str(HERE.parent / "scripts")]
 from fast_media import VIDEO_SUFFIXES, publish_video, shrink_video  # noqa: E402
+import fast_guard  # noqa: E402
 from fast_ui_map import record  # noqa: E402
 RUNNER_SOURCE = HERE.parent / "device-runner"
 CACHE_ROOT = Path(os.environ.get("FAST_DEVICE_CACHE", Path.home() / "Library/Caches/fast-device-test"))
@@ -71,8 +72,33 @@ def physical_devices() -> list[dict[str, Any]]:
     ]
 
 
+def serving_devices() -> list[dict[str, Any]]:
+    """The iPhones a `serve` runner was started for, as its state file recorded them."""
+    devices = []
+    for path in CACHE_ROOT.glob("server-*.json"):
+        try:
+            device = json.loads(path.read_text()).get("device")
+        except (OSError, ValueError):
+            continue
+        if isinstance(device, dict) and device.get("udid"):
+            devices.append(device)
+    return devices
+
+
 def resolve_device(requested: str | None) -> dict[str, Any]:
-    devices = physical_devices()
+    """The iPhone `--device` (or FAST_DEVICE) names. One whose runner answers is taken from its
+    state file: `xcrun devicectl list devices` costs 0.5–1 s on every `do`."""
+    requested = requested or os.environ.get("FAST_DEVICE") or None
+    if requested:
+        # Only an exact UDID or full name: a part of a name may also match an iPhone that is
+        # connected but not serving, and two such matches must still be refused.
+        cached = [device for device in serving_devices() if requested in (device["udid"], device["name"])]
+        if len(cached) == 1 and server_alive(cached[0]["udid"]):
+            return {**cached[0], "serving": True}
+    return pick_device(requested, physical_devices())
+
+
+def pick_device(requested: str | None, devices: list[dict[str, Any]]) -> dict[str, Any]:
     if requested:
         for device in devices:
             if requested in (device["udid"], device["name"]):
@@ -306,25 +332,17 @@ CONTENT_SIZES = {
 
 
 def prompt_entries(entries: Any) -> list[Any]:
-    """Checks optional_permission_labels: bare button labels, or rules that name the button
-    for one kind of prompt, {"title_contains": "track", "tap": "Ask App Not to Track"}."""
-    if not isinstance(entries, list):
-        raise FastDeviceError("optional_permission_labels must be a list")
-    for entry in entries:
-        if isinstance(entry, dict):
-            for key in ("title_contains", "tap"):
-                if not isinstance(entry.get(key), str) or not entry[key]:
-                    raise FastDeviceError(f"prompt rule {json.dumps(entry, ensure_ascii=False)} needs a '{key}' string")
-        elif not isinstance(entry, str):
-            raise FastDeviceError(f"prompt entry {entry!r} is neither a label nor a rule")
-    return entries
+    try:
+        return fast_guard.prompt_entries(entries)
+    except ValueError as error:
+        raise FastDeviceError(str(error)) from error
 
 
 def parse_prompt_labels(text: str) -> list[Any]:
-    """`--prompt-labels "Allow, Don’t Allow"`, or a JSON array when it carries rules."""
-    if text.lstrip().startswith("["):
-        return prompt_entries(json.loads(text))
-    return [label.strip() for label in text.split(",") if label.strip()]
+    try:
+        return fast_guard.parse_prompt_labels(text)
+    except ValueError as error:
+        raise FastDeviceError(str(error)) from error
 
 
 def report_notes(report: dict[str, Any]) -> str:
@@ -481,9 +499,24 @@ def server_alive(udid: str) -> bool:
         return False
 
 
+def remember_device(udid: str, device: dict[str, Any]) -> None:
+    """Write the iPhone into a serving runner's state file (older ones lack it), so the next
+    request resolves it without devicectl."""
+    path = server_state_path(udid)
+    try:
+        state = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return
+    known = {key: value for key, value in device.items() if key != "serving"}
+    if state.get("device") != known:
+        path.write_text(json.dumps({**state, "device": known}))
+
+
 def start_server(device: dict[str, Any], rebuild: bool) -> None:
     udid = device["udid"]
-    if server_alive(udid):
+    # `serving` means resolve_device just had an answer from this runner: no second ping.
+    if device.get("serving") or server_alive(udid):
+        remember_device(udid, device)
         return
     if run(["pgrep", "-f", f"serve-{udid}.xctestrun"], check=False).returncode == 0:
         raise FastDeviceError(
@@ -508,6 +541,7 @@ def start_server(device: dict[str, Any], rebuild: bool) -> None:
     )
     server_state_path(udid).write_text(json.dumps({
         "pid": process.pid, "address": tunnel_address(udid), "port": SERVER_PORT, "log": str(log),
+        "device": {key: value for key, value in device.items() if key != "serving"},
     }))
     deadline = time.perf_counter() + 120
     while time.perf_counter() < deadline:
@@ -730,9 +764,11 @@ def run_command(argv: list[str]) -> int:
         parser.add_argument("--app", help="Bundle id to drive from this (or the first) action on")
         parser.add_argument("--out", type=Path, default=Path.cwd(), help="Where screenshots go")
         parser.add_argument(
-            "--no-idle-wait", action="store_true",
-            help="Skip XCUITest's wait-for-idle around each event (screens that animate forever)",
+            "--idle-wait", action="store_true",
+            help="Use XCUITest's wait-for-idle around each event; by default it is off and the runner "
+            "waits for the layout to stop moving itself",
         )
+        parser.add_argument("--no-idle-wait", action="store_true", help=argparse.SUPPRESS)
         parser.add_argument(
             "--prompt-labels",
             help='Prompt buttons this request may tap on its own: "Allow, Don’t Allow", or a JSON array '
@@ -740,6 +776,16 @@ def run_command(argv: list[str]) -> int:
             "Without it the request taps no prompt",
         )
     args = parser.parse_args(argv[1:])
+    if argv[0] == "do":
+        try:
+            parsed_actions = json.loads(args.action)
+            parsed_actions = parsed_actions if isinstance(parsed_actions, list) else [parsed_actions]
+            fast_guard.check_actions(parsed_actions)
+        except ValueError as error:
+            raise FastDeviceError(str(error)) from error
+        risky = fast_guard.risky_step(parsed_actions)
+        if risky:
+            raise FastDeviceError(f"step {risky[0]}: '{risky[1]}' looks destructive; send it alone or add \"confirm\": true")
     device = resolve_device(args.device)
     udid = device["udid"]
     if argv[0] == "serve":
@@ -758,7 +804,7 @@ def run_command(argv: list[str]) -> int:
         if args.app and actions and "app" not in actions[0]:
             actions[0]["app"] = args.app
         timeout = 30 + sum(float(a.get("timeout", 6)) + float(a.get("seconds", 0)) for a in actions)
-        extra: dict[str, Any] = {"wait_for_idle": False} if args.no_idle_wait else {}
+        extra: dict[str, Any] = {} if args.idle_wait else {"wait_for_idle": False}
         if args.prompt_labels:
             extra["optional_permission_labels"] = parse_prompt_labels(args.prompt_labels)
         if isinstance(parsed, list):
