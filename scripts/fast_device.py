@@ -119,6 +119,67 @@ def pick_device(requested: str | None, devices: list[dict[str, Any]]) -> dict[st
     raise FastDeviceError(f"pass --device: {len(connected)} connected iPhones {names}")
 
 
+def device_details(udid: str) -> dict[str, Any]:
+    with tempfile.NamedTemporaryFile(suffix=".json") as output:
+        run(["xcrun", "devicectl", "device", "info", "details", "--device", udid, "--json-output", output.name])
+        return json.loads(Path(output.name).read_text()).get("result", {})
+
+
+def check_device(device: dict[str, Any]) -> int:
+    """`fastDeviceTest check`: what this iPhone needs before a run, each gap with its fix."""
+    udid, missing, fixes = device["udid"], [], []
+    try:
+        details = device_details(udid)
+    except FastDeviceError as error:
+        details = {}
+        missing.append("details")
+        fixes.append(f"details: {error}")
+    connection = details.get("connectionProperties", {})
+    properties = details.get("deviceProperties", {})
+    print(f"device={device['name']} udid={udid} ios={device.get('os')} transport={connection.get('transportType', '?')}")
+    checks = (
+        ("paired", connection.get("pairingState") == "paired",
+         "unlock the iPhone, tap Trust for this Mac, or pair it in Xcode › Window › Devices and Simulators"),
+        ("connected", connection.get("tunnelState") == "connected",
+         "plug the iPhone in (or join this Mac's Wi-Fi) and unlock it"),
+        ("developer-mode", properties.get("developerModeStatus") == "enabled",
+         "Settings › Privacy & Security › Developer Mode on, then restart the iPhone"),
+        ("ddi", properties.get("ddiServicesAvailable") is True,
+         "open Xcode with the iPhone connected and unlocked once, so it mounts the developer disk image"),
+    )
+    for name, ok, fix in checks:
+        print(f"{name.replace('-', '_')}={'yes' if ok and name != 'developer-mode' else 'enabled' if ok else 'no'}")
+        if not ok:
+            missing.append(name)
+            fixes.append(f"{name}: {fix}")
+    developer_dir = signing = None
+    try:
+        developer_dir = developer_dir_for(str(device.get("os", "")))
+        print(f"xcode={developer_dir}")
+    except FastDeviceError as error:
+        missing.append("xcode")
+        fixes.append(f"xcode: {error}")
+    try:
+        signing = pick_signing(udid)
+        print(f"signing={signing['name']} ({signing['bundle_id']})")
+    except FastDeviceError as error:
+        missing.append("signing")
+        fixes.append(f"signing: {error}")
+    if developer_dir and signing:
+        built = (CACHE_ROOT / runner_fingerprint(developer_dir, signing) / "signed").exists()
+        print("runner=built" if built else "runner=not built yet (the first run builds and signs it, 1–2 min)")
+    print(f"serving={'yes' if server_alive(udid) else 'no'}")
+    print("ui_automation=not readable: if iOS asks, Settings › Developer › Enable UI Automation")
+    print("lock=not readable: the iPhone must stay unlocked during a run (a locked one fails in seconds)")
+    if missing:
+        print(f"CHECK missing: {', '.join(missing)}")
+        for fix in fixes:
+            print(f"  {fix}")
+        return 1
+    print("CHECK OK")
+    return 0
+
+
 def major(version: str) -> int:
     return int(version.split(".")[0] or 0)
 
@@ -558,7 +619,7 @@ def start_server(device: dict[str, Any], rebuild: bool) -> None:
         if "because the device is locked" in log.read_text(errors="replace"):
             end_runner(udid)
             raise FastDeviceError(f"{device['name']} is locked: unlock it and run again "
-                                  "(Auto-Lock › Never keeps a test phone usable)")
+                                  "(a longer Auto-Lock on a test phone helps)")
         time.sleep(1)
     end_runner(udid)
     raise FastDeviceError(f"runner did not answer on port {SERVER_PORT} within 120s; log {log}")
@@ -642,7 +703,7 @@ def parse_flow_arguments(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="fastDeviceTest",
         description="Run a JSON UI flow on a physical iPhone via XCUITest. "
-        "Subcommands: serve | stop | status | do '<action json>'.",
+        "Subcommands: serve | stop | status | check | do '<action json>'.",
     )
     parser.add_argument("flow", type=Path)
     parser.add_argument("--device", help="UDID or name; required when several iPhones are connected")
@@ -824,6 +885,8 @@ def run_command(argv: list[str]) -> int:
             raise FastDeviceError(f"step {risky[0]}: '{risky[1]}' looks destructive; send it alone or add \"confirm\": true")
     device = resolve_device(args.device)
     udid = device["udid"]
+    if argv[0] == "check":
+        return check_device(device)
     if argv[0] == "serve":
         start_server(device, args.rebuild_runner)
         state = json.loads(server_state_path(udid).read_text())
@@ -872,7 +935,7 @@ def run_command(argv: list[str]) -> int:
 
 def main() -> int:
     argv = sys.argv[1:]
-    if argv and argv[0] in {"serve", "stop", "status", "do"}:
+    if argv and argv[0] in {"serve", "stop", "status", "do", "check"}:
         return run_command(argv)
     return run_flow(parse_flow_arguments(argv))
 

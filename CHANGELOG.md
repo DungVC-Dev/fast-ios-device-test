@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.6.1 — 2026-10-27
+
+### Setup an AI can follow
+
+- `SETUP.md`: install, check, restart, a Simulator and an iPhone smoke test, every step with its
+  expected output and a table of messages with their fixes.
+- `fastDeviceTest check --device <name>` (and `install.sh --check --device <name>`): pairing,
+  connection, Developer Mode, developer disk image, the Xcode and signing profile a run will use,
+  whether the runner is built and serving, each gap with its fix. Lock state and the
+  "Enable UI Automation" switch are not readable and are said so.
+- GUIDE.md and README brought up to 1.6: `do`, `--path-to`, gestures, the iPhone checklist.
+
 ## 1.6.0 — 2026-10-27
 
 - `fastUIMap <bundle id> --path-to <text>` prints the recorded way from an entry screen to a

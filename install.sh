@@ -2,7 +2,8 @@
 # One-shot setup. Default: copy this folder to ~/.local/share and wire the skill,
 # the slash commands and the launchers into Claude Code + PATH.
 # `install.sh --link`  links this folder in place instead of copying (for editing).
-# `install.sh --check` prints versions and what is missing, and changes nothing.
+# `install.sh --check` prints versions and what is missing, and changes nothing;
+# `install.sh --check --device <name|udid>` also checks that iPhone (fastDeviceTest check).
 # Safe to re-run; re-running from a newer shared folder upgrades in place.
 set -euo pipefail
 
@@ -14,9 +15,10 @@ BIN_DIR="${FAST_IOS_BIN_DIR:-$HOME/.local/bin}"
 AGENTS_DIR="${CLAUDE_AGENTS_DIR:-$HOME/.claude/agents}"
 AXE_HOME="${FAST_IOS_AXE_DIR:-$HOME/.local/share/axe}"
 MODE="copy"
+CHECK_DEVICE=""
 case "${1:-}" in
     --link) MODE="link" ;;
-    --check) MODE="check" ;;
+    --check) MODE="check"; [[ "${2:-}" == "--device" ]] && CHECK_DEVICE="${3:-}" ;;
 esac
 
 # `|| true`: with no Xcode selected `xcodebuild` is a failing shim, and under `set -eo pipefail`
@@ -74,7 +76,11 @@ if [[ "$MODE" == "check" ]]; then
         [[ -L "$BIN_DIR/$name" ]] || missing+=("$name launcher")
     done
     [[ -L "$SKILLS_DIR/fast-ios-device-test" ]] || missing+=(skill)
-    if [[ ${#missing[@]} -eq 0 ]]; then echo "CHECK OK"; else echo "CHECK missing: ${missing[*]} (run install.sh)"; exit 1; fi
+    [[ -L "$AGENTS_DIR/ui-explorer.md" ]] || missing+=("ui-explorer agent")
+    if [[ -n "$CHECK_DEVICE" ]]; then
+        python3 "$SOURCE/scripts/fast_device.py" check --device "$CHECK_DEVICE" | sed 's/^/  /' || missing+=("iPhone $CHECK_DEVICE")
+    fi
+    if [[ ${#missing[@]} -eq 0 ]]; then echo "CHECK OK"; else echo "CHECK missing: ${missing[*]} (run install.sh; iPhone fixes are listed above)"; exit 1; fi
     exit 0
 fi
 

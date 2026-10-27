@@ -3,6 +3,10 @@
 Read this before running on a device. The flow format, selectors and timing rules are the
 ones in [../SKILL.md](../SKILL.md); only what differs on a device is listed here.
 
+New iPhone, or a run that fails before any step: `fastDeviceTest check --device <udid|name>`
+lists pairing, connection, Developer Mode, the Xcode and signing profile it will use, and the
+fix for each gap ([../../../SETUP.md](../../../SETUP.md) has the whole setup).
+
 `fastDeviceTest <flow.json> [--device <udid|name>] [--install <App.app>]` builds a
 generic XCUITest runner once (cached in `~/Library/Caches/fast-device-test`),
 re-signs it with an existing development profile, and runs the flow on the device.

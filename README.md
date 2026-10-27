@@ -8,13 +8,21 @@ Claude Code slash commands for fast iOS verification:
 | `/fastDeviceTest <screen or flow>` | Runs the same JSON flow on a physical iPhone through a cached, auto-signed XCUITest runner; can also drive Settings, Shortcuts and SpringBoard. |
 | `/fastUIReview <session>` | Builds contact sheets from a recorded session so every case's video is reviewed, not just its PASS line. |
 
+Step by step, without writing a flow: `fastSimulatorTest do '<action or array>'` and
+`fastDeviceTest do …` act on what is on screen and print the labels after the actions; `expect`
+guards let one request carry several steps. `fastUIMap` prints what earlier runs saw of an app
+(`--path-to <screen>` gives the way there as one request), and the `ui-explorer` subagent
+(Haiku) runs long searches.
+
 Plus the `fastEvidenceSheet <spec.json>` launcher: one captioned JPEG of chosen screenshots
 for a PR or ticket. Both engines record with `--record` (the iPhone through XCTest's own
 screen recording) and keep the clip at review quality (H.264, 960 px, ~1–2 MB for 20 s).
 
 ## Install (once per machine)
 
-Needs Xcode (26 or 27). Nothing else: AXe 1.8.0 is bundled in `vendor/`.
+Needs Xcode (26 or 27). Nothing else: AXe 1.8.0 is bundled in `vendor/`. An AI agent can do the
+whole setup from [SETUP.md](SETUP.md): every step has a command, the expected output and the fix
+for each failure, including the checks for an iPhone (`fastDeviceTest check --device <name>`).
 
 ```bash
 git clone https://github.com/kiluss2/fast-ios-device-test.git ~/fast-ios-device-test
@@ -33,8 +41,9 @@ Either way the installer unpacks the bundled `axe` into `~/.local/share/axe` whe
 new enough is on PATH, installs Pillow if it can (only video review needs it), and
 links the skill into `~/.claude/skills`, the commands into `~/.claude/commands` and
 the launchers (`fastSimulatorTest`, `fastDeviceTest`, `fastUIReport`, `fastUIReview`, `fastUIMap`)
-into `~/.local/bin`. `install.sh --check` prints what it sees and what is missing,
-without changing anything.
+into `~/.local/bin`, and the `ui-explorer` subagent into `~/.claude/agents`. `install.sh --check`
+prints what it sees and what is missing, without changing anything; `install.sh --check --device
+<name>` also checks that iPhone.
 
 Optional, for exploring a screen with Apple's own tools (pinch, drag, rotate, app
 console log) before writing a flow: register Xcode 27's MCP server once with
@@ -63,7 +72,9 @@ shows the smallest complete flow.
 
 ## Contents
 
+- `SETUP.md` — setup an AI agent can follow, with checks and fixes
 - `.claude-plugin/` — plugin + marketplace manifests
+- `agents/ui-explorer.md` — Haiku subagent for long step-by-step searches (experimental)
 - `skills/fast-ios-device-test/SKILL.md` — agent instructions (flow file, single flow, several flows or simulators)
 - `skills/fast-ios-device-test/references/device.md` — fastDeviceTest on a physical iPhone
 - `skills/fast-ios-device-test/references/review.md` — reviewing recorded runs with fastUIReview
@@ -75,6 +86,7 @@ shows the smallest complete flow.
 - `scripts/fast_ui_review.py` — contact sheets and review notes for recorded runs (`fastUIReview`)
 - `scripts/fast_evidence_sheet.py` — captioned evidence sheet for a PR (`fastEvidenceSheet`; `scripts/test_fast_evidence_sheet.py`)
 - `scripts/fast_ui_map.py` — screen map recorded from both engines' runs, and its `fastUIMap` launcher (`scripts/test_fast_ui_map.py`)
+- `scripts/fast_guard.py` — checks a `do` request before it runs (destructive steps, shapes), shared by both launchers (`scripts/test_fast_guard.py`)
 - `scripts/fast_media.py` — review-quality video re-encode and the one-final-clip rule, shared by both engines (`scripts/test_fast_media.py`)
 - `scripts/fast_device.py` + `device-runner/` — physical-iPhone flow runner (XCUITest, auto-signed; the `.xcodeproj` is committed, regenerate with `xcodegen generate` after editing `project.yml`)
 - `vendor/` — the AXe release tarball `install.sh` unpacks when no `axe` ≥ 1.8.0 is on PATH (MIT, see `vendor/AXe-LICENSE`)

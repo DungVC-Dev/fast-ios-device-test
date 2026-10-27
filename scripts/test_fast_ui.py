@@ -1548,6 +1548,45 @@ FlowRunner.swift:403: Expected failure in -[FastDeviceUITests.FlowRunner testSer
         idle = [args for args in calls if any("FAST_IDLE" in str(part) for part in args)]
         self.assertIn("300", idle[0])
 
+    GOOD_DETAILS = {"connectionProperties": {"pairingState": "paired", "tunnelState": "connected", "transportType": "wired"},
+                    "deviceProperties": {"developerModeStatus": "enabled", "ddiServicesAvailable": True}}
+
+    def run_check(self, details: dict, signing: object) -> tuple[int, str]:
+        import fast_device
+        device = {"udid": "U", "name": "tester’s iPhone", "os": "26.7.1", "connected": True}
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as raw, \
+                mock.patch.object(fast_device, "CACHE_ROOT", Path(raw)), \
+                mock.patch.object(fast_device, "resolve_device", return_value=device), \
+                mock.patch.object(fast_device, "device_details", return_value=details), \
+                mock.patch.object(fast_device, "developer_dir_for", return_value="/Applications/Xcode.app/Contents/Developer"), \
+                mock.patch.object(fast_device, "pick_signing", side_effect=[signing] if isinstance(signing, Exception) else None,
+                                  return_value=signing), \
+                mock.patch.object(fast_device, "runner_fingerprint", return_value="abc"), \
+                mock.patch.object(fast_device, "server_alive", return_value=False), \
+                contextlib.redirect_stdout(out):
+            code = fast_device.run_command(["check", "--device", "tester"])
+        return code, out.getvalue()
+
+    def test_check_reports_a_ready_iphone(self) -> None:
+        code, out = self.run_check(self.GOOD_DETAILS, {"name": "Dev Wildcard", "bundle_id": "*", "uuid": "u"})
+        self.assertEqual(code, 0, out)
+        for line in ("device=tester’s iPhone udid=U ios=26.7.1 transport=wired", "paired=yes", "connected=yes",
+                     "developer_mode=enabled", "signing=Dev Wildcard (*)",
+                     "runner=not built yet (the first run builds and signs it, 1–2 min)", "serving=no"):
+            self.assertIn(line, out)
+        self.assertTrue(out.rstrip().endswith("CHECK OK"), out)
+
+    def test_check_lists_what_is_missing_with_the_fix(self) -> None:
+        import fast_device
+        details = {"connectionProperties": {"pairingState": "paired", "tunnelState": "disconnected", "transportType": "network"},
+                   "deviceProperties": {"developerModeStatus": "disabled", "ddiServicesAvailable": False}}
+        code, out = self.run_check(details, fast_device.FastDeviceError("no usable development profile for device U"))
+        self.assertEqual(code, 1)
+        self.assertIn("CHECK missing: connected, developer-mode, ddi, signing", out)
+        self.assertIn("Developer Mode", out)
+        self.assertIn("no usable development profile", out)
+
     def test_do_refuses_a_destructive_step_in_a_batch(self) -> None:
         import fast_device
         with self.assertRaisesRegex(fast_device.FastDeviceError, "step 2: 'Sign Out' looks destructive"):
