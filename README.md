@@ -44,7 +44,9 @@ Maintainers: `bash make-zip.sh` builds the release zip next to the folder.
 
 ## What's new
 
-See [CHANGELOG.md](CHANGELOG.md): 1.5.0 makes step-by-step runs fast on both engines
+See [CHANGELOG.md](CHANGELOG.md): 1.6.0 reaches a screen visited before in one request
+(`fastUIMap --path-to`), reuses the iPhone runner for flows and trims every step (1.8 s on the
+iPhone, 2.9 s on the Simulator). 1.5.0 makes step-by-step runs fast on both engines
 (`fastSimulatorTest do`, `expect` guards on multi-step requests, a refusal for destructive steps
 in them). 1.4.0 adds the gestures a tester uses (hold, drag, edge
 swipes, keys, pinch, rotate, orientation, Siri…), a screen map (`fastUIMap`) recorded from

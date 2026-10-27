@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.6.0 — 2026-10-27
 
 - `fastUIMap <bundle id> --path-to <text>` prints the recorded way from an entry screen to a
   screen as one `do` request, each step with an `expect` that only the next screen shows (a
