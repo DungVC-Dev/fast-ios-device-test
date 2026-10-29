@@ -24,7 +24,8 @@ from typing import Any, Callable, Iterator
 
 # bin/ holds symlinks in a git checkout but copies in the zip, so look beside scripts/ too.
 sys.path[:0] = [str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parent.parent / "scripts")]
-from fast_media import publish_video, shrink_video  # noqa: E402
+from fast_media import prune_artifacts, publish_video, shrink_video  # noqa: E402
+import fast_evidence  # noqa: E402
 from fast_guard import check_actions, parse_prompt_labels, risky_step  # noqa: E402
 from fast_ui_map import NOISE_LABEL, SCROLL_BAR_LABEL, Trail, record  # noqa: E402
 
@@ -779,31 +780,6 @@ class Recorder:
         self.process = None
 
 
-def prune_artifacts(root: Path, keep_days: float) -> int:
-    """Delete run folders and final videos untouched for `keep_days`; empty task dirs go too."""
-    if keep_days <= 0 or not root.is_dir():
-        return 0
-    cutoff = time.time() - keep_days * 86400
-    removed = 0
-    for task_dir in root.iterdir():
-        if not task_dir.is_dir():
-            continue
-        for entry in task_dir.iterdir():
-            try:
-                if entry.stat().st_mtime >= cutoff:
-                    continue
-                if entry.is_dir():
-                    shutil.rmtree(entry)
-                else:
-                    entry.unlink()
-                removed += 1
-            except OSError:
-                continue
-        if not any(task_dir.iterdir()):
-            task_dir.rmdir()
-    return removed
-
-
 def build_input_files(app: dict[str, Any], base: Path) -> list[Path]:
     files: list[Path] = []
     for raw_root in app.get("build_inputs", []):
@@ -1439,6 +1415,11 @@ def parse_arguments() -> argparse.Namespace:
         "--content-size", choices=list(UI_SETTINGS["content_size"]),
         help="Run as a Dynamic Type variant (overrides setup.content_size; task name gets @<short size>)",
     )
+    parser.add_argument(
+        "--before", action="store_true",
+        help="This run shows the bug (e.g. on the base build): a failure at the outcome step is filed as "
+        "the case's before shot (env FAST_EVIDENCE=0 files nothing)",
+    )
     parser.add_argument("--json", action="store_true", help="Print the complete result JSON")
     parser.add_argument("--artifacts", type=Path, help="Override the artifact directory")
     return parser.parse_args()
@@ -1586,6 +1567,24 @@ def main() -> int:
     )
     prune_artifacts(artifacts_root, float(os.environ.get("FAST_UI_KEEP_DAYS", "3")))
     artifacts.mkdir(parents=True, exist_ok=True)
+
+    def file_evidence(payload: dict[str, Any], video: Path | None) -> tuple[dict[str, Any], Path | None, str]:
+        """File the run as PR evidence after its metrics.json is written; returns the payload and
+        clip as they are now (a filed PASS run's clip lives in the evidence folder) and the line
+        suffix. A run in a root the caller chose is copied from, never emptied."""
+        filed, error = fast_evidence.after_run(
+            spec, project_root, name, lambda: fast_evidence.simulator_name(udid),
+            "before" if args.before else None, artifacts, video,
+            tidy=not (args.artifacts_root or args.artifacts),
+        )
+        if error:
+            return {**payload, "evidence_error": error}, video, f" evidence_error={error}"
+        if not filed:
+            return payload, video, ""
+        payload = json.loads((artifacts / "metrics.json").read_text(encoding="utf-8"))
+        video = Path(payload["video"]) if payload.get("video") else None
+        return payload, video, f" evidence={file_link(filed['dir'])}"
+
     metrics = Metrics()
     results: list[dict[str, Any]] = []
     built = False
@@ -1649,6 +1648,7 @@ def main() -> int:
             **({"video": str(video)} if video else {}),
         }
         (artifacts / "metrics.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        payload, video, evidence_suffix = file_evidence(payload, video)
         if args.json:
             print(json.dumps(payload, indent=2))
         else:
@@ -1659,7 +1659,7 @@ def main() -> int:
                 suffix += f" labels={json.dumps(dumps[-1]['labels'], ensure_ascii=False)}"
             if video:
                 suffix += f" video={file_link(video)}"
-            print(f"PASS task={name} total={metrics.total:.1f}s build={'yes' if built else 'skip'}{suffix} artifacts={file_link(artifacts)}")
+            print(f"PASS task={name} total={metrics.total:.1f}s build={'yes' if built else 'skip'}{suffix} artifacts={file_link(artifacts)}{evidence_suffix}")
         return 0
     except (FastUIError, OSError, subprocess.TimeoutExpired, ValueError, TypeError, KeyError) as error:
         failed_at = recorder.elapsed() if recorder else 0.0
@@ -1690,11 +1690,12 @@ def main() -> int:
             **({"video": str(video)} if video else {}),
         }
         (artifacts / "metrics.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        payload, video, evidence_suffix = file_evidence(payload, video)
         if args.json:
             print(json.dumps(payload, indent=2))
         else:
             video_suffix = f" video={file_link(video)}" if video else ""
-            print(f"FAIL task={name} step={current_step} total={metrics.total:.1f}s error={error}{video_suffix} artifacts={file_link(artifacts)}", file=sys.stderr)
+            print(f"FAIL task={name} step={current_step} total={metrics.total:.1f}s error={error}{video_suffix} artifacts={file_link(artifacts)}{evidence_suffix}", file=sys.stderr)
         return 1
     finally:
         finish_trail(args.build_only, current_step)

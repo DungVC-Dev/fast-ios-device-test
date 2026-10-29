@@ -12,7 +12,8 @@ description: Use when asked to run, verify, re-test, or record an iOS screen or 
 | Prove a behavior, rerun it, run a matrix, record video, report | this skill: `fastSimulatorTest <flow.json>` / `fastDeviceTest <flow.json>` |
 | Explore an unknown screen, pinch/drag/rotate, read the app's console log | a subagent with Xcode 27's `device-interaction` skill (`DeviceInteraction*` MCP tools), on a **different** simulator; then write the flow here |
 | Watch the videos of a `--record` session | `fastUIReview` — read [references/review.md](references/review.md) first |
-| One captioned sheet of chosen screenshots for a PR or ticket | `fastEvidenceSheet <spec.json>` — "Evidence sheet" in [references/usage.md](references/usage.md) |
+| PR evidence (sheet + clips) | nothing to run: every PASS flow run, and every `--before` run that failed at its outcome step, is filed in `~/Desktop/<project> <ticket>/` — "Evidence folder" in [references/usage.md](references/usage.md) |
+| Change that sheet (order, captions, a shot) | edit `source/sheet.json` there, then `fastEvidenceSheet <it>` — "Evidence sheet" in [references/usage.md](references/usage.md) |
 | Physical iPhone | read [references/device.md](references/device.md) first |
 
 Never point both tools at one simulator: Xcode reinstalls the app over the fresh install.
@@ -56,7 +57,12 @@ Everything the engine needs is in the flow; there is no per-project config.
 - **App already on the simulator** (Settings, a build Xcode installed): `"app": {"bundle_id":
   "com.apple.Preferences", "prebuilt": true, "simulator": "<UDID>", "project_root": "<dir>"}`;
   no project, build or fresh install, start with `{"type": "launch"}`.
-- Absolute paths only. `simulator` is a UDID from `xcrun simctl list devices available` that
+- **Where flows live**: a ticket's flows go in `fastEvidenceSheet --folder <project_root>`'s
+  `flows=` folder (`~/Desktop/<project> <ticket>/source/flows/`, created on the spot), so a later
+  session finds them and they go when the user deletes the folder after the merge. Never under
+  `build/fast-ui` or `build/fast-device` (pruned after `FAST_UI_KEEP_DAYS`). Throwaway flows may
+  stay in the session scratchpad.
+- Absolute paths only (a flow outside the repo must name `project_root`). `simulator` is a UDID from `xcrun simctl list devices available` that
   nobody else runs the app on. `derived_data` is its own folder, never Xcode's DerivedData;
   `app_path` is the `.app` inside it. `build_inputs` (source folders + `project.pbxproj`) drive
   the build cache; without them every run rebuilds.

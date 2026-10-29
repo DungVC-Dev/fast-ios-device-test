@@ -46,7 +46,8 @@ is scratch space: pass `--artifacts-root <dir>` (or `FAST_UI_ROOT`) to keep runs
 screenshots and videos somewhere durable, e.g. the QA report folder, and set
 `FAST_UI_KEEP_DAYS=0` there. Every run first prunes the root: run folders and
 final videos untouched for 3 days are deleted (`FAST_UI_KEEP_DAYS` overrides; `0`
-disables).
+disables). `fastDeviceTest` prunes its root the same way. A PASS run filed as evidence
+(below) in the default root keeps only its `metrics.json`.
 `--session <name>` (or `FAST_UI_SESSION`) tags `metrics.json`;
 `scripts/fast_ui_report.py --root <project>/build/fast-ui --session <name>`
 (launcher `fastUIReport`) collates every tagged run into a flow × simulator
@@ -337,6 +338,58 @@ sheets are meant to be read one by one; the PASS line only proves the selectors
 resolved. Device runs carry no per-step times, so their sheets use the interval grid
 only.
 
+## Evidence folder (filed after every flow run)
+
+A flow run on either engine is filed as PR evidence when it passed, or when it is a
+**before** run (`--before`, or `"evidence": {"role": "before"}`) that failed at or after its
+outcome step. Nothing else is filed: `do`, `--build-only`, other failures.
+
+```
+~/Desktop/<project> <ticket>/          FAST_EVIDENCE_DIR overrides ~/Desktop
+  <ticket>.jpg                         captioned sheet: attach it
+  <case>.mp4, <case>-before.mp4        the run's clip (--record), already 960 px
+  source/sheet.json                    fastEvidenceSheet spec: edit, then render again
+  source/shots/<case>/<role>-<shot>.jpg   720 px, JPEG 80, ~50–150 KB
+```
+
+- **Ticket**: the flow's `evidence.ticket`, else `FAST_EVIDENCE_TICKET`, else the upper-case
+  keys in the git branch of `project_root` (`feature/PRJ-12_PRJ-13-x` → `PRJ-12 PRJ-13`), else
+  the branch name. A `project_root` outside git with no ticket given files nothing.
+- **Project**: `evidence.project`, else `FAST_EVIDENCE_PROJECT`, else the main checkout's folder
+  name, so a `git worktree` of the base branch files into the ticket's folder. A plain copy
+  (`cp`, `git archive`) of the base branch needs `FAST_EVIDENCE_TICKET` and
+  `FAST_EVIDENCE_PROJECT`.
+- **Outcome step**: the action with `"outcome": true`, else the last action that is not a
+  `screenshot`, `dump`, `motion` or `pause`. A before run is usually the after flow on the base
+  build: it fails at the `wait` for the fixed state, and that screen is the bug. A failure
+  earlier (launch, a tap on the way) is a broken flow and is not filed. A before FAIL files the
+  flow's screenshots it reached plus `failure.png`.
+- **Case**: `evidence.case`, else `<task>-<device>`, so a matrix files one case per variant and
+  device. A re-run of a case replaces its images and clip and keeps the cell's text and place in
+  the sheet; a cell deleted from `cells` and listed in `"removed"` is not added back.
+- **Text**: `evidence.label` (default `<task> · <device>`, `· before` added for before cells),
+  `evidence.caption` (default: the flow's `expect`), `evidence.before_caption`.
+  `evidence.shots` picks and orders the shots; `evidence.sheet` names another sheet
+  (`<sheet>.jpg`, spec `source/sheet-<sheet>.json`).
+
+```json
+"evidence": {"label": "G2 · Off", "caption": "reopen: false → no paywall",
+             "before_caption": "paywall on every reopen", "shots": ["main"]}
+```
+
+- The PASS/FAIL line ends with `evidence=file://…` when the run was filed, or
+  `evidence_error=…` when filing failed; the run's own result never changes.
+- A filed PASS run in the default root (`build/fast-ui`, `build/fast-device`) keeps only
+  `metrics.json`, its `video` pointing at the filed clip, so `fastUIReport`, `fastUIReview` and
+  `fastEvidenceSheet` `task` cells still work. A root set with `--artifacts-root`,
+  `FAST_UI_ROOT` or `FAST_DEVICE_ROOT` is copied from, never emptied.
+- `FAST_EVIDENCE=0` or `"evidence": false` in the flow files nothing (throwaway runs).
+- **Flows**: keep a ticket's flows in `source/flows/` of its folder.
+  `fastEvidenceSheet --folder <project_root>` prints `FOLDER path=… flows=…` and creates that
+  folder; outside git it fails and says to set `FAST_EVIDENCE_TICKET`. A flow there is outside
+  the repo, so it names `app.project_root` (and `derived_data`, `app_path`) as absolute paths.
+- The folder is the user's to attach and delete after the merge; the tool never uploads.
+
 ## Evidence sheet for a PR (`fastEvidenceSheet`)
 
 `scripts/fast_evidence_sheet.py <spec.json>` (launcher `fastEvidenceSheet`) lays chosen
@@ -362,7 +415,7 @@ outcome of each case.
   from that task's newest **passing** run (`metrics.json` status `pass`; Finder files
   and failing runs are skipped); `"run": "<run folder>"` pins one, e.g. a "before" shot
   from a failing run. An `image` cell takes any file. Relative paths resolve against the
-  spec file.
+  spec file. A filed PASS run keeps only `metrics.json`; its `task` cells take the filed shot.
 - Captions wrap to the cell (`\n` forces a break); the font covers Vietnamese and other
   diacritics. Cells are 360 px wide (`cell_width`), `columns` per row (default 7).
 - `out` ending in `.jpg` (the default) writes JPEG quality 80: seven phone shots are
@@ -447,6 +500,9 @@ fastUIMap clear com.apple.Preferences        # or: fastUIMap clear --all
   (960 / 800); `FAST_VIDEO_LONG_SIDE=0` keeps the original clip.
 - `FAST_UI_KEEP_DAYS`: prune age for that root; `0` disables pruning.
 - `FAST_DEVICE_ROOT`: artifacts root for `fastDeviceTest`.
+- `FAST_EVIDENCE`: `0` files no evidence. `FAST_EVIDENCE_DIR`: where evidence folders go
+  (`~/Desktop`). `FAST_EVIDENCE_TICKET` / `FAST_EVIDENCE_PROJECT`: name the folder when the
+  branch or checkout cannot (a copy of the base branch).
 - `FAST_DEVICE_PROFILE`: provisioning profile UUID or path for the device runner.
 - `FAST_DEVICE_DEVELOPER_DIR`: Xcode to build/run the device runner with.
 - `FAST_DEVICE_PORT` / `FAST_DEVICE_IDLE`: runner port (8765) and idle timeout in seconds (300).

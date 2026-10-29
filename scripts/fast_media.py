@@ -12,6 +12,7 @@ import hashlib
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 HELPER_CACHE = Path.home() / "Library/Caches/fast-ios-device-test"
@@ -159,3 +160,28 @@ def publish_video(task_dir: Path, video: Path, passed: bool, session: str = "") 
     final = task_dir / (f"final-{session}.mp4" if session else "final.mp4")
     shutil.move(str(video), final)
     return final
+
+
+def prune_artifacts(root: Path, keep_days: float) -> int:
+    """Delete run folders and final videos untouched for `keep_days`; empty task dirs go too."""
+    if keep_days <= 0 or not root.is_dir():
+        return 0
+    cutoff = time.time() - keep_days * 86400
+    removed = 0
+    for task_dir in root.iterdir():
+        if not task_dir.is_dir():
+            continue
+        for entry in task_dir.iterdir():
+            try:
+                if entry.stat().st_mtime >= cutoff:
+                    continue
+                if entry.is_dir():
+                    shutil.rmtree(entry)
+                else:
+                    entry.unlink()
+                removed += 1
+            except OSError:
+                continue
+        if not any(task_dir.iterdir()):
+            task_dir.rmdir()
+    return removed

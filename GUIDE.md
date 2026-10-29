@@ -46,7 +46,8 @@ giữa chừng thì tool báo ngay sau vài giây: mở khoá bằng tay rồi c
 | `/fastSimulatorTest <mô tả>` | Test trên Simulator (mặc định, nhanh) |
 | `/fastDeviceTest <mô tả>` | Test trên iPhone thật, kể cả Settings / Shortcuts / màn hình chính |
 | `/fastUIReview <session>` | Xem lại video đã quay |
-| `fastEvidenceSheet <spec.json>` | Ghép ảnh chụp thành một ảnh có chú thích để đính kèm PR (agent tự viết spec) |
+| (tự động) | Mỗi lần chạy flow PASS, và lần `--before` fail đúng bước kiểm tra, được chép ra `~/Desktop/<project> <ticket>/`: ảnh ghép có chú thích, video nén, ảnh lẻ trong `source/`. Merge PR xong thì tự xoá folder đó |
+| `fastEvidenceSheet <spec.json>` | Dựng lại ảnh ghép sau khi sửa `source/sheet.json` (đổi thứ tự, chú thích, ảnh) |
 | `fastUIMap <bundle id> [--find <chữ> \| --path-to <màn>]` | Bản đồ màn hình các lần chạy trước đã ghi: selector, đường đi; `--path-to` in sẵn một lệnh đi thẳng tới màn đó |
 | `fastDeviceTest check --device <tên>` | Kiểm tra một iPhone trước khi chạy |
 

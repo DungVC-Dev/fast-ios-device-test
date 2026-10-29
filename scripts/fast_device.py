@@ -24,7 +24,8 @@ from typing import Any
 HERE = Path(__file__).resolve().parent
 # bin/ holds symlinks in a git checkout but copies in the zip, so look beside scripts/ too.
 sys.path[:0] = [str(HERE), str(HERE.parent / "scripts")]
-from fast_media import VIDEO_SUFFIXES, publish_video, shrink_video  # noqa: E402
+from fast_media import VIDEO_SUFFIXES, prune_artifacts, publish_video, shrink_video  # noqa: E402
+import fast_evidence  # noqa: E402
 import fast_guard  # noqa: E402
 from fast_ui_map import record  # noqa: E402
 RUNNER_SOURCE = HERE.parent / "device-runner"
@@ -727,6 +728,11 @@ def parse_flow_arguments(argv: list[str]) -> argparse.Namespace:
         "--session", default=os.environ.get("FAST_UI_SESSION", ""),
         help="Group this run under a session; fastUIReport and fastUIReview collate by it",
     )
+    parser.add_argument(
+        "--before", action="store_true",
+        help="This run shows the bug (e.g. on the base build): a failure at the outcome step is filed as "
+        "the case's before shot (env FAST_EVIDENCE=0 files nothing)",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     if args.record and args.serve:
@@ -773,6 +779,7 @@ def run_flow(args: argparse.Namespace) -> int:
     project_root = Path(app.get("project_root", flow_path.parent)).expanduser()
     root = (args.artifacts_root or project_root / "build/fast-device").expanduser().resolve()
     artifacts = root / name / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{device['udid'][:8]}"
+    prune_artifacts(root, float(os.environ.get("FAST_UI_KEEP_DAYS", "3")))
     artifacts.mkdir(parents=True, exist_ok=True)
     prepared = prepare_flow(spec, appearance, content_size)
 
@@ -795,6 +802,19 @@ def run_flow(args: argparse.Namespace) -> int:
         **({"video": str(video)} if video else {}),
     })
     (artifacts / "metrics.json").write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+    # A run in a root the caller chose (--artifacts-root, FAST_DEVICE_ROOT) is copied from, never emptied.
+    filed, evidence_error = fast_evidence.after_run(
+        spec, project_root, name, device["name"], "before" if args.before else None, artifacts, video,
+        tidy=args.artifacts_root is None,
+    )
+    evidence_suffix = ""
+    if evidence_error:
+        report["evidence_error"] = evidence_error
+        evidence_suffix = f" evidence_error={evidence_error}"
+    elif filed:
+        report = json.loads((artifacts / "metrics.json").read_text())
+        video = Path(report["video"]) if report.get("video") else None
+        evidence_suffix = f" evidence={file_link(filed['dir'])}"
     if args.json:
         print(json.dumps(report, indent=2, ensure_ascii=False))
     elif report["status"] == "pass":
@@ -802,12 +822,12 @@ def run_flow(args: argparse.Namespace) -> int:
         suffix = f" labels={json.dumps(dumps[-1]['labels'], ensure_ascii=False)}" if dumps else ""
         suffix += f" video={file_link(video)}" if video else ""
         suffix += report_notes(report)
-        print(f"PASS task={name} device={device['name']} mode={mode} total={report['total_seconds']}s{suffix} artifacts={file_link(artifacts)}")
+        print(f"PASS task={name} device={device['name']} mode={mode} total={report['total_seconds']}s{suffix} artifacts={file_link(artifacts)}{evidence_suffix}")
     else:
         print(
             f"FAIL task={name} device={device['name']} mode={mode} step={report.get('step')} "
             f"error={report.get('error')}{f' video={file_link(video)}' if video else ''}{report_notes(report)} "
-            f"artifacts={file_link(artifacts)}",
+            f"artifacts={file_link(artifacts)}{evidence_suffix}",
             file=sys.stderr,
         )
     return 0 if report["status"] == "pass" else 1

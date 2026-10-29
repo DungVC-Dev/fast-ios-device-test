@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.7.0 — 2026-10-29
+
+### Evidence lands on the Desktop by itself
+
+- Every PASS flow run on either engine is filed in `~/Desktop/<project> <ticket>/`
+  (`FAST_EVIDENCE_DIR`): a captioned sheet `<ticket>.jpg`, the run's clip as `<case>.mp4`, and
+  `source/` with each shot at 720 px (JPEG 80) and the `fastEvidenceSheet` spec, so a sheet can
+  be reordered, recaptioned or given another shot and rendered again without loss. The ticket
+  comes from the git branch (`evidence.ticket` / `FAST_EVIDENCE_TICKET` override it), the
+  project from the main checkout, so a `git worktree` of the base branch files beside it.
+- `--before` (or `"evidence": {"role": "before"}`) marks a run that shows the bug, e.g. the
+  same flow on the base build. It is filed when it fails at or after its outcome step (an
+  action with `"outcome": true`, else the last action that is not a screenshot, dump, motion or
+  pause), so a flow that broke on the way is not shown as the bug. Before cells sit next to the
+  case's after cells.
+- A re-run of a case replaces its images and clip, keeps the cell's edited text and place, and
+  does not bring back a cell listed in the spec's `"removed"`.
+- A filed PASS run in the default root keeps only `metrics.json` (its `video` points at the
+  filed clip); `fastUIReport`, `fastUIReview` and `task` cells keep working. Custom roots are
+  never emptied. `fastDeviceTest` now prunes run folders after `FAST_UI_KEEP_DAYS` (3) days, as
+  `fastSimulatorTest` did.
+- `fastEvidenceSheet --folder <project root>` prints the ticket's evidence folder and creates
+  its `source/flows/`: a ticket's flows live there, found by any later session and deleted with
+  the folder after the merge, never under the pruned `build/` roots.
+- Lines end with `evidence=file://…`, or `evidence_error=…` without changing PASS/FAIL.
+  `FAST_EVIDENCE=0` or `"evidence": false` files nothing; a `project_root` outside git with no
+  ticket given files nothing.
+
 ## 1.6.1 — 2026-10-27
 
 ### Setup an AI can follow

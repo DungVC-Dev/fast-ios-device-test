@@ -22,6 +22,11 @@ writes review quality (JPEG 80, ~250 KB for seven phone shots); `.png` keeps it 
 Optional: `columns` (cells per row, default 7) and `cell_width` (px, default 360).
 
 Every cell is checked before anything is drawn, so one run reports every missing shot.
+
+    fastEvidenceSheet --folder <project root>
+
+prints the evidence folder flow runs of that checkout are filed into, and creates its
+`source/flows/`, where the ticket's flows are kept.
 """
 
 from __future__ import annotations
@@ -34,6 +39,9 @@ from pathlib import Path
 from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont
+
+# bin/ holds symlinks in a git checkout but copies in the zip, so look beside scripts/ too.
+sys.path[:0] = [str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parent.parent / "scripts")]
 
 # Arial Unicode covers Vietnamese and other diacritics that Helvetica draws as boxes.
 FONT_CANDIDATES = (
@@ -84,6 +92,15 @@ def passing_run(task_dir: Path) -> Path | None:
     return None
 
 
+def filed_shot(run: Path, stem: str) -> Path | None:
+    """A filed PASS run keeps only metrics.json; its shots live in the evidence folder it names."""
+    try:
+        filed = json.loads((run / "metrics.json").read_text(encoding="utf-8")).get("evidence_shots") or {}
+    except (OSError, json.JSONDecodeError):
+        return None
+    return Path(filed[stem]) if stem in filed else None
+
+
 def cell_image(cell: dict[str, Any], index: int, root: Path | None, base: Path) -> Path:
     """Path of one cell's picture, or a SheetError that says what is missing and what exists."""
     if cell.get("image"):
@@ -107,6 +124,8 @@ def cell_image(cell: dict[str, Any], index: int, root: Path | None, base: Path) 
         if run is None:
             raise SheetError(f"cell {index}: no passing run of '{task}' under {cell_root}")
     path = run / (shot if Path(shot).suffix else f"{shot}.png")
+    if not path.is_file():
+        path = filed_shot(run, Path(shot).stem) or path
     if not path.is_file():
         shots = sorted(entry.stem for entry in run.glob("*.png"))
         raise SheetError(f"cell {index}: '{path.name}' not in {run}; shots there: {shots}")
@@ -206,12 +225,35 @@ def build(spec_path: Path) -> dict[str, Any]:
     )
 
 
+def print_folder(project_root: Path) -> int:
+    import fast_evidence
+
+    named = fast_evidence.folder_for(project_root, {})
+    if named is None:
+        print(f"FAIL error={project_root} is not in git: set FAST_EVIDENCE_TICKET (and FAST_EVIDENCE_PROJECT)",
+              file=sys.stderr)
+        return 1
+    flows = named[0] / "source/flows"
+    flows.mkdir(parents=True, exist_ok=True)
+    print(f"FOLDER path={named[0].as_uri()} flows={flows.as_uri()}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="fastEvidenceSheet", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("spec", type=Path, help="sheet spec JSON (see above)")
+    parser.add_argument("spec", type=Path, nargs="?", help="sheet spec JSON (see above)")
+    parser.add_argument(
+        "--folder", type=Path, metavar="PROJECT_ROOT",
+        help="Print (and create) the evidence folder of this checkout's ticket and its source/flows/, "
+        "where the ticket's flows are kept",
+    )
     args = parser.parse_args()
+    if args.folder:
+        return print_folder(args.folder.expanduser().resolve())
+    if not args.spec:
+        parser.error("give a spec, or --folder <project root>")
     try:
         result = build(args.spec.expanduser().resolve())
     except (SheetError, OSError, json.JSONDecodeError) as error:

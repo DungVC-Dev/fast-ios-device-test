@@ -14,8 +14,10 @@ guards let one request carry several steps. `fastUIMap` prints what earlier runs
 (`--path-to <screen>` gives the way there as one request), and the `ui-explorer` subagent
 (Haiku) runs long searches.
 
-Plus the `fastEvidenceSheet <spec.json>` launcher: one captioned JPEG of chosen screenshots
-for a PR or ticket. Both engines record with `--record` (the iPhone through XCTest's own
+Every PASS flow run, and every `--before` run that failed at its outcome step, is filed as PR
+evidence in `~/Desktop/<project> <ticket>/` (the ticket from the git branch): one captioned
+sheet, the clips, and light per-shot JPEGs that `fastEvidenceSheet <spec.json>` renders again
+after an edit. A filed run keeps only its `metrics.json` under `build/`. Both engines record with `--record` (the iPhone through XCTest's own
 screen recording) and keep the clip at review quality (H.264, 960 px, ~1–2 MB for 20 s).
 
 ## Install (once per machine)
@@ -53,7 +55,9 @@ Maintainers: `bash make-zip.sh` builds the release zip next to the folder.
 
 ## What's new
 
-See [CHANGELOG.md](CHANGELOG.md): 1.6.0 reaches a screen visited before in one request
+See [CHANGELOG.md](CHANGELOG.md): 1.7.0 files every passing flow run, and the bug's "before"
+run, as PR evidence in one folder per ticket on the Desktop, and keeps nothing heavy under
+`build/`. 1.6.0 reaches a screen visited before in one request
 (`fastUIMap --path-to`), reuses the iPhone runner for flows and trims every step (1.8 s on the
 iPhone, 2.9 s on the Simulator). 1.5.0 makes step-by-step runs fast on both engines
 (`fastSimulatorTest do`, `expect` guards on multi-step requests, a refusal for destructive steps
@@ -84,6 +88,7 @@ shows the smallest complete flow.
 - `scripts/fast_ui.py` — Simulator flow engine (`scripts/test_fast_ui.py` tests it); `--record`, `--session`
 - `scripts/fast_ui_report.py` — collates a fan-out session into a flow × simulator table (`fastUIReport`)
 - `scripts/fast_ui_review.py` — contact sheets and review notes for recorded runs (`fastUIReview`)
+- `scripts/fast_evidence.py` — files each qualifying flow run into the ticket's evidence folder, shared by both engines (`scripts/test_fast_evidence.py`)
 - `scripts/fast_evidence_sheet.py` — captioned evidence sheet for a PR (`fastEvidenceSheet`; `scripts/test_fast_evidence_sheet.py`)
 - `scripts/fast_ui_map.py` — screen map recorded from both engines' runs, and its `fastUIMap` launcher (`scripts/test_fast_ui_map.py`)
 - `scripts/fast_guard.py` — checks a `do` request before it runs (destructive steps, shapes), shared by both launchers (`scripts/test_fast_guard.py`)
