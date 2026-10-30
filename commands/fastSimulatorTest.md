@@ -20,5 +20,8 @@ Exploring or checking one screen step by step → `fastSimulatorTest do '<action
 `--build-only` once, then run them here with `--reuse-app`; more flows or 2+ simulators →
 the skill's fan-out, collated with `fastUIReport`. "quay"/"record" → `--record`.
 
+At the end of the work, `fastSimulatorTest shutdown` (every booted simulator, or `--simulator <udid>`;
+spare one Xcode is running the app on).
+
 Return the PASS/FAIL lines (a flow × simulator table when fanned out) and one concise cause
 per FAIL, with artifact links. Remove temporary flows; never edit the engine for one screen.

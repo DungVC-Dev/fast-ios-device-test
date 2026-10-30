@@ -56,6 +56,16 @@ table; `--since YYYYmmdd-HHMMSS` works without tags; `--json` for raw cells.
 The engine boots the simulator (`simctl bootstatus -b`) before building, so a
 shut-down device fails in seconds instead of after a full build.
 
+At the end of the work, give the Mac its memory back:
+
+```bash
+scripts/fast_ui.py shutdown                      # every booted simulator
+scripts/fast_ui.py shutdown --simulator <udid>   # only this one
+```
+
+It ends a recorder left running first and prints `SHUTDOWN simulators=<name (udid)>, …`
+(`SHUTDOWN none booted` when there was nothing to do).
+
 The runner prints one PASS/FAIL line and stores screenshots, failure hierarchy,
 and per-step timings under `build/fast-ui/<task>/<timestamp>/`. Add `--json`
 only when full machine-readable results are needed.
@@ -108,7 +118,8 @@ Supported actions:
 - `press_button`: `home` (it does not close an open Control Center; `edge_swipe` `bottom` does;
   on the iPhone the next steps act on SpringBoard until an action names another `app`);
   `siri` (on the iPhone with the request as `text`, which the screen map never keeps);
-  `lock` on the Simulator only (a locked iPhone needs its passcode; a second `lock` wakes the
+  `lock` on the Simulator only (a locked iPhone needs its passcode, so it locks only at the end,
+  with `fastDeviceTest lock`; a second `lock` wakes the
   Simulator on its lock screen and `edge_swipe` `bottom` unlocks it); `volume_up` /
   `volume_down` on the iPhone only.
 - `set_slider`: the slider matched by `id` or `label` (required on both engines) to `value` from
@@ -287,6 +298,7 @@ fastDeviceTest flow.json --device "My iPhone"          # via the runner, ~5 s
 fastDeviceTest do '{"type":"tap_label","label":"Continue"}' --device <d>   # ~1 s
 fastDeviceTest do '{"type":"screenshot","name":"now"}' --device <d> --out <dir>
 fastDeviceTest stop --device <d>
+fastDeviceTest lock --device <d>                       # end of the work: stop + lock the screen
 ```
 
 - The runner (`device-runner/`, its `.xcodeproj` committed; regenerate with `xcodegen

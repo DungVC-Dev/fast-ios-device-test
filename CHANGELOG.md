@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.10.0 — 2026-10-31
+
+### Locking the iPhone and shutting simulators down at the end
+
+- `fastDeviceTest lock --device <d>`: the runner's last request presses the lock button, then the
+  iPhone is freed as `stop` frees it (`LOCKED device=<name>`). For a test phone kept on Auto-Lock
+  "Never": the agent locks it once the work is done. XCUIDevice has no public lock button, so the
+  runner calls the private `pressLockButton` (as WebDriverAgent does), looked up at runtime; an
+  Xcode without it refuses with the reason (checked: iPhone 15 Pro Max, iOS 27, the lock state
+  read `passcodeRequired: true` right after). A lock that fails still frees the runner.
+- `press_button` `lock` inside a flow stays refused on an iPhone (the next steps would wait for
+  the passcode); its message now points at `fastDeviceTest lock`.
+- `fastSimulatorTest shutdown` shuts down every booted simulator, `--simulator <udid>` only that
+  one, ending a recorder left running first (`SHUTDOWN simulators=…`).
+
 ## 1.9.0 — 2026-10-30
 
 ### Screenshots wait until the screen stops moving

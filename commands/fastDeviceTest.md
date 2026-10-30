@@ -17,7 +17,8 @@ timing rules are in that skill's `SKILL.md`. The engine is:
 Same flow JSON as the simulator; the app must already be installed. Several iPhones →
 use the one the user named (a unique part of the name is enough). More than one run, or
 step-by-step exploration → `fastDeviceTest serve`, then flows or `fastDeviceTest do '<json>'`,
-and `fastDeviceTest stop` when done. Video wanted → add `--record` to a one-shot run (not
+and `fastDeviceTest stop` when done; at the end of the work `fastDeviceTest lock` instead (stops
+the runner and locks the screen). Video wanted → add `--record` to a one-shot run (not
 through `serve`); the PASS line carries `video=`.
 
 Return the PASS/FAIL line and one cause per FAIL, with artifact links. Remove temporary flows.

@@ -110,7 +110,9 @@ fastDeviceTest stop --device "<name or udid>"
 ```
 
 Expected: `PASS actions=2 labels=[…]`. The first run builds and signs the runner (1–2 min);
-later requests take about 2 s. Always `stop` when done: the runner holds the iPhone.
+later requests take about 2 s. Always `stop` when done: the runner holds the iPhone. At the end
+of the work, `fastDeviceTest lock --device "<name or udid>"` stops it and locks the screen too,
+and `fastSimulatorTest shutdown` shuts down the booted simulators.
 
 ## 7. Optional
 

@@ -34,7 +34,8 @@ re-signs it with an existing development profile, and runs the flow on the devic
   `clear_text`, `press_button`, `set_slider`, `pause`, `screenshot`, `dump`, `activate`, `launch` (optional
   `launch_arguments`), `terminate`, `open_url`, and the iPhone-only `two_finger_tap`, `two_finger_drag`, `pinch`, `rotate`,
   `orientation`, `set_picker` (see [usage.md](usage.md)). `motion` and `shake` are
-  simulator-only; `press_button` `lock` is refused (the phone would need its passcode).
+  simulator-only; `press_button` `lock` is refused inside a flow (the next steps would wait
+  for the passcode): lock at the end with `fastDeviceTest lock`.
 - **Editing a Home Screen widget:** go home with `terminate` on the app, then
   `long_press` the widget on `com.apple.springboard` (the widget node carries the app's
   name as `id`), then tap `id`
@@ -120,6 +121,7 @@ fastDeviceTest do '{"type":"tap_label","label":"Lyrics","element_type":"RadioBut
 fastDeviceTest do '{"type":"screenshot","name":"now"}' --device <d> --out <dir>
 fastDeviceTest do '{"type":"launch"}' --app com.apple.Preferences --device <d>
 fastDeviceTest status|stop --device <d>
+fastDeviceTest lock --device <d>     # end of the work: stop, then lock the screen
 ```
 
 Each `do` prints PASS/FAIL plus the visible labels after the action, so an agent
@@ -141,7 +143,8 @@ fastDeviceTest do '[{"type":"terminate"},{"type":"launch"},
 `dump` writes the on-screen nodes with type and frame to `<out>/<name>-ui.json`
 (`ui=` in the PASS line); the frame keys are the selector keys, so a dump feeds
 `frame` bounds, `tap_point` and `tap_nearest` directly. In a flow they land in the
-run's artifacts folder. Always `stop` when done: the runner holds the device, and another
+run's artifacts folder. Always `stop` when done (`lock` at the end of the work, which also
+locks the screen): the runner holds the device, and another
 agent's xcodebuild run on the same iPhone will collide with it. A device that already has a
 runner is refused ("is busy"); pick another iPhone, never `stop` a runner you did not start.
 A runner this Mac started that no longer answers (after an idle-out, while xcodebuild

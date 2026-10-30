@@ -129,6 +129,16 @@ launch) and print one PASS/FAIL line with the visible labels after the actions.
 Every path the tools print (`artifacts=`, `screenshot=`, `ui=`, `video=`, `path=`) is a `file://`
 URL: relay it as a markdown link.
 
+## When the work is done
+
+- iPhone: `fastDeviceTest lock --device <d>` instead of `stop`. It frees the runner and locks
+  the screen, for a test phone kept on Auto-Lock "Never". Nothing can drive the phone again
+  until someone types its passcode, so only at the very end; it refuses an iPhone another
+  runner holds ("busy").
+- Simulator: `fastSimulatorTest shutdown` shuts down every booted simulator;
+  `--simulator <udid>` only that one. Spare one Xcode is running the app on unless the user is
+  done with it too.
+
 ## Evidence, not just selectors
 
 A flow is evidence only when its last actions assert the product outcome. A FAIL whose labels

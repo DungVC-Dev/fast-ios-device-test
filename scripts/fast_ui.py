@@ -696,7 +696,7 @@ def stable_screenshot(udid: str, path: Path, timeout: float, ratio: float) -> bo
             screenshot(udid, probe)
             try:
                 changed = motion_ratio(path, probe, STABLE_REGION, 12)
-            except FastUIError:
+            except (FastUIError, OSError):
                 return None
             probe.replace(path)
             if changed <= ratio:
@@ -1576,10 +1576,34 @@ def run_do(argv: list[str]) -> int:
     return 1 if failed else 0
 
 
+def run_shutdown(argv: list[str]) -> int:
+    """`fastSimulatorTest shutdown`: at the end of the work, shut the booted simulators down so the
+    Mac gets its memory back; `--simulator` limits it to one (spare one Xcode is running on)."""
+    parser = argparse.ArgumentParser(
+        prog="fastSimulatorTest shutdown",
+        description="Shut down every booted simulator, or only the one given.",
+    )
+    parser.add_argument("--simulator", help="UDID of the one simulator to shut down")
+    args = parser.parse_args(argv)
+    listed = json.loads(command(["xcrun", "simctl", "list", "devices", "booted", "--json"]).stdout)
+    booted = [device for devices in listed.get("devices", {}).values() for device in devices
+              if device.get("state") == "Booted"]
+    if args.simulator:
+        booted = [device for device in booted if device.get("udid") == args.simulator]
+    for device in booted:
+        stop_stale_recorder(device["udid"])
+        command(["xcrun", "simctl", "shutdown", device["udid"]], timeout=60)
+    names = ", ".join(f"{device.get('name')} ({device['udid']})" for device in booted)
+    print(f"SHUTDOWN simulators={names}" if booted else "SHUTDOWN none booted")
+    return 0
+
+
 def main() -> int:
     global TRAIL
     if sys.argv[1:2] == ["do"]:
         return run_do(sys.argv[2:])
+    if sys.argv[1:2] == ["shutdown"]:
+        return run_shutdown(sys.argv[2:])
     args = parse_arguments()
     flow_path = args.flow.expanduser().resolve()
     try:

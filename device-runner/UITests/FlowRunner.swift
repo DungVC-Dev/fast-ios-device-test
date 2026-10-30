@@ -97,6 +97,16 @@ final class FlowRunner: XCTestCase {
 
 // MARK: - Requests
 private extension FlowRunner {
+    // XCUIDevice has no public lock button. `pressLockButton` is the private method WebDriverAgent
+    // uses on a physical iPhone; looked up at runtime, so an Xcode without it refuses with the reason.
+    func pressLockButton() throws {
+        let selector = NSSelectorFromString("pressLockButton")
+        guard XCUIDevice.shared.responds(to: selector) else {
+            throw Failure(message: "this Xcode's XCUIDevice has no pressLockButton; lock the iPhone by hand")
+        }
+        XCUIDevice.shared.perform(selector)
+    }
+
     func handle(_ body: Data, isStopped: inout Bool) -> [String: Any] {
         // A request taps only the prompts it declares itself: labels from an earlier flow
         // would otherwise answer a prompt that a later `do` meant to look at.
@@ -118,6 +128,12 @@ private extension FlowRunner {
             case "ping":
                 return ["status": "pass", "pong": true]
             case "stop":
+                isStopped = true
+                return ["status": "pass"]
+            case "lock":
+                // Only as the runner's last request (`fastDeviceTest lock`): nothing on a locked
+                // iPhone can run until someone types its passcode.
+                try pressLockButton()
                 isStopped = true
                 return ["status": "pass"]
             case "flow":
@@ -436,7 +452,7 @@ private extension FlowRunner {
             case "volume_up": XCUIDevice.shared.press(.volumeUp)
             case "volume_down": XCUIDevice.shared.press(.volumeDown)
             case "lock":
-                throw Failure(message: "press_button lock is refused on an iPhone: a shared test phone needs its passcode to come back; use the Simulator")
+                throw Failure(message: "press_button lock is refused inside a flow on an iPhone: the next steps would wait for its passcode; lock it at the end with `fastDeviceTest lock`")
             default:
                 throw Failure(message: "button must be home, siri, volume_up, volume_down or lock in action \(index)")
             }

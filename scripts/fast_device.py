@@ -662,7 +662,24 @@ def stop_server(udid: str) -> None:
         request(udid, {"op": "stop"}, timeout=5)
     except (OSError, FastDeviceError, json.JSONDecodeError):
         pass
-    state_path.unlink(missing_ok=True)
+    release_runner(udid)
+
+
+def lock_device(device: dict[str, Any], rebuild: bool) -> None:
+    """Press the lock button as the runner's last request, then free the iPhone as `stop` does.
+    Only at the end of the work: nothing can drive a locked iPhone until someone types its passcode."""
+    udid = device["udid"]
+    start_server(device, rebuild)
+    try:
+        response = request(udid, {"op": "lock"}, timeout=15)
+    finally:
+        release_runner(udid)
+    if response.get("status") != "pass":
+        raise FastDeviceError(response.get("error") or "the runner did not lock the iPhone")
+
+
+def release_runner(udid: str) -> None:
+    server_state_path(udid).unlink(missing_ok=True)
     time.sleep(1)
     kill_runners(udid)
 
@@ -923,6 +940,9 @@ def run_command(argv: list[str]) -> int:
     elif argv[0] == "stop":
         stop_server(udid)
         print(f"STOPPED device={device['name']}")
+    elif argv[0] == "lock":
+        lock_device(device, args.rebuild_runner)
+        print(f"LOCKED device={device['name']}")
     elif argv[0] == "status":
         print(f"{'SERVING' if server_alive(udid) else 'IDLE'} device={device['name']}")
     else:
@@ -964,7 +984,7 @@ def run_command(argv: list[str]) -> int:
 
 def main() -> int:
     argv = sys.argv[1:]
-    if argv and argv[0] in {"serve", "stop", "status", "do", "check"}:
+    if argv and argv[0] in {"serve", "stop", "lock", "status", "do", "check"}:
         return run_command(argv)
     return run_flow(parse_flow_arguments(argv))
 

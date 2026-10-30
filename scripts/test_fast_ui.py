@@ -163,15 +163,42 @@ class ActionTests(unittest.TestCase):
                 mock.patch.object(fast_ui, "tap_point", calls.tap), \
                 mock.patch.object(fast_ui, "screenshot", calls.screenshot), \
                 mock.patch.object(fast_ui.time, "sleep"):
-            fast_ui.execute_action({"type": "screenshot", "name": "home.png"}, "SIM", Path("/tmp"), 1, ["Don’t Allow"])
+            fast_ui.execute_action({"type": "screenshot", "name": "home.png", "stable": False}, "SIM", Path("/tmp"), 1, ["Don’t Allow"])
         self.assertEqual([call[0] for call in calls.mock_calls], ["tap", "screenshot"])
         calls.tap.assert_called_once_with("SIM", 110.0, 424.0, 0.08)
 
     def test_screenshot_reads_no_tree_when_the_flow_declares_no_prompt(self) -> None:
         with mock.patch.object(fast_ui, "hierarchy") as tree, mock.patch.object(fast_ui, "screenshot") as shot:
-            fast_ui.execute_action({"type": "screenshot", "name": "home.png"}, "SIM", Path("/tmp"), 1, [])
+            fast_ui.execute_action({"type": "screenshot", "name": "home.png", "stable": False}, "SIM", Path("/tmp"), 1, [])
         tree.assert_not_called()
         shot.assert_called_once()
+
+    @unittest.skipUnless(HAVE_PILLOW, "needs Pillow")
+    def test_screenshot_waits_until_two_shots_match(self) -> None:
+        result, kept = self.shoot_frames(["#000", "#fff", "#fff"], timeout=3)
+        self.assertEqual(result, {"path": kept, "stable": True})
+        from PIL import Image
+        self.assertEqual(Image.open(kept).getpixel((5, 50)), (255, 255, 255))
+
+    @unittest.skipUnless(HAVE_PILLOW, "needs Pillow")
+    def test_screenshot_reports_a_screen_that_never_settles(self) -> None:
+        result, _ = self.shoot_frames(itertools.cycle(["#000", "#fff"]), timeout=0.05)
+        self.assertIs(result["stable"], False)
+
+    def shoot_frames(self, colours, timeout: float) -> tuple[dict, str]:
+        """A screenshot action whose simctl shots come out in `colours`, one per call."""
+        from PIL import Image
+        frames = iter(colours)
+
+        def shoot(_udid: str, path: Path) -> None:
+            Image.new("RGB", (20, 100), next(frames)).save(path)
+
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        with mock.patch.object(fast_ui, "screenshot", side_effect=shoot), mock.patch.object(fast_ui.time, "sleep"):
+            result = fast_ui.execute_action({"type": "screenshot", "name": "home.png", "stable_timeout": timeout},
+                                            "SIM", folder, 1, [])
+        return result, str(folder / "home.png")
 
     def test_label_contains_matches_a_fragment(self) -> None:
         node = {"AXLabel": "Office, No Internet Connection", "type": "Cell", "frame": {}}
@@ -1170,10 +1197,6 @@ class ReportVariantTests(unittest.TestCase):
         self.assertIn("4/4 PASS", text)
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=1)
-
-
 @unittest.skipUnless(shutil.which("swiftc"), "needs swiftc (Xcode)")
 class RunnerLogicTests(unittest.TestCase):
     def test_device_runner_prompt_rules_and_settling(self) -> None:
@@ -1189,6 +1212,36 @@ class RunnerLogicTests(unittest.TestCase):
             self.assertEqual(build.returncode, 0, build.stderr)
             checks = subprocess.run([str(binary)], capture_output=True, text=True)
         self.assertEqual(checks.returncode, 0, checks.stdout + checks.stderr)
+
+
+class ShutdownTests(unittest.TestCase):
+    def run_shutdown(self, *argv: str) -> tuple[list[list[str]], str]:
+        listed = {"devices": {"iOS-27": [
+            {"udid": "A", "name": "iPhone 17", "state": "Booted"},
+            {"udid": "B", "name": "iPhone 17e", "state": "Booted"},
+        ]}}
+        calls: list[list[str]] = []
+
+        def fake(args: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+            calls.append(args)
+            stdout = json.dumps(listed) if args[:3] == ["xcrun", "simctl", "list"] else ""
+            return subprocess.CompletedProcess(args, 0, stdout, "")
+
+        out = io.StringIO()
+        with mock.patch.object(fast_ui, "command", side_effect=fake), contextlib.redirect_stdout(out):
+            self.assertEqual(fast_ui.run_shutdown(list(argv)), 0)
+        return [call for call in calls if call[:3] == ["xcrun", "simctl", "shutdown"]], out.getvalue()
+
+    def test_shuts_down_every_booted_simulator(self) -> None:
+        shutdowns, out = self.run_shutdown()
+        self.assertEqual(shutdowns, [["xcrun", "simctl", "shutdown", "A"], ["xcrun", "simctl", "shutdown", "B"]])
+        self.assertIn("SHUTDOWN simulators=iPhone 17 (A), iPhone 17e (B)", out)
+
+    def test_simulator_flag_spares_the_others(self) -> None:
+        shutdowns, out = self.run_shutdown("--simulator", "B")
+        self.assertEqual(shutdowns, [["xcrun", "simctl", "shutdown", "B"]])
+        _, none = self.run_shutdown("--simulator", "Z")
+        self.assertIn("SHUTDOWN none booted", none)
 
 
 class DeviceLauncherTests(unittest.TestCase):
@@ -1237,6 +1290,29 @@ class DeviceLauncherTests(unittest.TestCase):
                 tempfile.TemporaryDirectory() as raw:
             fast_device.run_command(["do", '{"type":"wait","label":"A"}', "--idle-wait", "--out", raw])
         self.assertNotIn("wait_for_idle", request.call_args.args[1])
+
+    def test_lock_is_the_runners_last_request(self) -> None:
+        import fast_device
+        out = io.StringIO()
+        with mock.patch.object(fast_device, "resolve_device", return_value={"udid": "U", "name": "X"}), \
+                mock.patch.object(fast_device, "start_server") as start, \
+                mock.patch.object(fast_device, "request", return_value={"status": "pass"}) as request, \
+                mock.patch.object(fast_device, "release_runner") as release, contextlib.redirect_stdout(out):
+            self.assertEqual(fast_device.run_command(["lock", "--device", "X"]), 0)
+        start.assert_called_once()
+        self.assertEqual(request.call_args.args[1], {"op": "lock"})
+        release.assert_called_once_with("U")
+        self.assertIn("LOCKED device=X", out.getvalue())
+
+    def test_lock_that_fails_still_frees_the_iphone(self) -> None:
+        import fast_device
+        with mock.patch.object(fast_device, "resolve_device", return_value={"udid": "U", "name": "X"}), \
+                mock.patch.object(fast_device, "start_server"), \
+                mock.patch.object(fast_device, "request", return_value={"status": "fail", "error": "no pressLockButton"}), \
+                mock.patch.object(fast_device, "release_runner") as release:
+            with self.assertRaisesRegex(fast_device.FastDeviceError, "no pressLockButton"):
+                fast_device.run_command(["lock"])
+        release.assert_called_once_with("U")
 
     def run_do(self, *argv: str, reply: dict | None = None) -> tuple[mock.Mock, str]:
         import contextlib
@@ -1624,3 +1700,7 @@ FlowRunner.swift:403: Expected failure in -[FastDeviceUITests.FlowRunner testSer
         self.assertNotIn("xcodegen", calls)
         self.assertEqual(calls, ["xcodebuild"])
         self.assertNotEqual(before, after)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=1)

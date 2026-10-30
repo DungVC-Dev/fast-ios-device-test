@@ -72,7 +72,9 @@ Agent tự chọn giữa viết flow (để chạy lại, chạy nhiều máy, q
   bánh xe; iPhone không lắc máy được: tool báo rõ thay vì làm sai.
 - Thời gian: một bước `do` khoảng 2 giây trên iPhone, 3 giây trên Simulator; một flow trên
   iPhone khoảng 7 giây khi runner đang chạy (lần đầu ~15–20 giây).
-- Runner trên iPhone tự tắt sau 5 phút rảnh; agent luôn `stop` khi xong. Máy đang bị người khác
+- Runner trên iPhone tự tắt sau 5 phút rảnh; agent luôn `stop` khi xong. Xong hẳn việc thì agent
+  chạy `fastDeviceTest lock` (tắt runner rồi khoá màn hình, cho máy để Auto-Lock "Never") và
+  `fastSimulatorTest shutdown` (tắt các Simulator đang bật cho nhẹ máy). Máy đang bị người khác
   dùng thì tool báo "busy", không giành máy.
 - Nhiều bước gộp một lệnh mà có bước nguy hiểm (Xoá, Thanh toán, Gửi, Đăng xuất…) thì tool từ chối,
   trừ khi agent ghi rõ `"confirm": true`.
