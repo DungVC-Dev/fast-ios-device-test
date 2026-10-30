@@ -670,7 +670,40 @@ def screenshot(udid: str, path: Path) -> None:
     image_type = path.suffix.removeprefix(".").lower() or "png"
     if image_type == "jpg":
         image_type = "jpeg"
-    command(["xcrun", "simctl", "io", udid, "screenshot", f"--type={image_type}", str(path)])
+    # simctl io hangs for good when the simulator dies mid-run; fail the flow instead of waiting forever.
+    command(["xcrun", "simctl", "io", udid, "screenshot", f"--type={image_type}", str(path)], timeout=30)
+
+
+# A popup sliding in or a toast fading in changes several percent of the screen between two
+# shots 0.25 s apart; a ticking timer or a pulsing dot stays under half a percent.
+STABLE_RATIO = 0.005
+STABLE_TIMEOUT = 3.0
+STABLE_INTERVAL = 0.25
+# The status bar clock and signal icons change on their own.
+STABLE_REGION = [0, 0.07, 1, 1]
+
+
+def stable_screenshot(udid: str, path: Path, timeout: float, ratio: float) -> bool | None:
+    """Shoot until two shots in a row differ by at most `ratio`, keeping the last one; an image
+    taken mid-animation is not evidence. True when settled, False after `timeout`, None without
+    Pillow (one plain shot)."""
+    screenshot(udid, path)
+    probe = path.with_name(f".probe-{path.name}")
+    deadline = time.monotonic() + timeout
+    try:
+        while time.monotonic() < deadline:
+            time.sleep(STABLE_INTERVAL)
+            screenshot(udid, probe)
+            try:
+                changed = motion_ratio(path, probe, STABLE_REGION, 12)
+            except FastUIError:
+                return None
+            probe.replace(path)
+            if changed <= ratio:
+                return True
+        return False
+    finally:
+        probe.unlink(missing_ok=True)
 
 
 UI_SETTINGS: dict[str, dict[str, str]] = {
@@ -987,6 +1020,13 @@ def sort_nodes(nodes: list[dict[str, Any]], keys: list[str]) -> list[dict[str, A
     )
 
 
+def unsettled_note(results: list[dict[str, Any]]) -> str:
+    """Names the screenshots still moving when the stable wait ran out; never use them as evidence."""
+    moving = [Path(str(result.get("path") or result.get("screenshot", "?"))).name
+              for result in results if result.get("stable") is False]
+    return f" unsettled={','.join(moving)}" if moving else ""
+
+
 def motion_ratio(first: Path, second: Path, region: list[float], threshold: int) -> float:
     try:
         # Only `motion` needs Pillow; every other action runs on a stock python3.
@@ -1257,8 +1297,14 @@ def run_action(
     elif kind == "screenshot":
         clear_prompts(udid, optional_prompt_labels)
         path = artifacts / action.get("name", f"step-{index:02d}.png")
-        screenshot(udid, path)
-        return {"path": str(path)}
+        if action.get("stable", True) is False:
+            screenshot(udid, path)
+            return {"path": str(path)}
+        stable = stable_screenshot(
+            udid, path, float(action.get("stable_timeout", STABLE_TIMEOUT)),
+            float(action.get("stable_ratio", STABLE_RATIO)),
+        )
+        return {"path": str(path), "stable": stable}
     elif kind == "motion":
         frame_count = int(action.get("frames", 3))
         if frame_count < 2:
@@ -1523,6 +1569,7 @@ def run_do(argv: list[str]) -> int:
         line += f" read=failed ({read_error})"
     if shots:
         line += f" screenshot{'s' if len(shots) > 1 else ''}={','.join(map(file_link, shots))}"
+    line += unsettled_note(results)
     if dumps:
         line += f" ui={','.join(map(file_link, dumps))}"
     print(f"{line} labels={json.dumps(labels, ensure_ascii=False)}")
@@ -1660,6 +1707,7 @@ def main() -> int:
                 suffix += f" labels={json.dumps(dumps[-1]['labels'], ensure_ascii=False)}"
             if video:
                 suffix += f" video={file_link(video)}"
+            suffix += unsettled_note(results)
             print(f"PASS task={name} total={metrics.total:.1f}s build={'yes' if built else 'skip'}{suffix} artifacts={file_link(artifacts)}{evidence_suffix}")
         return 0
     except (FastUIError, OSError, subprocess.TimeoutExpired, ValueError, TypeError, KeyError) as error:

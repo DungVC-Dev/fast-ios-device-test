@@ -146,7 +146,12 @@ Supported actions:
   (same row, default) or `x` (same column).
 - `screenshot`: save one named image. It first taps away any prompt declared in
   `setup.optional_permission_labels` that is on screen (one tree read, skipped when the flow
-  declares none), so a prompt raised during a `pause` stays out of the image.
+  declares none), so a prompt raised during a `pause` stays out of the image. Then it shoots
+  until two shots 0.25 s apart differ by at most `stable_ratio` (default 0.005) of the screen
+  below the status bar, for at most `stable_timeout` s (default 3), and keeps the last one: a
+  popup still sliding or a toast still fading is never the image. A screen that never settled
+  is named in the PASS line as `unsettled=<name>`: that image is not evidence. A ticking timer
+  stays under the ratio; `"stable": false` takes one plain shot (a video or animation on purpose).
 - `motion`: capture frames and assert a minimum changed-pixel ratio in a
   normalized `[left, top, right, bottom]` region.
 - `dump`: write the on-screen nodes to `<name>-ui.json` (one flat JSON list: `label`,

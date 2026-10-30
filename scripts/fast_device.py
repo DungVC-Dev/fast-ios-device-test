@@ -420,6 +420,10 @@ def report_notes(report: dict[str, Any]) -> str:
     if report.get("dismissed"):
         taps = [f"{entry.get('title', '')} → {entry.get('tapped', '')}" for entry in report["dismissed"]]
         notes += f" dismissed={json.dumps(taps, ensure_ascii=False)}"
+    results = report.get("results") or ([report["result"]] if report.get("result") else [])
+    moving = [str(result.get("screenshot")) for result in results if result.get("stable") is False]
+    if moving:
+        notes += f" unsettled={','.join(moving)}"
     return notes
 
 

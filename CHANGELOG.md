@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.9.0 — 2026-10-30
+
+### Screenshots wait until the screen stops moving
+
+- `screenshot` on the Simulator and on an iPhone now shoots until two shots 0.25 s apart differ by
+  at most 0.5 % of the screen below the status bar (at most 3 s), and keeps the last one. An
+  evidence sheet once shipped a "Trip is very short" popup caught half-faded mid-slide because a
+  fixed `pause` was too short. A screen that never settles is named in the PASS line as
+  `unsettled=<name>`; `"stable": false` keeps the old single shot. Tunable per action with
+  `stable_ratio` and `stable_timeout`.
+- A Simulator screenshot now gives up after 30 s. `simctl io … screenshot` on a simulator that died
+  mid-run used to hang the flow for good (one sat for 19 minutes); the flow now fails with the reason.
+
 ## 1.8.1 — 2026-10-30
 
 ### Restarting a stopped runner no longer fails

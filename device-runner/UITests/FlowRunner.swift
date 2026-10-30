@@ -345,8 +345,16 @@ private extension FlowRunner {
         case "screenshot":
             clearPrompts()
             let name = action["name"] as? String ?? String(format: "step-%02d", index)
-            capture(name)
-            return ["screenshot": name]
+            guard action["stable"] as? Bool != false else {
+                capture(name)
+                return ["screenshot": name]
+            }
+            let (shot, stable) = stableScreenshot(
+                timeout: number(action["stable_timeout"]) ?? 3,
+                ratio: number(action["stable_ratio"]) ?? 0.005
+            )
+            capture(name, shot)
+            return ["screenshot": name, "stable": stable]
         case "dump":
             let nodes = try waitNodes(timeout) { _ in true }
             let name = action["name"] as? String ?? String(format: "step-%02d", index)
@@ -988,8 +996,45 @@ private extension FlowRunner {
     }
 
     // Server mode returns PNGs in the reply; one-shot mode leaves them in the xcresult.
-    func capture(_ name: String) {
-        let screenshot = XCUIScreen.main.screenshot()
+    // An image taken while a popup slides or a toast fades is not evidence: shoot until two shots
+    // 0.25 s apart differ by at most `ratio` of the screen below the status bar.
+    func stableScreenshot(timeout: TimeInterval, ratio: Double) -> (XCUIScreenshot, Bool) {
+        var previous = XCUIScreen.main.screenshot()
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.25)
+            let current = XCUIScreen.main.screenshot()
+            if changedRatio(previous.image, current.image) <= ratio { return (current, true) }
+            previous = current
+        }
+        return (previous, false)
+    }
+
+    func changedRatio(_ first: UIImage, _ second: UIImage) -> Double {
+        guard let a = grayPixels(first), let b = grayPixels(second), a.count == b.count, !a.isEmpty else { return 1 }
+        let start = a.count * 7 / 100
+        var changed = 0
+        for index in start..<a.count where abs(Int(a[index]) - Int(b[index])) >= 12 { changed += 1 }
+        return Double(changed) / Double(a.count - start)
+    }
+
+    func grayPixels(_ image: UIImage) -> [UInt8]? {
+        guard let cgImage = image.cgImage else { return nil }
+        let width = max(cgImage.width / 4, 1), height = max(cgImage.height / 4, 1)
+        var pixels = [UInt8](repeating: 0, count: width * height)
+        let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(
+                data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width,
+                space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue
+            ) else { return false }
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        return drawn ? pixels : nil
+    }
+
+    func capture(_ name: String, _ shot: XCUIScreenshot? = nil) {
+        let screenshot = shot ?? XCUIScreen.main.screenshot()
         if inlineScreenshots {
             screenshots.append(["name": name, "png": screenshot.pngRepresentation.base64EncodedString()])
             return
