@@ -473,6 +473,24 @@ private extension FlowRunner {
             trail.touch()
             target.tap(withNumberOfTaps: max(Int(number(action["taps"]) ?? 1), 1), numberOfTouches: 2)
             Thread.sleep(forTimeInterval: postDelay)
+        case "two_finger_drag":
+            // Two fingers side by side, `dy` (fraction of the target's height, negative = up, default
+            // -0.25) apart from start to end; `spread` is the gap between the fingers in points; `at` (0-1, default
+            // 0.5) is how far down the target the travel is centred: a sheet under the fingers drags instead.
+            let hasTarget = ["id", "label", "label_contains", "element_type"].contains(where: { action[$0] != nil })
+            let frame = hasTarget ? try element(action, in: app, timeout: timeout).frame : app.frame
+            let dy = Double(frame.height) * (number(action["dy"]) ?? -0.25)
+            let spread = number(action["spread"]) ?? 60
+            let midX = Double(frame.midX), midY = Double(frame.minY) + Double(frame.height) * (number(action["at"]) ?? 0.5)
+            trail.touch()
+            if let reason = MultiTouch.drag(
+                fingers: [-spread / 2, spread / 2].map {
+                    (from: CGPoint(x: midX + $0, y: midY - dy / 2), to: CGPoint(x: midX + $0, y: midY + dy / 2))
+                },
+                duration: number(action["duration"]) ?? 0.6) {
+                throw Failure(message: "two_finger_drag is not available: \(reason) in action \(index)")
+            }
+            Thread.sleep(forTimeInterval: postDelay)
         case "key_combo":
             let flags: [String: XCUIElement.KeyModifierFlags] = [
                 "command": .command, "shift": .shift, "option": .option, "control": .control,

@@ -117,6 +117,13 @@ Supported actions:
   selector matches two nested elements, which SwiftUI often makes; move its thumb with `drag`.
 - iPhone only (the Simulator says why): `two_finger_tap` on a selector or `element_type`
   (`{"type": "two_finger_tap", "element_type": "Map"}` zooms a map out; `taps`, default 1),
+  `two_finger_drag` (two fingers side by side: `{"type": "two_finger_drag", "dy": -0.25,
+  "element_type": "Map"}` tilts an Apple Maps map; `dy` is the travel as a fraction of the element's
+  height, negative = up, `spread` the gap between the fingers in points (60), `duration` in
+  seconds (0.6), `at` (0-1, default 0.5) how far down the element the travel is centred; the whole
+  app when no selector is given. A sheet under the fingers drags instead of the map, so on a
+  map with a sheet open at its middle height use `"at": 0.3`; built on private XCTest classes, so an
+  Xcode that drops them refuses the action with the reason),
   `pinch` with `scale` (above 1 zooms in) and `rotate` with `radians` (two fingers; on the
   element a selector or `element_type` names — `Map`, `ScrollView`, `WebView`, `Image`, `Cell`,
   `Table`, …; an unknown name is refused — else the whole app; XCUITest starts a zoom-out with

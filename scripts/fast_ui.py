@@ -1019,8 +1019,8 @@ GESTURE_KINDS = {
 # Steps the screen map records as a way from one screen to the next.
 TRAIL_GESTURES = GESTURE_KINDS | {
     "type_text", "launch", "activate", "terminate", "open_url", "double_tap", "drag", "edge_swipe", "pinch", "rotate",
-    "orientation", "press_key", "press_button", "set_slider", "set_picker", "shake", "two_finger_tap", "key_combo",
-    "clear_text",
+    "orientation", "press_key", "press_button", "set_slider", "set_picker", "shake", "two_finger_tap", "two_finger_drag",
+    "key_combo", "clear_text",
 }
 # HID keycodes for `press_key` and `key_combo` (AXe on the Simulator).
 KEY_CODES = {
@@ -1036,6 +1036,7 @@ IPHONE_ONLY = {
     "orientation": "the Simulator has no command to rotate the device",
     "set_picker": "AXe cannot set a picker wheel",
     "two_finger_tap": "it needs two fingers and AXe has one",
+    "two_finger_drag": "it needs two fingers and AXe has one",
 }
 
 

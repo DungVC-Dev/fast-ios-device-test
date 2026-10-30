@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.8.0 — 2026-10-30
+
+### Two fingers dragging together
+
+- New iPhone-only action `two_finger_drag`: two fingers side by side move up or down together
+  (`dy`, `spread`, `duration`, `at`, on a selector or `element_type`, else the whole app). On Apple
+  Maps, `{"type": "two_finger_drag", "dy": -0.25, "element_type": "Map"}` tilts the map into 3D
+  (checked on an iPhone 15 Pro Max, iOS 27.2). XCUITest's public API has no such gesture, so the
+  runner builds the touch events from the private `XCPointerEventPath` / `XCSynthesizedEventRecord`
+  classes, looked up at runtime like the quiescence switch: an Xcode without them refuses the
+  action with the reason and nothing else changes.
+- Dragging up tilts the map, down flattens it again (both checked). Fingers that land on Maps'
+  bottom sheet drag the sheet instead, so start above it: `"at": 0.3`.
+- The Simulator refuses it like `pinch`; the screen map records it with `dy` and `spread`.
+
 ## 1.7.0 — 2026-10-29
 
 ### Evidence lands on the Desktop by itself

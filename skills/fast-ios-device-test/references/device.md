@@ -32,7 +32,7 @@ re-signs it with an existing development profile, and runs the flow on the devic
   `tap_first`, `tap_nearest`, `tap_point`, `long_press`, `double_tap`, `drag`, `edge_swipe`,
   `swipe` (points or `direction`), `scroll_to`, `type_text`, `press_key`, `key_combo`,
   `clear_text`, `press_button`, `set_slider`, `pause`, `screenshot`, `dump`, `activate`, `launch` (optional
-  `launch_arguments`), `terminate`, `open_url`, and the iPhone-only `two_finger_tap`, `pinch`, `rotate`,
+  `launch_arguments`), `terminate`, `open_url`, and the iPhone-only `two_finger_tap`, `two_finger_drag`, `pinch`, `rotate`,
   `orientation`, `set_picker` (see [usage.md](usage.md)). `motion` and `shake` are
   simulator-only; `press_button` `lock` is refused (the phone would need its passcode).
 - **Editing a Home Screen widget:** go home with `terminate` on the app, then

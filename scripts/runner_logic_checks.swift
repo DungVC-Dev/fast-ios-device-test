@@ -181,7 +181,7 @@ struct RunnerLogicChecks {
         let kept = trail.finish().compactMap { ($0["gesture"] as? [String: Any]).map { $0.keys.sorted() } }
         check(Trail.gestureKinds.isSuperset(of: ["double_tap", "drag", "edge_swipe", "pinch", "rotate", "orientation",
                                                  "press_key", "press_button", "set_slider", "set_picker", "shake",
-                                                 "two_finger_tap", "key_combo", "clear_text"])
+                                                 "two_finger_tap", "two_finger_drag", "key_combo", "clear_text"])
               && kept == [["count", "key", "type"], ["from", "hold", "to", "type"], ["key", "modifiers", "type"],
                           ["button", "type"]],
               "the new gestures join the screen map with their parameters")

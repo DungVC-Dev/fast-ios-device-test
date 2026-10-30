@@ -307,6 +307,7 @@ class ActionTests(unittest.TestCase):
 
     def test_iphone_only_gestures_say_so_on_the_simulator(self) -> None:
         for action in ({"type": "pinch", "scale": 2}, {"type": "rotate", "radians": 1}, {"type": "two_finger_tap"},
+                       {"type": "two_finger_drag", "dy": -0.25},
                        {"type": "orientation", "value": "landscape_left"}, {"type": "set_picker", "value": "10"},
                        {"type": "press_button", "button": "volume_up"}):
             with self.subTest(action=action["type"]), self.assertRaisesRegex(fast_ui.FastUIError, "Simulator"):

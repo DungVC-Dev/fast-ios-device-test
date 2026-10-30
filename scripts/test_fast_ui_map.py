@@ -126,7 +126,8 @@ class GestureTests(unittest.TestCase):
                        {"type": "rotate", "radians": 1.2}, {"type": "orientation", "value": "landscape_left"},
                        {"type": "press_key", "key": "delete", "count": 3}, {"type": "press_button", "button": "home"},
                        {"type": "set_picker", "value": "7", "index": 1}, {"type": "drag", "from": [1, 2], "to": [3, 4], "hold": 1},
-                       {"type": "key_combo", "key": "a", "modifiers": ["command"]}, {"type": "two_finger_tap", "taps": 2}):
+                       {"type": "key_combo", "key": "a", "modifiers": ["command"]}, {"type": "two_finger_tap", "taps": 2},
+                       {"type": "two_finger_drag", "dy": -0.25, "spread": 80, "element_type": "Map"}):
             with self.subTest(action=action["type"]):
                 self.assertEqual(fast_ui_map.kept_gesture(action), action)
 
