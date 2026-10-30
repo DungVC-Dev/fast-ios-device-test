@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.8.1 — 2026-10-30
+
+### Restarting a stopped runner no longer fails
+
+- `fastDeviceTest do` after `fastDeviceTest stop` could end in `shutil.SameFileError` on
+  `serve-<udid>.xctestrun`: the runner picked its xctestrun with a glob that skipped the per-run
+  `run-` copies but not the `serve-` copy left beside the build, so whichever came first was copied
+  onto itself. The build's own file is now chosen in one place, ignoring both prefixes (checked:
+  three `do` / `stop` cycles in a row on an iPhone 15 Pro Max with the `serve-` file present).
+
 ## 1.8.0 — 2026-10-30
 
 ### Two fingers dragging together

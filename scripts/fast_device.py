@@ -299,13 +299,18 @@ def runner_fingerprint(developer_dir: str, signing: dict[str, Any]) -> str:
     return digest.hexdigest()[:16]
 
 
+def base_xctestrun(products: Path) -> Path:
+    # `run-` and `serve-` files are per-run copies kept beside the build's own xctestrun.
+    return next(p for p in sorted(products.glob("*.xctestrun")) if not p.name.startswith(("run-", "serve-")))
+
+
 def build_runner(developer_dir: str, signing: dict[str, Any], rebuild: bool) -> Path:
     key = runner_fingerprint(developer_dir, signing)
     work = CACHE_ROOT / key
     products = work / "dd/Build/Products"
     marker = work / "signed"
     if marker.exists() and not rebuild:
-        return next(p for p in products.glob("*.xctestrun") if not p.name.startswith("run-"))
+        return base_xctestrun(products)
     work.mkdir(parents=True, exist_ok=True)
     # The generated project ships with the tool, so xcodegen is only needed when
     # someone edits project.yml and deletes the .xcodeproj to regenerate it.
@@ -335,7 +340,7 @@ def build_runner(developer_dir: str, signing: dict[str, Any], rebuild: bool) -> 
         raise FastDeviceError("runner build failed: " + " | ".join(errors))
     sign_runner(products, signing)
     marker.write_text(datetime.now().isoformat())
-    return next(p for p in products.glob("*.xctestrun") if not p.name.startswith("run-"))
+    return base_xctestrun(products)
 
 
 def sign_runner(products: Path, signing: dict[str, Any]) -> None:
@@ -356,7 +361,7 @@ def sign_runner(products: Path, signing: dict[str, Any]) -> None:
     for bundle in app.glob("PlugIns/*.xctest"):
         run(["codesign", "-f", "-s", identity, str(bundle)])
     run(["codesign", "-f", "-s", identity, "--entitlements", str(entitlements_path), str(app)])
-    xctestrun = next(p for p in products.glob("*.xctestrun") if not p.name.startswith("run-"))
+    xctestrun = base_xctestrun(products)
     run(["plutil", "-replace", f"{TEST_TARGET}.TestHostBundleIdentifier", "-string", signing["bundle_id"], str(xctestrun)])
 
 
