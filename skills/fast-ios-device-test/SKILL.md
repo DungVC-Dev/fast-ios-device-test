@@ -10,7 +10,8 @@ description: Use when asked to run, verify, re-test, or record an iOS screen or 
 | Need | Use |
 |---|---|
 | Prove a behavior, rerun it, run a matrix, record video, report | this skill: `fastSimulatorTest <flow.json>` / `fastDeviceTest <flow.json>` |
-| Explore an unknown screen, pinch/drag/rotate, read the app's console log | a subagent with Xcode 27's `device-interaction` skill (`DeviceInteraction*` MCP tools), on a **different** simulator; then write the flow here |
+| Explore an unknown screen on a Simulator, read the app's console log | a subagent with Xcode 27's `device-interaction` skill (`DeviceInteraction*` MCP tools), on a **different** simulator; then write the flow here. It refuses a physical iPhone (Xcode 27.0 and 27.2) |
+| Explore or drive a physical iPhone: taps, pinch, rotate, `two_finger_drag` (a map's tilt) | this skill: `fastDeviceTest do '<action>'` step by step ([references/device.md](references/device.md)) |
 | Watch the videos of a `--record` session | `fastUIReview` — read [references/review.md](references/review.md) first |
 | PR evidence (sheet + clips) | nothing to run: every PASS flow run, and every `--before` run that failed at its outcome step, is filed in `~/Desktop/<project> <ticket>/` — "Evidence folder" in [references/usage.md](references/usage.md) |
 | Change that sheet (order, captions, a shot) | edit `source/sheet.json` there, then `fastEvidenceSheet <it>` — "Evidence sheet" in [references/usage.md](references/usage.md) |
