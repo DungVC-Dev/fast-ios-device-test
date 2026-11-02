@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 import fast_update
+import tool_manager
 
 REPO = Path(__file__).resolve().parent.parent
 DAY = fast_update.DAY
@@ -25,7 +26,10 @@ class NoticeTests(unittest.TestCase):
         patcher = mock.patch.dict(os.environ, {"FAST_IOS_UPDATE_CACHE": str(self.cache)})
         patcher.start()
         self.addCleanup(patcher.stop)
-        for name in ("FAST_IOS_NO_UPDATE_CHECK", "CI", "FAST_IOS_LATEST_VERSION"):
+        os.environ["FAST_IOS_AXE_UPDATE_CACHE"] = str(self.dir / "axe-update.json")
+        os.environ["FAST_IOS_BAGUETTE_UPDATE_CACHE"] = str(self.dir / "baguette-update.json")
+        for name in ("FAST_IOS_NO_UPDATE_CHECK", "CI", "FAST_IOS_LATEST_VERSION", "FAST_IOS_LATEST_AXE_VERSION",
+                     "FAST_IOS_LATEST_BAGUETTE_VERSION"):
             os.environ.pop(name, None)
 
     def seed(self, **data):
@@ -79,6 +83,51 @@ class NoticeTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"FAST_IOS_LATEST_VERSION": "3.1.4"}):
             fast_update.refresh()
         self.assertEqual(json.loads(self.cache.read_text())["latest"], "3.1.4")
+
+    def test_tool_latest_is_checked_once_a_day_and_can_be_disabled(self):
+        with mock.patch.dict(os.environ, {"FAST_IOS_LATEST_AXE_VERSION": "1.9.0"}):
+            self.assertEqual(fast_update.latest_tool_once_a_day("axe", now=1000), ("1.9.0", "github"))
+        with mock.patch.dict(os.environ, {"FAST_IOS_LATEST_AXE_VERSION": "2.0.0"}):
+            self.assertEqual(fast_update.latest_tool_once_a_day("axe", now=1001), ("1.9.0", "cache"))
+        with mock.patch.dict(os.environ, {"FAST_IOS_LATEST_BAGUETTE_VERSION": "0.3.0"}):
+            self.assertEqual(fast_update.latest_tool_once_a_day("baguette", now=1000), ("0.3.0", "github"))
+        with mock.patch.dict(os.environ, {"FAST_IOS_NO_UPDATE_CHECK": "1"}):
+            self.assertEqual(fast_update.latest_tool_once_a_day("axe", now=1002), (None, "disabled"))
+
+    def test_axe_release_selects_the_universal_macos_asset_without_network(self):
+        payload = {"tag_name": "v1.9.0", "assets": [{
+            "name": "AXe-macOS-v1.9.0-universal.tar.gz",
+            "browser_download_url": "https://github.com/cameroncooke/AXe/releases/download/v1.9.0/AXe-macOS-v1.9.0-universal.tar.gz",
+        }]}
+        self.assertEqual(tool_manager.latest_release("axe", payload), {
+            "version": "1.9.0",
+            "url": payload["assets"][0]["browser_download_url"],
+        })
+
+    def test_baguette_release_selects_prebuilt_arm64_asset_without_network(self):
+        payload = {"tag_name": "v0.2.13", "assets": [{
+            "name": "baguette_v0.2.13_macOS_arm64.tar.gz",
+            "browser_download_url": "https://github.com/tddworks/baguette/releases/download/v0.2.13/baguette_v0.2.13_macOS_arm64.tar.gz",
+        }]}
+        self.assertEqual(tool_manager.latest_release("baguette", payload), {
+            "version": "0.2.13",
+            "url": payload["assets"][0]["browser_download_url"],
+        })
+
+    def test_axe_status_reports_pin_local_and_newer_release(self):
+        pin = self.dir / "tools.json"
+        pin.write_text(json.dumps({"axe": {"version": "1.8.0"}}))
+        binary = self.dir / "axe"
+        binary.write_text("#!/bin/sh\necho 1.8.0\n")
+        binary.chmod(0o755)
+        env = dict(os.environ, FAST_IOS_LATEST_AXE_VERSION="1.9.0")
+        ran = subprocess.run(
+            [sys.executable, str(REPO / "scripts" / "fast_update.py"), "--tool-status", "axe", str(pin), str(binary)],
+            capture_output=True, text=True, env=env, timeout=30,
+        )
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        self.assertIn("axe-pin=1.8.0 installed=1.8.0 latest=1.9.0", ran.stdout)
+        self.assertIn("npx fast-ios-device-test update-axe", ran.stdout)
 
     def test_status_reads_the_installed_folder(self):
         root = self.dir / "tool"
@@ -214,6 +263,29 @@ class NpmUpdateTests(unittest.TestCase):
         ran, calls = self.update()
         self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
         self.assertEqual(calls, [])
+
+    def test_update_axe_dispatches_to_the_pinned_installer(self):
+        bash = self.stubs / "bash"
+        bash.write_text(f'#!/bin/sh\necho "bash $*" >> "{self.log}"\n')
+        bash.chmod(0o755)
+        ran = subprocess.run(["node", str(REPO / "npm" / "install.js"), "update-axe"],
+                             capture_output=True, text=True, env=self.env, timeout=30)
+        self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+        self.assertEqual(self.log.read_text().splitlines(), [f"bash {REPO / 'install.sh'} --update-axe"])
+
+    def test_update_baguette_and_all_tools_dispatch_to_the_pinned_installer(self):
+        bash = self.stubs / "bash"
+        bash.write_text(f'#!/bin/sh\necho "bash $*" >> "{self.log}"\n')
+        bash.chmod(0o755)
+        for command, flag in (("update-baguette", "--update-baguette"), ("update-tools", "--update-tools")):
+            with self.subTest(command=command):
+                ran = subprocess.run(["node", str(REPO / "npm" / "install.js"), command],
+                                     capture_output=True, text=True, env=self.env, timeout=30)
+                self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+        self.assertEqual(self.log.read_text().splitlines(), [
+            f"bash {REPO / 'install.sh'} --update-baguette",
+            f"bash {REPO / 'install.sh'} --update-tools",
+        ])
 
 
 if __name__ == "__main__":

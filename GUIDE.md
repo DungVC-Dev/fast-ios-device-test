@@ -5,19 +5,24 @@ PASS/FAIL kèm ảnh chụp.
 
 ## Cài đặt (máy mới)
 
-Chỉ cần có sẵn Xcode 26 hoặc 27. Không cần Homebrew hay xcodegen: AXe đã đóng kèm trong gói.
+Chỉ cần có sẵn Xcode 26 hoặc 27. Không cần Homebrew hay xcodegen: AXe và baguette được khóa trong
+`vendor/tools.json`, kiểm SHA-256 rồi cài local. baguette là tùy chọn cho `fastCarPlayTest`: máy
+Intel hoặc đang offline vẫn cài tool bình thường và có thể chạy `./install.sh --install-baguette` sau.
 
 **Cách nhanh nhất:** nhờ AI cài: "làm theo SETUP.md trong https://github.com/DungVC-Dev/fast-ios-device-test".
 [SETUP.md](SETUP.md) có từng bước, lệnh kiểm tra, kết quả mong đợi và cách sửa từng lỗi.
 
 Cài hai phần:
 
-1. **Bộ chạy trên Mac** (engine, AXe, các lệnh `fast…`), dùng chung cho mọi agent:
+1. **Bộ chạy trên Mac** (engine, AXe, baguette tùy chọn, các lệnh `fast…`), dùng chung cho mọi agent:
    `npx fast-ios-device-test`. Cập nhật: `npx fast-ios-device-test update` (cập nhật luôn plugin
    Codex và Claude Code; Antigravity và Gemini thì in ra lệnh cần chạy). Khi có bản mới,
    `fastSimulatorTest`/`fastDeviceTest` in một dòng `update available: …` (tối đa một lần mỗi ngày,
    không tự cài; tắt bằng `FAST_IOS_NO_UPDATE_CHECK=1`). Với Claude Code, lệnh này đã cài luôn
    skill, các lệnh `/fastSimulatorTest`, `/fastDeviceTest`, `/fastUIReview` và subagent.
+   Cập nhật các tool như dependency đã khóa: `npx fast-ios-device-test update-tools` (hoặc
+   `update-axe` / `update-baguette`); lệnh này tải release mới nhất, kiểm checksum + version,
+   cập nhật pin rồi cài lại local.
 2. **Skill cho agent khác** (bộ chạy ở bước 1 không cài phần này):
    - Codex: `codex plugin marketplace add DungVC-Dev/fast-ios-device-test` rồi
      `codex plugin add fast-ios-device-test@fast-ios-device-test`
@@ -25,7 +30,9 @@ Cài hai phần:
    - Gemini CLI: `gemini extensions install https://github.com/DungVC-Dev/fast-ios-device-test`
 
 Kiểm tra: `npx fast-ios-device-test --check`, dòng cuối phải là `CHECK OK`. Lệnh này cũng báo khi
-skill của Codex hoặc Antigravity bị hỏng (link trỏ vào thư mục đã xoá, plugin rỗng). Sau đó thoát
+version AXe pin/local/latest không khớp; baguette thiếu/cũ chỉ được báo là tùy chọn, không làm
+`CHECK OK` thất bại. Lệnh cũng báo khi skill của Codex hoặc Antigravity bị hỏng (link trỏ
+vào thư mục đã xoá, plugin rỗng). Sau đó thoát
 rồi mở lại agent.
 
 Dọn cache và bản build khi test (tool vẫn còn): `npx fast-ios-device-test clean --project <thư mục project> --yes` (không có `--yes` chỉ liệt kê). Gỡ tool khỏi máy: `npx fast-ios-device-test --uninstall` (cache và `build/` vẫn giữ, muốn xoá thì chạy `clean` trước).

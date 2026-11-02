@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // npx fast-ios-device-test                     install, or upgrade (copied to ~/.local/share/fast-ios-device-test)
 // npx fast-ios-device-test update              upgrade to the latest version, then each agent's plugin
+// npx fast-ios-device-test update-tools        pin and install latest AXe + baguette releases
+// npx fast-ios-device-test update-axe|update-baguette   update one pinned tool
 // npx fast-ios-device-test --check [--device <name>]   what is there and what is missing
 // npx fast-ios-device-test --uninstall         remove the tool (caches and build output stay)
 // npx fast-ios-device-test clean [--project <root>] [--maps] [--yes]   delete caches and test builds
@@ -144,6 +146,12 @@ async function update() {
   return updatePlugins();
 }
 
+function updateTool(name) {
+  // Update the pin in the active linked clone/copy, not npx's disposable cache.
+  const target = installedRoot() || root;
+  return run("bash", [path.join(target, "install.sh"), `--update-${name}`]);
+}
+
 async function main() {
   if (process.platform !== "darwin") {
     console.error("fast-ios-device-test needs macOS with Xcode.");
@@ -154,6 +162,9 @@ async function main() {
     return 2;
   }
   if (args[0] === "update") return update();
+  if (args[0] === "update-axe") return updateTool("axe");
+  if (args[0] === "update-baguette") return updateTool("baguette");
+  if (args[0] === "update-tools") return updateTool("tools");
   if (args[0] === "clean") return run("python3", [path.join(root, "scripts", "fast_ui_clean.py"), ...args.slice(1)]);
   return run("bash", [path.join(root, "install.sh"), ...args]);
 }

@@ -44,9 +44,18 @@ Already cloned: run
 `git -C ~/fast-ios-device-test pull` and the same `install.sh --link`. Without git: download the
 release zip, unzip it, run its `install.sh` (no flag).
 
-The installer needs no Homebrew: it unpacks the bundled AXe into `~/.local/share/axe`, links the
-skill into `~/.claude/skills`, the slash commands into `~/.claude/commands`, the `ui-explorer`
+The installer needs no Homebrew: it verifies `vendor/tools.json`, installs required AXe and
+attempts optional arm64 baguette under `~/.local/share`, creates wrappers in `~/.local/bin`, and
+links the skill into `~/.claude/skills`, the slash commands into `~/.claude/commands`, the `ui-explorer`
 subagent into `~/.claude/agents` and the launchers into `~/.local/bin`.
+
+The tools have a locked-dependency update path: `npx fast-ios-device-test update-tools`, or
+`./install.sh --update-tools` in a clone (per-tool variants also exist). It verifies downloaded
+binaries, rewrites version/URL/SHA-256 pins and AXe's offline tarball, then reinstalls. baguette's
+large arm64 asset is downloaded, never committed or packed into npm; LICENSE/NOTICE remain beside it.
+An offline, blocked-GitHub or Intel Mac continues without baguette because only the upcoming
+`fastCarPlayTest` needs it. Matching healthy pins are reused; install baguette later with
+`./install.sh --install-baguette`.
 
 That is all Claude Code needs. Any other agent also needs the skill installed for it; this
 installer does not do that:
@@ -63,12 +72,14 @@ installer does not do that:
 npx fast-ios-device-test --check      # or ~/fast-ios-device-test/install.sh --check for a clone
 ```
 
-Expected last line: `CHECK OK`. `CHECK missing: …` names what to fix:
+Expected last line: `CHECK OK`. The `axe-pin=` line shows the pinned, local and latest release
+(cached for one day); `FAST_IOS_NO_UPDATE_CHECK=1` disables the latest lookup. `CHECK missing: …`
+names what to fix:
 
 | Missing | Fix |
 |---|---|
 | `xcode` | step 1 |
-| `axe` or `axe-1.8.0` (the check line reads `axe=<version>`) | rerun `install.sh --link` (it unpacks the bundled AXe) |
+| `axe-<pinned version>`, `baguette-<pinned version>` or wrapper | rerun the matching `install.sh --install-…` (or `--install-tools`) |
 | a launcher, `skill`, `ui-explorer agent` | rerun `install.sh --link` |
 | `… (broken link)`: a link whose clone was moved or deleted (a `broken link:` line names it) | rerun `install.sh --link` from the clone you keep |
 | `codex skill (broken link)` | rerun `install.sh --link` (it re-points a dangling Codex or Antigravity link), or relink by hand (README, "Development install") |

@@ -1,0 +1,31 @@
+name: Check managed tool releases
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-pins:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update AXe and baguette pins
+        run: python3 scripts/tool_manager.py update all --no-install
+      - name: Open dependency update pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: automation/update-managed-tools
+          delete-branch: true
+          commit-message: "Update pinned simulator tools"
+          title: "Update pinned simulator tools"
+          body: |
+            Updates `vendor/tools.json` to the latest verified AXe and baguette releases.
+            AXe's offline tarball is updated; baguette remains download-only to keep git and npm small.
+
+            This automation only opens a pull request; it never merges or releases.
+          labels: dependencies
