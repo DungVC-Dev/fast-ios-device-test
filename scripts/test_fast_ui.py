@@ -1636,10 +1636,21 @@ class AxeErrorTests(unittest.TestCase):
             local.write_text("#!/bin/sh\n")
             local.chmod(0o755)
             with mock.patch.dict(fast_ui.os.environ, {"FAST_IOS_BAGUETTE_DIR": raw}):
-                self.assertEqual(fast_ui.baguette_executable(), str(local))
+                self.assertEqual(fast_ui.baguette_executable(), str(local.resolve()))
             local.unlink()
-            with mock.patch.dict(fast_ui.os.environ, {"FAST_IOS_BAGUETTE_DIR": raw}):
-                self.assertEqual(fast_ui.baguette_executable(), "baguette")
+            wrapper = home / "bin/baguette"
+            wrapper.parent.mkdir()
+            wrapper.write_text("#!/bin/sh\n")
+            wrapper.chmod(0o755)
+            with mock.patch.dict(fast_ui.os.environ, {
+                    "FAST_IOS_BAGUETTE_DIR": raw,
+                    "FAST_IOS_BIN_DIR": str(wrapper.parent),
+            }):
+                self.assertEqual(fast_ui.baguette_executable(), str(wrapper.resolve()))
+
+    def test_explicit_baguette_overrides_managed_install(self) -> None:
+        with mock.patch.dict(fast_ui.os.environ, {"FAST_IOS_BAGUETTE": "~/custom/baguette"}):
+            self.assertEqual(fast_ui.baguette_executable(), str(Path("~/custom/baguette").expanduser()))
 
     def test_automation_session_timeout_is_retried_once(self) -> None:
         timed_out = mock.Mock(returncode=1, stdout="", stderr="Error: Timed out creating the simulator remote automation session")

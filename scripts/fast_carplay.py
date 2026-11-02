@@ -181,21 +181,11 @@ def armed_display(udid: str) -> tuple[bool, str]:
 
 
 def baguette_path() -> str:
-    explicit = os.environ.get("FAST_IOS_BAGUETTE")
-    if explicit:
-        path = Path(explicit).expanduser()
-        return str(path.resolve()) if path.is_file() and os.access(path, os.X_OK) else ""
-    candidates = []
-    if os.environ.get("FAST_IOS_BAGUETTE_DIR"):
-        candidates.append(Path(os.environ["FAST_IOS_BAGUETTE_DIR"]).expanduser() / "baguette")
-    candidates.append(Path.home() / ".local/share/baguette/baguette")
-    if os.environ.get("FAST_IOS_BIN_DIR"):
-        candidates.append(Path(os.environ["FAST_IOS_BIN_DIR"]).expanduser() / "baguette")
-    candidates.append(Path.home() / ".local/bin/baguette")
-    for path in candidates:
-        if path.is_file() and os.access(path, os.X_OK):
-            return str(path.resolve())
-    return shutil.which("baguette") or ""
+    candidate = fast_ui.baguette_executable()
+    path = Path(candidate).expanduser()
+    if path.is_file() and os.access(path, os.X_OK):
+        return str(path.resolve())
+    return shutil.which(candidate) or ""
 
 
 def baguette_version(binary: str | None = None) -> str:

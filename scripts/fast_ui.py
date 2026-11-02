@@ -117,10 +117,18 @@ def axe_executable() -> str:
 
 
 def baguette_executable() -> str:
-    """Prefer project-managed baguette for the upcoming CarPlay engine; PATH is fallback."""
-    home = Path(os.environ.get("FAST_IOS_BAGUETTE_DIR", Path.home() / ".local/share/baguette")).expanduser()
-    local = home / "baguette"
-    return str(local) if local.is_file() and os.access(local, os.X_OK) else "baguette"
+    """Resolve baguette using the project-managed install before PATH fallbacks."""
+    explicit = os.environ.get("FAST_IOS_BAGUETTE")
+    if explicit:
+        return str(Path(explicit).expanduser())
+    candidates = [
+        Path(os.environ.get("FAST_IOS_BAGUETTE_DIR", Path.home() / ".local/share/baguette")).expanduser() / "baguette",
+        Path(os.environ.get("FAST_IOS_BIN_DIR", Path.home() / ".local/bin")).expanduser() / "baguette",
+    ]
+    for local in candidates:
+        if local.is_file() and os.access(local, os.X_OK):
+            return str(local.resolve())
+    return shutil.which("baguette") or "baguette"
 
 
 def axe(udid: str, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
