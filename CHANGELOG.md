@@ -9,6 +9,9 @@
 - Claude Code, Gemini CLI and Antigravity instructions now explain the complete iPhone Duo
   workflow: outer/inner flow steps, closed/open/book/tabletop pose matrices, per-framebuffer
   recordings and review of every pose row.
+- Known limitation: the iPhone Duo pose and display path is covered by unit tests only. It has not
+  yet been run on a real Duo simulator, because Xcode 27.1's additional components (CoreSimulator
+  1174.9.2) were not installed on the release machine.
 - AXe and baguette are project-managed dependencies pinned by version, release URL, SHA-256 and
   licence. Installs use verified local copies instead of Homebrew; baguette's large official arm64
   asset remains download-only, while AXe remains available offline. Tool updates and the daily
