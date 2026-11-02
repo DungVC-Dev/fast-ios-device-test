@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.0.4 — 2026-11-03
 
 - `fastSimulatorTest` supports the Xcode 27.1 iPhone Duo in Device Hub: a flow can select the
   simulator by name, switch between `closed`, `open`, `book` and `tabletop` with the `duo`

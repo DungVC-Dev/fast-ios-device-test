@@ -1,6 +1,6 @@
 {
   "name": "fast-ios-device-test",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "Run fast iOS UI-flow verification on Simulator and physical iPhone from a local Mac.",
   "contextFileName": "GEMINI_EXTENSION.md"
 }
