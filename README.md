@@ -73,6 +73,8 @@ bundle id, simulator, build folder); the skill shows the smallest complete flow.
 - For a physical iPhone: see [GUIDE.md](GUIDE.md) (Vietnamese) or [SETUP.md](SETUP.md).
 - CarPlay simulator runs additionally need Xcode 26.6's Simulator.app, an iOS 26.5 runtime by
   default, and `baguette`; `fastCarPlayTest doctor` reports each missing item and its fix.
+  Changing the display preset restarts Simulator.app to clear its cached CarPlay mode, then reboots
+  only the disposable `agent-tmp-*` simulator; the tool refuses while a non-agent window is open.
 
 ## Install
 

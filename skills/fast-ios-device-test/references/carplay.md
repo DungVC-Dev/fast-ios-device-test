@@ -59,7 +59,9 @@ fastCarPlayTest run flow.json --target sim --display 720x480@1
 `browse@cp-standard`. Changing the size shuts down and reboots the simulator, so one command accepts
 one size. Run the command again only when the user explicitly asks for another size; never add the
 small-head-unit pass by default. If the requested display is already armed, the launcher skips
-re-arming and the reboot. The project owns arming:
+re-arming and the reboot. When the size differs, it exits Simulator.app through System Events to
+clear the cached CarPlay mode, but refuses if any non-`agent-tmp-*` Simulator window is open; it does
+not shut down or delete the user's simulator devices. The project owns arming:
 
 ```json
 "setup": {

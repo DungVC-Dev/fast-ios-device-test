@@ -35,8 +35,9 @@ JSON. Never edit the engine for one screen. Every action, `setup` key and CLI fl
 
 CarPlay is the exception to the accessibility-only path: AXe/XCUITest cannot reach the car display,
 and `simctl io --display external` is destructive on iOS 27. `fastCarPlayTest` uses `baguette` on a
-disposable `agent-tmp-*` simulator or the standalone CarPlay Simulator window on hardware. Project-
-specific display arming stays in the flow's `setup.carplay_arm_script`.
+disposable `agent-tmp-*` simulator or the standalone CarPlay Simulator window on hardware. Display
+changes restart Simulator.app to clear its cached mode and are refused if a non-agent Simulator
+window is open. Project-specific display arming stays in the flow's `setup.carplay_arm_script`.
 
 ## Flow file
 

@@ -158,6 +158,10 @@ class InputTests(unittest.TestCase):
                     {"type": "car_tap", "name": "app", "x": 20, "y": 20}, Path("/tmp"), 1
                 )
 
+    def test_hardware_window_helper_excludes_xcode_simulator_carplay(self):
+        self.assertIn('owner == "CarPlay Simulator"', fast_carplay.WINDOW_HELPER)
+        self.assertNotIn('owner == "Simulator"', fast_carplay.WINDOW_HELPER)
+
     def test_wait_stable_requires_two_identical_captures(self):
         folder = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: __import__("shutil").rmtree(folder))
@@ -211,6 +215,20 @@ class ArmingTests(unittest.TestCase):
         self.assertEqual(command.calls, 2)
         reattach.assert_called_once()
 
+    def test_screenshot_rejects_a_framebuffer_with_the_wrong_size(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        output = Path(folder.name) / "shot.png"
+        output.write_bytes(
+            b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\x0dIHDR"
+            + (1920).to_bytes(4, "big") + (720).to_bytes(4, "big")
+        )
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch.object(fast_carplay, "baguette_path", return_value="/baguette"), \
+             mock.patch.object(fast_carplay, "run", return_value=completed):
+            with self.assertRaisesRegex(fast_carplay.CarPlayError, "1920x720, requested 800x480"):
+                fast_carplay.baguette_screenshot("U", output, (800, 480))
+
     def test_matching_armed_display_skips_rebooting_arm_script(self):
         with mock.patch.object(fast_carplay, "armed_display", return_value=(True, "800x480@2")), \
              mock.patch.object(fast_carplay, "run") as command:
@@ -225,12 +243,27 @@ class ArmingTests(unittest.TestCase):
         script = Path(folder.name) / "arm.sh"
         script.write_text("#!/bin/sh\n")
         with mock.patch.object(fast_carplay, "armed_display", return_value=(True, "1920x720@2")), \
+             mock.patch.object(fast_carplay, "quit_simulator_app_for_rearm") as close, \
              mock.patch.object(fast_carplay, "run") as command:
             fast_carplay.arm_simulator(
                 {"setup": {"carplay_arm_script": str(script)}}, "UDID",
                 ("standard", 800, 480, 2.0),
             )
+        close.assert_called_once()
         command.assert_called_once_with([str(script.resolve()), "UDID", "800", "480", "2"], timeout=180)
+
+    def test_rearm_refuses_to_close_a_non_agent_simulator_window(self):
+        completed = mock.Mock(returncode=0, stdout="unsafe:iPhone 17 Pro\n", stderr="")
+        with mock.patch.object(fast_carplay, "run", return_value=completed):
+            with self.assertRaisesRegex(fast_carplay.CarPlayError, "non-agent Simulator window"):
+                fast_carplay.quit_simulator_app_for_rearm()
+
+    def test_opened_display_must_match_the_requested_size(self):
+        with mock.patch.object(fast_carplay, "armed_display", return_value=(True, "1920x720@2")), \
+             mock.patch.object(fast_carplay.time, "monotonic", side_effect=[0, 11]), \
+             mock.patch.object(fast_carplay.time, "sleep"):
+            with self.assertRaisesRegex(fast_carplay.CarPlayError, "requested 800x480@2"):
+                fast_carplay.require_armed_display("U", ("standard", 800, 480, 2.0))
 
     def test_missing_arm_script_requires_an_already_armed_display(self):
         with mock.patch.object(fast_carplay, "armed_display", return_value=(False, "missing")):

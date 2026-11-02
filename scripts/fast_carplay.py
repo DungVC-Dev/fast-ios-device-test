@@ -292,7 +292,14 @@ def coordinate(value: Any, extent: int, label: str) -> int:
     return round(number)
 
 
-def baguette_screenshot(udid: str, output: Path) -> None:
+def png_size(path: Path) -> tuple[int, int]:
+    header = path.read_bytes()[:24]
+    if len(header) < 24 or header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
+        raise CarPlayError(f"baguette returned an invalid PNG: {path}")
+    return int.from_bytes(header[16:20], "big"), int.from_bytes(header[20:24], "big")
+
+
+def baguette_screenshot(udid: str, output: Path, expected_size: tuple[int, int] | None = None) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     binary = baguette_path()
     if not binary:
@@ -308,6 +315,13 @@ def baguette_screenshot(udid: str, output: Path) -> None:
         raise CarPlayError(f"{' '.join(command)}: {detail}")
     if not output.exists() or output.stat().st_size == 0:
         raise CarPlayError("baguette returned no CarPlay screenshot")
+    if expected_size:
+        actual = png_size(output)
+        if actual != expected_size:
+            raise CarPlayError(
+                f"CarPlay framebuffer is {actual[0]}x{actual[1]}, requested "
+                f"{expected_size[0]}x{expected_size[1]}; close and re-arm the CarPlay display"
+            )
 
 
 def stable_screenshot(capture: Any, folder: Path, stem: str, timeout: float) -> Path:
@@ -340,7 +354,7 @@ func window() -> [String: Any]? {
   return rows.first { row in
     let owner = row[kCGWindowOwnerName as String] as? String ?? ""
     let name = row[kCGWindowName as String] as? String ?? ""
-    let isCar = owner == "CarPlay Simulator" || (owner == "Simulator" && name.localizedCaseInsensitiveContains("CarPlay"))
+    let isCar = owner == "CarPlay Simulator"
     return isCar && !name.isEmpty && (row[kCGWindowLayer as String] as? Int ?? 1) == 0
   }
 }
@@ -528,6 +542,36 @@ def doctor(target: str, udid: str | None, device: str | None, display: str) -> i
     return 1 if failed else 0
 
 
+def quit_simulator_app_for_rearm() -> None:
+    """Clear Simulator.app's cached CarPlayConfig without touching simulator device state."""
+    script = r'''tell application "System Events"
+if not (exists process "Simulator") then return "not-running"
+tell process "Simulator"
+repeat with w in windows
+set windowName to name of w as text
+if windowName does not contain "agent-tmp-" then return "unsafe:" & windowName
+end repeat
+click menu item "Quit Simulator" of menu "Simulator" of menu bar 1
+end tell
+return "quit"
+end tell'''
+    result = run(["osascript", "-e", script], check=False, timeout=20)
+    answer = result.stdout.strip()
+    if result.returncode or answer.startswith("unsafe:"):
+        detail = answer.removeprefix("unsafe:") or (result.stderr or "System Events failed").strip()
+        raise CarPlayError(
+            f"cannot re-arm while a non-agent Simulator window is open ({detail}); close it and retry"
+        )
+    if answer != "quit":
+        return
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if run(["pgrep", "-x", "Simulator"], check=False).returncode:
+            return
+        time.sleep(0.25)
+    raise CarPlayError("Simulator.app did not quit before CarPlay re-arm")
+
+
 def arm_simulator(spec: dict[str, Any], udid: str, display: tuple[str, int, int, float]) -> None:
     setup = spec.get("setup", {})
     _, width, height, scale = display
@@ -545,7 +589,22 @@ def arm_simulator(spec: dict[str, Any], udid: str, display: tuple[str, int, int,
     if not script_path.is_file():
         raise CarPlayError(f"carplay_arm_script not found: {script_path}")
     scale_text = str(int(scale)) if scale.is_integer() else str(scale)
+    quit_simulator_app_for_rearm()
     run([str(script_path), udid, str(width), str(height), scale_text], timeout=180)
+
+
+def require_armed_display(udid: str, display: tuple[str, int, int, float]) -> None:
+    _, width, height, scale = display
+    wanted = f"{width}x{height}@{scale:g}"
+    deadline = time.monotonic() + 10
+    armed, current = armed_display(udid)
+    while (not armed or current != wanted) and time.monotonic() < deadline:
+        time.sleep(0.5)
+        armed, current = armed_display(udid)
+    if not armed or current != wanted:
+        raise CarPlayError(
+            f"CarPlay display opened as {current if armed else 'not armed'}, requested {wanted}"
+        )
 
 
 def ensure_sim_carplay_window() -> None:
@@ -645,10 +704,10 @@ def car_action_sim(action: dict[str, Any], baguette: BaguetteInput, udid: str,
         baguette.send(event)
     elif kind == "car_screenshot":
         output = artifacts / str(action.get("file") or f"{index:02d}-{action.get('name', 'car')}.png")
-        baguette_screenshot(udid, output)
+        baguette_screenshot(udid, output, (width, height))
         return output
     elif kind == "car_wait_stable":
-        return stable_screenshot(lambda path: baguette_screenshot(udid, path), artifacts,
+        return stable_screenshot(lambda path: baguette_screenshot(udid, path, (width, height)), artifacts,
                                  f"{index:02d}-{action.get('name', 'stable')}", float(action.get("timeout", 8)))
     else:
         raise CarPlayError(f"{kind} is hardware-only")
@@ -717,6 +776,7 @@ def run_flow(flow_path: Path, target: str, udid_arg: str | None, device_arg: str
             arm_simulator(spec, sim_udid, display)
             ensure_simulator_ready(sim_udid)
             ensure_sim_carplay_window()
+            require_armed_display(sim_udid, display)
             _, width, height, _ = display
             if not baguette_version():
                 raise CarPlayError("baguette is missing; run doctor --target sim for the fix")
@@ -784,7 +844,7 @@ def run_flow(flow_path: Path, target: str, udid_arg: str | None, device_arg: str
             else:
                 fast_ui.screenshot(sim_udid, phone_final)
             car_final = artifacts / "car-final.png"
-            baguette_screenshot(sim_udid, car_final)
+            baguette_screenshot(sim_udid, car_final, (int(width), int(height)))
         else:
             assert device is not None
             response = fast_device.request(device["udid"], {"op": "action", "action": {

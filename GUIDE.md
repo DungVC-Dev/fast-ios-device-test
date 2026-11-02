@@ -124,6 +124,8 @@ Agent tự chọn giữa viết flow (để chạy lại, chạy nhiều máy, q
 - CarPlay Simulator.app cần Xcode 26.6, mặc định iOS 26.5 và simulator riêng tên `agent-tmp-*`.
   Dùng `--display widescreen` hoặc `--display standard` cho 1920×720@2 hoặc 800×480@2. Mỗi lệnh
   chỉ chạy một cỡ vì đổi cỡ phải reboot simulator; chỉ chạy cỡ thứ hai khi người dùng yêu cầu.
+  Khi đổi cỡ, tool thoát Simulator.app để xoá mode CarPlay đang cache rồi chỉ reboot máy
+  `agent-tmp-*`; nếu còn cửa sổ Simulator không thuộc agent thì tool dừng để không đụng máy người dùng.
   Không bao giờ dùng
   `simctl io screenshot --display external` vì trên iOS 27 lệnh đó làm restart CarPlay.
 - Bàn phím tiếng Việt (Telex) trên máy sẽ biến chữ agent gõ; số và phím thì không sao.
