@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- README reorganised around target selection, quick install, engine flows, variants, troubleshooting,
+  and verified command examples.
 - Fixed iPhone Duo display selection across separate `do` and session processes: screenshots and
   recordings now retain the selected outer/inner framebuffer until the simulator is shut down.
 - Claude Code, Gemini CLI and Antigravity instructions now explain the complete iPhone Duo
