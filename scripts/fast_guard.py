@@ -33,6 +33,15 @@ def check_actions(actions: list[Any]) -> None:
             raise ValueError(f"step {index}: each action must be a JSON object")
         if "expect" in action and not isinstance(action["expect"], dict):
             raise ValueError(f"step {index}: expect must be a selector object, such as {{\"label\": \"About\"}}")
+        if action.get("type") == "duo":
+            pose = action.get("pose")
+            allowed = ("closed", "open", "book", "tabletop")
+            if pose not in allowed:
+                raise ValueError(f"step {index}: duo pose must be one of {', '.join(allowed)}")
+        if "display" in action and action.get("type") not in ("screenshot", "motion"):
+            raise ValueError(f"step {index}: display is supported only by screenshot and motion")
+        if action.get("type") in ("screenshot", "motion") and action.get("display") not in (None, "outer", "inner"):
+            raise ValueError(f"step {index}: display must be outer or inner")
 
 
 def risky_step(actions: list[dict[str, Any]]) -> tuple[int, str] | None:

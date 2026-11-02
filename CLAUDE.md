@@ -16,7 +16,8 @@ renamed command, skill or subagent.
 `fast-ios-device-test` (`npx fast-ios-device-test` installs it), plugins for Claude Code, Codex and
 Antigravity, a Gemini CLI extension, and a release zip. macOS only; needs Xcode 26 or 27.
 
-- `/fastSimulatorTest` drives an app on Simulator through a JSON flow (AXe, bundled in `vendor/`).
+- `/fastSimulatorTest` drives an app on Simulator through a JSON flow (AXe, bundled in `vendor/`),
+  including iPhone Duo outer/inner displays and Device Hub poses on Xcode 27.1.
 - `/fastDeviceTest` runs the same flows on a physical iPhone through a cached, auto-signed
   XCUITest runner (`device-runner/`), including Settings, Shortcuts and SpringBoard.
 - `/fastUIReview` builds contact sheets from recorded runs. Other launchers: `fastUIMap`,

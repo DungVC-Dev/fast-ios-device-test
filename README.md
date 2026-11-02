@@ -38,7 +38,7 @@ npx fast-ios-device-test
 
 | Tool | What it does |
 |---|---|
-| `fastSimulatorTest` | Drives the app on Simulator through a JSON flow (fresh install, injected UserDefaults, PASS/FAIL line). Fans out one agent per simulator for a matrix. |
+| `fastSimulatorTest` | Drives the app on Simulator through a JSON flow (fresh install, injected UserDefaults, PASS/FAIL line), including iPhone Duo outer/inner displays and poses. Fans out one agent per simulator for a matrix. |
 | `fastDeviceTest` | Runs the same JSON flow on a physical iPhone through a cached, auto-signed XCUITest runner; can also drive Settings, Shortcuts and SpringBoard. |
 | `fastUIReview` | Builds contact sheets from a recorded session so every case's video is reviewed, not just its PASS line. |
 | `fastUIMap` | Prints what earlier runs saw of an app; `--path-to <screen>` gives the way there as one request. |
@@ -62,6 +62,7 @@ bundle id, simulator, build folder); the skill shows the smallest complete flow.
 ## Requirements
 
 - A Mac with Xcode 26 or 27.
+- iPhone Duo runs require Xcode 27.1 and Device Hub from that Xcode.
 - Node.js 18+ only for the `npx` install.
 - AXe 1.8.0 (the Simulator driver) is bundled, so neither Homebrew nor xcodegen is needed.
 - Pillow is installed when possible; only video review (`fastUIReview`, `fastEvidenceSheet`, the
@@ -227,6 +228,7 @@ In Claude Code:
 ```
 /fastSimulatorTest open the Lyrics tab as a premium user, take a screenshot
 /fastSimulatorTest the Home screen, in light and dark mode, with video
+/fastSimulatorTest verify Home on iPhone Duo closed, open, book and tabletop poses
 /fastDeviceTest on my iPhone: open Home, check that no paywall shows
 /fastUIReview <session>
 ```

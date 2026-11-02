@@ -1216,6 +1216,33 @@ class MotionTests(unittest.TestCase):
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_duo_name_selects_xcode_27_1_toolchain(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            xcode = Path(raw) / "Xcode 27.1.app"
+            (xcode / "Contents/Developer").mkdir(parents=True)
+            with mock.patch.dict(fast_ui.os.environ, {"DUO_XCODE": str(xcode)}, clear=False):
+                fast_ui.os.environ.pop("DEVELOPER_DIR", None)
+                fast_ui.select_duo_toolchain("iPhone Duo")
+                self.assertEqual(fast_ui.os.environ["DEVELOPER_DIR"], str(xcode / "Contents/Developer"))
+                fast_ui.os.environ.pop("DEVELOPER_DIR", None)
+
+    def test_resolve_simulator_accepts_udid_or_unique_name_and_prefers_booted(self) -> None:
+        first = "11111111-1111-1111-1111-111111111111"
+        second = "22222222-2222-2222-2222-222222222222"
+        payload = {"devices": {"runtime": [
+            {"name": "iPhone Duo", "udid": first, "state": "Shutdown", "isAvailable": True},
+            {"name": "iPhone Duo", "udid": second, "state": "Booted", "isAvailable": True},
+        ]}}
+        with mock.patch.object(fast_ui, "command", return_value=mock.Mock(stdout=json.dumps(payload))):
+            self.assertEqual(fast_ui.resolve_simulator("iPhone Duo"), second)
+        self.assertEqual(fast_ui.resolve_simulator(first), first)
+
+    def test_ensure_booted_starts_a_shutdown_simulator(self) -> None:
+        with mock.patch.object(fast_ui, "command") as command, mock.patch.object(fast_ui, "ensure_device_hub"):
+            fast_ui.ensure_booted("SIM")
+        self.assertEqual(command.call_args_list[0].args[0], ["xcrun", "simctl", "boot", "SIM"])
+        self.assertEqual(command.call_args_list[1].args[0], ["xcrun", "simctl", "bootstatus", "SIM", "-b"])
+
     def test_build_if_needed_boots_simulator_before_building(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             tmp = Path(raw)
@@ -1321,6 +1348,16 @@ class RecordingTests(unittest.TestCase):
         self.assertEqual(args[:5], ["xcrun", "simctl", "io", "SIM", "recordVideo"])
         popen.return_value.send_signal.assert_called_once()
 
+    def test_duo_recorder_targets_the_pose_display(self) -> None:
+        with tempfile.TemporaryDirectory() as raw, \
+                mock.patch.object(fast_ui.subprocess, "Popen") as popen, \
+                mock.patch.object(fast_ui, "duo_display_uuid", return_value="DISPLAY"), \
+                mock.patch.object(fast_ui, "stop_stale_recorder"), \
+                mock.patch.object(fast_ui.time, "sleep"):
+            recorder = fast_ui.Recorder("SIM", Path(raw) / "run.mp4", "inner")
+            recorder.start()
+        self.assertIn("--display=DISPLAY", popen.call_args.args[0])
+
     def test_publish_video_keeps_only_final_on_pass(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             task_dir = Path(raw) / "task"
@@ -1423,6 +1460,8 @@ class UIVariantTests(unittest.TestCase):
             fast_ui.variant_name("home", fast_ui.ui_variant({"content_size": "accessibility-extra-large"}, None, None)),
             "home@ax-xl",
         )
+        duo = fast_ui.ui_variant({"duo_pose": "book"}, None, None, "tabletop")
+        self.assertEqual(fast_ui.variant_name("home", duo), "home@duo-tabletop")
 
     def test_unknown_setting_fails_closed(self) -> None:
         with self.assertRaises(fast_ui.FastUIError):
@@ -1464,9 +1503,43 @@ class UIVariantTests(unittest.TestCase):
         self.assertEqual(previous, {"appearance": "light", "content_size": "large"})
 
     def test_variant_flags_parse(self) -> None:
-        with mock.patch.object(sys, "argv", ["fast_ui.py", "flow.json", "--appearance", "dark", "--content-size", "accessibility-large"]):
+        with mock.patch.object(sys, "argv", ["fast_ui.py", "flow.json", "--appearance", "dark", "--content-size", "accessibility-large", "--duo-pose", "book"]):
             args = fast_ui.parse_arguments()
         self.assertEqual((args.appearance, args.content_size), ("dark", "accessibility-large"))
+        self.assertEqual(args.duo_pose, "book")
+
+
+class DuoTests(unittest.TestCase):
+    ENUMERATE = """Port:\n    UUID: AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA\n    Default width: 1398\nPort:\n    UUID: BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB\n    Default width: 2007\n"""
+
+    def tearDown(self) -> None:
+        fast_ui.ACTIVE_DUO_DISPLAY.clear()
+
+    def test_display_uuid_and_screenshot_target_framebuffer(self) -> None:
+        calls: list[list[str]] = []
+        def fake(args, **kwargs):
+            calls.append(args)
+            return mock.Mock(stdout=self.ENUMERATE, returncode=0)
+        with mock.patch.object(fast_ui, "command", side_effect=fake):
+            self.assertEqual(fast_ui.duo_display_uuid("SIM", "inner"), "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")
+            fast_ui.screenshot("SIM", Path("shot.png"), "outer")
+        self.assertIn("--display=AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA", calls[-1])
+
+    def test_pose_maps_closed_to_outer_and_folded_states_to_inner(self) -> None:
+        clicked: list[str] = []
+        with mock.patch.object(fast_ui, "simulator_name", return_value="iPhone Duo"), \
+                mock.patch.object(fast_ui, "click_duo_button", side_effect=lambda _u, value: clicked.append(value)), \
+                mock.patch.object(fast_ui, "duo_display_is_landscape", side_effect=lambda _u, display: display == "inner"):
+            self.assertEqual(fast_ui.set_duo_pose("SIM", "closed"), "outer")
+            self.assertEqual(fast_ui.set_duo_pose("SIM", "book"), "inner")
+            self.assertEqual(fast_ui.set_duo_pose("SIM", "tabletop"), "inner")
+        self.assertEqual(clicked, ["closed", "open", "book", "open", "rotate", "book"])
+
+    def test_duo_action_reports_pose_and_display(self) -> None:
+        with mock.patch.object(fast_ui, "set_duo_pose", return_value="inner") as pose:
+            result = fast_ui.run_action({"type": "duo", "pose": "open"}, "SIM", Path("/tmp"), 2, [])
+        pose.assert_called_once_with("SIM", "open")
+        self.assertEqual(result, {"pose": "open", "display": "inner"})
 
 
 class StepLabelTests(unittest.TestCase):

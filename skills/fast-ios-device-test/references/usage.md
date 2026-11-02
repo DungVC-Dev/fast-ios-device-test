@@ -207,6 +207,8 @@ Supported actions:
   popup still sliding or a toast still fading is never the image. A screen that never settled
   is named in the PASS line as `unsettled=<name>`: that image is not evidence. A ticking timer
   stays under the ratio; `"stable": false` takes one plain shot (a video or animation on purpose).
+  On iPhone Duo it targets the display selected by the latest `duo` step; `"display":"outer"`
+  or `"inner"` overrides it.
 - `motion`: capture frames and assert a minimum changed-pixel ratio in a
   normalized `[left, top, right, bottom]` region.
 - `dump`: write the on-screen nodes to `<name>-ui.json` (one flat JSON list: `label`,
@@ -259,6 +261,7 @@ engine cannot do an action it fails with a message naming the one that can. Colu
 | `status_bar` | `time`, `battery_level`, `battery_state`, `wifi_bars`, `cellular_bars`, `data_network`, `operator_name`, …, or `clear: true` | ✓ | – |
 | `set_clipboard` / `assert_clipboard` | `text` / `equals`, `contains`, … | ✓ | ✓ |
 | `open_url` | `url` | ✓ | ✓ (iOS 16.4+) |
+| `duo` | `pose`: `closed`, `open`, `book`, `tabletop` (Xcode 27.1 iPhone Duo) | ✓ | – |
 
 Selectors also take `enabled: false` to find a disabled control (`assert_count` with
 `"enabled": false, "max": 0` proves nothing on screen is disabled); `dump` marks disabled nodes.
@@ -383,13 +386,45 @@ stored as JSON `Data` in UserDefaults, use `{"$json_data": {...}}`; the runner
 encodes that object as UTF-8 data before launch. Keep model-specific fixtures in
 the flow file, never in the engine.
 
-Matrix variants: `setup.appearance` (`light`/`dark`) and `setup.content_size`
+Matrix variants: `setup.appearance` (`light`/`dark`), `setup.content_size`
 (a `simctl ui content_size` name), or `--appearance` / `--content-size` on the
 command line, which win over the flow. The runner applies them with `simctl ui`
 before launch, restores the simulator's previous values after the run (pass or
 fail), and names the task `<flow>@dark@xxl` so each variant is its own report
 row. An app that forces its own theme from stored settings needs that setting
 seeded in `preferences` as well.
+
+### iPhone Duo (Xcode 27.1)
+
+Put `"simulator":"iPhone Duo"` in the app block (a UDID still works). The engine selects
+`/Applications/Xcode 27.1.app` automatically; set `DUO_XCODE` or `DEVELOPER_DIR` for another path.
+It resolves one unique available name, boots a shut-down device and opens Device Hub. Pose changes
+use Device Hub's Accessibility controls, so macOS must allow the
+terminal/agent under Privacy & Security › Accessibility.
+
+```json
+{"actions":[
+  {"type":"duo","pose":"closed"},
+  {"type":"screenshot","name":"home-outer.png"},
+  {"type":"duo","pose":"open"},
+  {"type":"screenshot","name":"home-inner.png"},
+  {"type":"duo","pose":"book"},
+  {"type":"screenshot","name":"home-book.png"},
+  {"type":"duo","pose":"tabletop"},
+  {"type":"screenshot","name":"home-tabletop.png"}
+]}
+```
+
+`closed` selects the outer framebuffer in portrait. `open` is flat inner landscape, `book` folds that
+landscape display on its vertical hinge, and `tabletop` rotates then folds on the horizontal
+hinge. Screenshots and failure captures follow the selected display. To capture a particular
+framebuffer without changing pose, add `"display":"outer"` or `"inner"` to `screenshot` or
+`motion`.
+
+For a reviewable pose matrix, run the same flow four times with `--duo-pose closed`, `open`,
+`book` and `tabletop`, plus one shared `--session`. Each task is named `@duo-<pose>`, and
+`--record` targets that pose's display. A recording has one framebuffer, so a flow that switches
+pose mid-run should use screenshots for those switches; use fixed-pose matrix rows for video.
 
 With `--record`, every step also stores the visible labels in `metrics.json`
 (`step_labels`, with the second it ended in the video); `fastUIReview` prints
@@ -586,9 +621,13 @@ An app that pins its own theme (e.g. an `appThemeMode` setting) or uses fixed po
 sizes ignores these; seed the theme via preferences, and treat text that does
 not grow at `accessibility-*` sizes as a product finding.
 
+The Simulator additionally takes `setup.duo_pose` / `--duo-pose closed|open|book|tabletop`.
+It suffixes the task `@duo-<pose>` and, with `--record`, records the
+outer framebuffer for `closed` or the inner framebuffer for the other poses.
+
 ## Step-by-step requests (`do`)
 
-`fastSimulatorTest do '<action or array>' [--simulator <udid>] [--app <bundle id>] [--out <dir>]
+`fastSimulatorTest do '<action or array>' [--simulator <udid or unique full name>] [--app <bundle id>] [--out <dir>]
 [--prompt-labels <labels>]` runs actions on what the Simulator shows now (no build, install,
 launch or preferences) and prints `PASS <type>|actions=N [screenshot=…] [ui=…] labels=[…]` or
 `FAIL … step=K type=… error=… labels=[…]`; `fastDeviceTest do` prints the same on the iPhone.
