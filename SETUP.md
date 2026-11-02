@@ -44,15 +44,18 @@ Already cloned: run
 `git -C ~/fast-ios-device-test pull` and the same `install.sh --link`. Without git: download the
 release zip, unzip it, run its `install.sh` (no flag).
 
-The installer needs no Homebrew: it verifies `vendor/tools.json`, installs exact pinned AXe and
-baguette releases into `~/.local/share/{axe,baguette}`, creates wrappers in `~/.local/bin`, and links the
-skill into `~/.claude/skills`, the slash commands into `~/.claude/commands`, the `ui-explorer`
+The installer needs no Homebrew: it verifies `vendor/tools.json`, installs required AXe and
+attempts optional arm64 baguette under `~/.local/share`, creates wrappers in `~/.local/bin`, and
+links the skill into `~/.claude/skills`, the slash commands into `~/.claude/commands`, the `ui-explorer`
 subagent into `~/.claude/agents` and the launchers into `~/.local/bin`.
 
 The tools have a locked-dependency update path: `npx fast-ios-device-test update-tools`, or
 `./install.sh --update-tools` in a clone (per-tool variants also exist). It verifies downloaded
 binaries, rewrites version/URL/SHA-256 pins and AXe's offline tarball, then reinstalls. baguette's
 large arm64 asset is downloaded, never committed or packed into npm; LICENSE/NOTICE remain beside it.
+An offline, blocked-GitHub or Intel Mac continues without baguette because only the upcoming
+`fastCarPlayTest` needs it. Matching healthy pins are reused; install baguette later with
+`./install.sh --install-baguette`.
 
 That is all Claude Code needs. Any other agent also needs the skill installed for it; this
 installer does not do that:

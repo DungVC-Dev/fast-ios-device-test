@@ -11,6 +11,7 @@ import platform
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import urllib.request
@@ -139,7 +140,10 @@ def safe_extract(archive: Path, destination: Path) -> None:
             target = (destination / member.name).resolve()
             if target != root and root not in target.parents:
                 raise ToolError(f"archive contains an unsafe path: {member.name}")
-        bundle.extractall(destination)  # noqa: S202 - pinned and SHA-256 verified
+        if sys.version_info >= (3, 12):
+            bundle.extractall(destination, filter="data")  # noqa: S202 - pinned and SHA-256 verified
+        else:
+            bundle.extractall(destination)  # noqa: S202 - paths checked above; compatibility for Python 3.11
 
 
 def binary_version(binary: Path) -> str | None:
@@ -177,12 +181,38 @@ def selected_tools(name: str) -> list[str]:
     return selected
 
 
-def install_one(name: str, root: Path = ROOT) -> str:
+def installed_pin_matches(home: Path, pin: dict[str, Any], binary_name: str) -> bool:
+    try:
+        installed = json.loads((home / ".fast-ios-pin.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return False
+    return (installed.get("version") == pin["version"]
+            and installed.get("sha256") == pin["sha256"]
+            and binary_version(home / binary_name) == pin["version"])
+
+
+def write_wrapper(name: str, home: Path, bin_dir: Path) -> None:
+    binary_name = str(TOOL_SPECS[name]["binary"])
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    wrapper = bin_dir / name
+    temporary_wrapper = wrapper.with_name(f".{wrapper.name}.{os.getpid()}.tmp")
+    temporary_wrapper.write_text(f'#!/bin/bash\nexec "{home / binary_name}" "$@"\n', encoding="utf-8")
+    temporary_wrapper.chmod(0o755)
+    temporary_wrapper.replace(wrapper)
+
+
+def install_one(name: str, root: Path = ROOT, force: bool = False) -> str:
+    pin = read_pin(name, root)
+    home = install_home(name)
+    bin_dir = Path(os.environ.get("FAST_IOS_BIN_DIR", Path.home() / ".local/bin")).expanduser()
+    binary_name = str(TOOL_SPECS[name]["binary"])
+    if not force and installed_pin_matches(home, pin, binary_name):
+        write_wrapper(name, home, bin_dir)
+        print(f"{name}: pinned {pin['version']} already installed at {home}")
+        return str(pin["version"])
     if name == "baguette" and platform.machine() != "arm64":
         raise ToolError("baguette publishes a prebuilt macOS arm64 asset only; this Mac is not arm64")
-    pin = read_pin(name, root)
     archive, temporary_archive = checked_archive(name, root, pin)
-    home, bin_dir = install_home(name), Path(os.environ.get("FAST_IOS_BIN_DIR", Path.home() / ".local/bin")).expanduser()
     home.parent.mkdir(parents=True, exist_ok=True)
     unpacked = Path(tempfile.mkdtemp(prefix=f".{name}-unpack-", dir=home.parent))
     staged = Path(tempfile.mkdtemp(prefix=f".{name}-install-", dir=home.parent))
@@ -190,7 +220,7 @@ def install_one(name: str, root: Path = ROOT) -> str:
         payload, source_binary = extracted_payload(name, archive, unpacked)
         shutil.copytree(payload, staged, dirs_exist_ok=True)
         binary = staged / source_binary.name
-        target_binary = staged / str(TOOL_SPECS[name]["binary"])
+        target_binary = staged / binary_name
         if binary != target_binary:
             binary.replace(target_binary)
         actual = binary_version(target_binary)
@@ -206,12 +236,7 @@ def install_one(name: str, root: Path = ROOT) -> str:
         if home.exists() or home.is_symlink():
             shutil.rmtree(home) if home.is_dir() and not home.is_symlink() else home.unlink()
         staged.replace(home)
-        bin_dir.mkdir(parents=True, exist_ok=True)
-        wrapper = bin_dir / name
-        temporary_wrapper = wrapper.with_name(f".{wrapper.name}.{os.getpid()}.tmp")
-        temporary_wrapper.write_text(f'#!/bin/bash\nexec "{home / str(TOOL_SPECS[name]["binary"])}" "$@"\n', encoding="utf-8")
-        temporary_wrapper.chmod(0o755)
-        temporary_wrapper.replace(wrapper)
+        write_wrapper(name, home, bin_dir)
     finally:
         shutil.rmtree(unpacked, ignore_errors=True)
         shutil.rmtree(staged, ignore_errors=True)
@@ -221,9 +246,18 @@ def install_one(name: str, root: Path = ROOT) -> str:
     return str(pin["version"])
 
 
-def install(name: str = "all", root: Path = ROOT) -> None:
+def install(name: str = "all", root: Path = ROOT, force: bool = False) -> None:
     for tool in selected_tools(name):
-        install_one(tool, root)
+        try:
+            install_one(tool, root, force=force)
+        except (ToolError, OSError, ValueError, tarfile.TarError) as error:
+            if name != "all" or tool != "baguette":
+                raise
+            print(
+                f"note: optional baguette was not installed ({error}); "
+                "fastSimulatorTest and fastDeviceTest are ready. Retry with: ./install.sh --install-baguette",
+                file=sys.stderr,
+            )
 
 
 def write_pins(root: Path, pins: dict[str, dict[str, Any]]) -> None:
@@ -263,7 +297,7 @@ def update_one(name: str, root: Path = ROOT, install_local: bool = True) -> str:
         downloaded.unlink(missing_ok=True)
     print(f"{name}: pinned {release['version']} ({pin['sha256']})")
     if install_local:
-        install_one(name, root)
+        install_one(name, root, force=True)
     return release["version"]
 
 
@@ -278,14 +312,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("tool", nargs="?", choices=(*TOOL_SPECS, "all"), default="all")
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--no-install", action="store_true", help="Update repo pins without installing locally")
+    parser.add_argument("--force", action="store_true", help="Reinstall even when the current pin is healthy")
     args = parser.parse_args(argv)
     try:
         if args.command == "install":
-            install(args.tool, args.root.resolve())
+            install(args.tool, args.root.resolve(), force=args.force)
         else:
             update(args.tool, args.root.resolve(), install_local=not args.no_install)
     except (ToolError, OSError, ValueError, tarfile.TarError) as error:
-        print(f"error: {error}", file=os.sys.stderr)
+        print(f"error: {error}", file=sys.stderr)
         return 1
     return 0
 

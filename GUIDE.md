@@ -6,14 +6,15 @@ PASS/FAIL kèm ảnh chụp.
 ## Cài đặt (máy mới)
 
 Chỉ cần có sẵn Xcode 26 hoặc 27. Không cần Homebrew hay xcodegen: AXe và baguette được khóa trong
-`vendor/tools.json`, kiểm SHA-256 rồi cài local; baguette lớn nên tải asset arm64 chính thức khi cài.
+`vendor/tools.json`, kiểm SHA-256 rồi cài local. baguette là tùy chọn cho `fastCarPlayTest`: máy
+Intel hoặc đang offline vẫn cài tool bình thường và có thể chạy `./install.sh --install-baguette` sau.
 
 **Cách nhanh nhất:** nhờ AI cài: "làm theo SETUP.md trong https://github.com/DungVC-Dev/fast-ios-device-test".
 [SETUP.md](SETUP.md) có từng bước, lệnh kiểm tra, kết quả mong đợi và cách sửa từng lỗi.
 
 Cài hai phần:
 
-1. **Bộ chạy trên Mac** (engine, AXe, baguette, các lệnh `fast…`), dùng chung cho mọi agent:
+1. **Bộ chạy trên Mac** (engine, AXe, baguette tùy chọn, các lệnh `fast…`), dùng chung cho mọi agent:
    `npx fast-ios-device-test`. Cập nhật: `npx fast-ios-device-test update` (cập nhật luôn plugin
    Codex và Claude Code; Antigravity và Gemini thì in ra lệnh cần chạy). Khi có bản mới,
    `fastSimulatorTest`/`fastDeviceTest` in một dòng `update available: …` (tối đa một lần mỗi ngày,
@@ -29,7 +30,8 @@ Cài hai phần:
    - Gemini CLI: `gemini extensions install https://github.com/DungVC-Dev/fast-ios-device-test`
 
 Kiểm tra: `npx fast-ios-device-test --check`, dòng cuối phải là `CHECK OK`. Lệnh này cũng báo khi
-version AXe/baguette pin/local/latest không khớp và khi skill của Codex hoặc Antigravity bị hỏng (link trỏ
+version AXe pin/local/latest không khớp; baguette thiếu/cũ chỉ được báo là tùy chọn, không làm
+`CHECK OK` thất bại. Lệnh cũng báo khi skill của Codex hoặc Antigravity bị hỏng (link trỏ
 vào thư mục đã xoá, plugin rỗng). Sau đó thoát
 rồi mở lại agent.
 

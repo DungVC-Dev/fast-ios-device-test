@@ -131,7 +131,11 @@ if [[ "$MODE" == "check" ]]; then
         pinned="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]]["version"])' "$SOURCE/vendor/tools.json" "$name" 2>/dev/null || true)"
         installed="$(tool_version "$binary" || true)"
         python3 "$SOURCE/scripts/fast_update.py" --tool-status "$name" "$SOURCE/vendor/tools.json" "$binary"
-        if [[ -z "$pinned" ]]; then
+        if [[ "$name" == "baguette" && ( -z "$pinned" || "$installed" != "$pinned" || ! -x "$BIN_DIR/baguette" ) ]]; then
+            echo "baguette=missing (optional, only fastCarPlayTest; ./install.sh --install-baguette)"
+        elif [[ "$name" == "baguette" ]] && ! grep -Fq "exec \"$binary\"" "$BIN_DIR/baguette" 2>/dev/null; then
+            echo "baguette=missing (optional, only fastCarPlayTest; ./install.sh --install-baguette)"
+        elif [[ -z "$pinned" ]]; then
             missing+=("$name pin")
         elif [[ "$installed" != "$pinned" ]]; then
             missing+=("$name-$pinned")

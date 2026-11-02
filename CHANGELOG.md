@@ -11,6 +11,8 @@
   licence. Installs use verified local copies instead of Homebrew; baguette's large official arm64
   asset remains download-only, while AXe remains available offline. Tool updates and the daily
   workflow refresh both pins and only open (never merge) dependency PRs.
+- Healthy matching tool pins are reused. AXe remains required, while optional baguette no longer
+  blocks install or `CHECK OK` on offline, proxy-restricted or Intel Macs; `--force` reinstalls a pin.
 
 ## 2.0.4 — 2026-11-03
 

@@ -9,9 +9,10 @@ Before the first run, confirm that `fastSimulatorTest` and `fastDeviceTest` are 
 are missing, use the bundled `fast-ios-device-test-setup` skill or run `npx fast-ios-device-test`
 and require its final `CHECK OK` before continuing. A run that ends with `update available: …`
 (at most once a day): tell the user once, at the end of the task; never update mid-task.
-The runtime uses project-pinned AXe and baguette under `~/.local/share` before PATH copies. If
-`--check` reports a mismatch, reinstall current pins with `install.sh --install-tools` (or the
-per-tool flag); only run `npx fast-ios-device-test update-tools` when the user asks to update them.
+The runtime uses required project-pinned AXe and optional baguette under `~/.local/share` before
+PATH copies. A missing baguette is expected unless CarPlay support is needed and does not fail
+`CHECK OK`; install it with `install.sh --install-baguette`. Only run
+`npx fast-ios-device-test update-tools` when the user asks to update dependencies.
 
 ## Which tool
 

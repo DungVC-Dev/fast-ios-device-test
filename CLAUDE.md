@@ -35,7 +35,7 @@ User-facing docs: `README.md` (English), `GUIDE.md` (Vietnamese, for testers), `
 | Path | What |
 |---|---|
 | `scripts/fast_ui.py` | Simulator flow engine (`--record`, `--session`) |
-| `scripts/tool_manager.py` | Installs or updates pinned AXe and baguette; stdlib only |
+| `scripts/tool_manager.py` | Installs/updates required AXe and optional baguette; skips healthy pins; stdlib only |
 | `scripts/fast_device.py` | Physical-iPhone engine |
 | `device-runner/` | XCUITest runner app. The `.xcodeproj` is committed; after editing `project.yml` run `cd device-runner && xcodegen generate` |
 | `scripts/fast_guard.py` | Checks `do` requests (destructive steps, shapes) for both engines |

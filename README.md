@@ -65,8 +65,8 @@ bundle id, simulator, build folder); the skill shows the smallest complete flow.
 - iPhone Duo runs require Xcode 27.1 and Device Hub from that Xcode.
 - Node.js 18+ only for the `npx` install.
 - AXe and baguette are pinned by version, release URL, SHA-256 and licence in `vendor/tools.json`.
-  AXe is bundled for offline installation; baguette's much larger official arm64 asset is
-  downloaded when installed. Neither depends on Homebrew.
+  AXe is bundled for offline installation; optional baguette's much larger official arm64 asset is
+  downloaded for upcoming CarPlay tests when available. Neither depends on Homebrew.
 - Pillow is installed when possible; only video review (`fastUIReview`, `fastEvidenceSheet`, the
   `motion` action) needs it.
 - For a physical iPhone: see [GUIDE.md](GUIDE.md) (Vietnamese) or [SETUP.md](SETUP.md).
@@ -136,8 +136,8 @@ skill and the commands twice.
 
 ### 2. Install the local runtime
 
-The plugin teaches the agent how to use the tool. The runtime supplies the Xcode engines, AXe, baguette and
-launchers on your Mac. Pick one installation method:
+The plugin teaches the agent how to use the tool. The runtime supplies the Xcode engines, AXe,
+optional baguette and launchers on your Mac. Pick one installation method:
 
 | Way | Commands | Tool folder (`$TOOL` below) |
 |---|---|---|
@@ -154,7 +154,7 @@ What the installer puts where:
 | The tool | `~/.local/share/fast-ios-device-test` (or your clone with `--link`) |
 | Launchers `fastSimulatorTest`, `fastDeviceTest`, `fastUIReport`, `fastUIReview`, `fastEvidenceSheet`, `fastUIMap`, `fastUIClean` | `~/.local/bin` (add it to `PATH` if the installer says so) |
 | The exact AXe version pinned by this project, plus its `~/.local/bin/axe` wrapper | `~/.local/share/axe` |
-| The exact baguette version pinned for upcoming CarPlay support, resource bundle, LICENSE/NOTICE and wrapper | `~/.local/share/baguette` |
+| Optional exact baguette pin for upcoming CarPlay support, resource bundle, LICENSE/NOTICE and wrapper | `~/.local/share/baguette` |
 | Claude Code skill | `~/.claude/skills/fast-ios-device-test` |
 | Claude Code slash commands `/fastSimulatorTest`, `/fastDeviceTest`, `/fastUIReview` | `~/.claude/commands` |
 | Claude Code `ui-explorer` subagent | `~/.claude/agents` |
@@ -168,7 +168,8 @@ npx fast-ios-device-test --check --device "<iPhone name>"  # also checks that iP
 
 From a clone or the zip, run `install.sh --check` instead. The last line is `CHECK OK`, or
 `CHECK missing: …` with the fix for each item. The check reports pinned, locally installed and
-latest AXe and baguette versions; each GitHub lookup is cached for one day.
+latest AXe and optional baguette versions; each GitHub lookup is cached for one day. Missing or
+outdated baguette does not fail `CHECK OK` because current Simulator/device flows do not need it.
 
 ### Update
 
@@ -194,8 +195,10 @@ npx fast-ios-device-test update-tools
 This downloads official prebuilt releases, verifies their SHA-256 and reported versions, rewrites
 `vendor/tools.json`, and installs them locally. The smaller universal AXe archive stays vendored;
 baguette is download-only and arm64, so the git repo and npm package do not gain its ~68 MB installed
-payload. A normal install always installs exactly the pins. Reinstall them with
-`./install.sh --install-tools` (or `--install-axe` / `--install-baguette`). Set
+payload. Healthy matching pins are reused without downloading or extracting. AXe remains required;
+an offline or Intel Mac prints a note and continues without optional baguette. Retry it with
+`./install.sh --install-baguette`; force a healthy pin to reinstall with
+`python3 scripts/tool_manager.py install <axe|baguette> --force`. Set
 `FAST_IOS_NO_UPDATE_CHECK=1` to disable npm and managed-tool latest-version checks.
 
 <details>
