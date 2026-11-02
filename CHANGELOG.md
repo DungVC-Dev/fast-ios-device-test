@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.11.2 — 2026-11-02
+
+- README: every way to install (npx, asking Claude, the Claude Code plugin, a clone, the release
+  zip), what goes where, and how to uninstall. SETUP.md installs with npx first.
+
 ## 1.11.1 — 2026-11-02
 
 - First release on npm (`npx fast-ios-device-test`); the same code as 1.11.0.

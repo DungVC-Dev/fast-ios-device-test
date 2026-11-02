@@ -1,6 +1,6 @@
 {
   "name": "fast-ios-device-test",
-  "version": "1.11.1",
+  "version": "1.11.2",
   "description": "Fast iOS UI-flow verification for Claude Code: Simulator and physical-iPhone flows, matrix runs, video review. `npx fast-ios-device-test` installs the skill and commands.",
   "bin": {
     "fast-ios-device-test": "npm/install.js"

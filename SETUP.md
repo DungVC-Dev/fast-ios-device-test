@@ -28,11 +28,18 @@ Expected: a path inside an `Xcode.app` and `Xcode 26.x` or `27.x`. If it prints
 ## 2. Install
 
 ```bash
+npx fast-ios-device-test
+```
+
+Expected: `link: …` lines, `engine self-test: OK` and `done.` Running it again upgrades. No
+Node.js (`npx: command not found`), or the user wants to edit the tool: clone instead:
+
+```bash
 git clone https://github.com/DungVC-Dev/fast-ios-device-test.git ~/fast-ios-device-test
 ~/fast-ios-device-test/install.sh --link
 ```
 
-Expected: `link: …` lines, `engine self-test: OK` and `done.` Already cloned: run
+Already cloned: run
 `git -C ~/fast-ios-device-test pull` and the same `install.sh --link`. Without git: download the
 release zip, unzip it, run its `install.sh` (no flag).
 
@@ -43,7 +50,7 @@ subagent into `~/.claude/agents` and the launchers into `~/.local/bin`.
 ## 3. Check
 
 ```bash
-~/fast-ios-device-test/install.sh --check
+npx fast-ios-device-test --check      # or ~/fast-ios-device-test/install.sh --check for a clone
 ```
 
 Expected last line: `CHECK OK`. `CHECK missing: …` names what to fix:

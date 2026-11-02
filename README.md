@@ -20,61 +20,102 @@ sheet, the clips, and light per-shot JPEGs that `fastEvidenceSheet <spec.json>` 
 after an edit. A filed run keeps only its `metrics.json` under `build/`. Both engines record with `--record` (the iPhone through XCTest's own
 screen recording) and keep the clip at review quality (H.264, 960 px, ~1–2 MB for 20 s).
 
-## Install (once per machine)
+## Install
 
-Needs Xcode (26 or 27). Nothing else: AXe 1.8.0 is bundled in `vendor/`. An AI agent can do the
-whole setup from [SETUP.md](SETUP.md): every step has a command, the expected output and the fix
-for each failure, including the checks for an iPhone (`fastDeviceTest check --device <name>`).
+Needs a Mac with Xcode 26 or 27. AXe 1.8.0 (the Simulator driver) is bundled, so neither Homebrew
+nor xcodegen is needed. Restart Claude Code after installing.
+
+### npx (recommended)
 
 ```bash
-npx fast-ios-device-test
+npx fast-ios-device-test                                   # install, or upgrade to the latest
+npx fast-ios-device-test --check                           # what is there and what is missing; changes nothing
+npx fast-ios-device-test --check --device "<iPhone name>"  # also checks that iPhone for fastDeviceTest
 ```
 
-That copies the tool to `~/.local/share/fast-ios-device-test` and wires the skill, commands and
-launchers; run it again to upgrade, `npx fast-ios-device-test --check` to see what is missing.
-To edit the tool, clone it instead:
+Needs Node.js 18+ for `npx`. The tool is copied to `~/.local/share/fast-ios-device-test`, so it
+does not depend on npx's temporary folder. The last line of `--check` is `CHECK OK`, or
+`CHECK missing: …` with the fix for each item.
+
+### Let Claude install it
+
+Ask Claude Code: *"Install fast-ios-device-test with npx and check it"*. For a step-by-step setup
+with the expected output and the fix for each failure (iPhone checks included), point it at
+[SETUP.md](SETUP.md).
+
+### Claude Code plugin
+
+```
+/plugin marketplace add DungVC-Dev/fast-ios-device-test
+/plugin install fast-ios-device-test@fast-ios-device-test
+```
+
+This adds the skill and the slash commands. The engines also need their launchers on `PATH` and
+AXe, which the plugin does not set up: run `npx fast-ios-device-test` once as well.
+
+### git clone (to edit the tool)
 
 ```bash
 git clone https://github.com/DungVC-Dev/fast-ios-device-test.git ~/fast-ios-device-test
 ~/fast-ios-device-test/install.sh --link
 ```
 
-Restart Claude Code. To upgrade later: `git -C ~/fast-ios-device-test pull`. With
-`--link` the skill, commands and launchers point into the clone, so keep that folder.
+With `--link` the skill, commands and launchers point into the clone, so keep that folder.
+Upgrade with `git -C ~/fast-ios-device-test pull`.
 
-Without git: download `fast-ios-device-test-<version>.zip` from the
-[Releases](https://github.com/DungVC-Dev/fast-ios-device-test/releases) page, unzip it
-anywhere and run its `install.sh` (no flag). That copies the tool to
-`~/.local/share/fast-ios-device-test`, so the unzipped folder can be deleted.
+### Release zip (no Node.js, no git)
 
-Either way the installer unpacks the bundled `axe` into `~/.local/share/axe` when none
-new enough is on PATH, installs Pillow if it can (only video review needs it), and
-links the skill into `~/.claude/skills`, the commands into `~/.claude/commands` and
-the launchers (`fastSimulatorTest`, `fastDeviceTest`, `fastUIReport`, `fastUIReview`, `fastUIMap`)
-into `~/.local/bin`, and the `ui-explorer` subagent into `~/.claude/agents`. `install.sh --check`
-prints what it sees and what is missing, without changing anything; `install.sh --check --device
-<name>` also checks that iPhone.
+Download `fast-ios-device-test-<version>.zip` from
+[Releases](https://github.com/DungVC-Dev/fast-ios-device-test/releases), unzip it anywhere and run
+its `install.sh`. The tool is copied to `~/.local/share/fast-ios-device-test`, so the unzipped
+folder can be deleted.
 
-Optional, for exploring a screen with Apple's own tools (pinch, drag, rotate, app
-console log) before writing a flow: register Xcode 27's MCP server once with
-`claude mcp add xcode -- xcrun mcpbridge`; the skill says when to use which.
+### What the installer puts where
 
-Maintainers: `bash make-zip.sh` builds the release zip next to the folder.
+| What | Where |
+|---|---|
+| The tool | `~/.local/share/fast-ios-device-test` (or your clone with `--link`) |
+| Skill | `~/.claude/skills/fast-ios-device-test` |
+| Slash commands `/fastSimulatorTest`, `/fastDeviceTest`, `/fastUIReview` | `~/.claude/commands` |
+| `ui-explorer` subagent | `~/.claude/agents` |
+| Launchers `fastSimulatorTest`, `fastDeviceTest`, `fastUIReport`, `fastUIReview`, `fastEvidenceSheet`, `fastUIMap`, `fastUIClean` | `~/.local/bin` (add it to `PATH` if the installer says so) |
+| AXe, when none ≥ 1.8.0 is on `PATH` | `~/.local/share/axe` |
+
+Pillow is installed when possible; only video review (`fastUIReview`, `fastEvidenceSheet`, the
+`motion` action) needs it.
+
+### Uninstall
+
+```bash
+fastUIClean --maps --yes     # caches, simulator locks, screen maps (evidence on the Desktop stays)
+rm -rf ~/.local/share/fast-ios-device-test ~/.claude/skills/fast-ios-device-test \
+  ~/.claude/agents/ui-explorer.md ~/.claude/commands/fast{SimulatorTest,DeviceTest,UIReview}.md \
+  ~/.local/bin/fast{SimulatorTest,UITest,DeviceTest,UIReport,UIReview,EvidenceSheet,UIMap,UIClean}
+```
+
+`~/.local/share/axe` can go too if nothing else uses AXe.
+
+### Optional: Apple's own tools
+
+For exploring a screen with Xcode 27's tools (pinch, drag, rotate, app console log) before
+writing a flow, register its MCP server once: `claude mcp add xcode -- xcrun mcpbridge`. The
+skill says when to use which.
+
+Maintainers: `bash make-zip.sh` builds the release zip next to the folder; pushing a `v*` tag
+that matches `package.json` publishes to npm from GitHub Actions.
 
 ## What's new
 
-See [CHANGELOG.md](CHANGELOG.md): 1.8.0 adds `two_finger_drag` on an iPhone (tilts a map). 1.7.0 files every passing flow run, and the bug's "before"
-run, as PR evidence in one folder per ticket on the Desktop, and keeps nothing heavy under
-`build/`. 1.6.0 reaches a screen visited before in one request
-(`fastUIMap --path-to`), reuses the iPhone runner for flows and trims every step (1.8 s on the
-iPhone, 2.9 s on the Simulator). 1.5.0 makes step-by-step runs fast on both engines
-(`fastSimulatorTest do`, `expect` guards on multi-step requests, a refusal for destructive steps
-in them). 1.4.0 adds the gestures a tester uses (hold, drag, edge
-swipes, keys, pinch, rotate, orientation, Siri…), a screen map (`fastUIMap`) recorded from
-normal runs, and prompt rules that answer each permission prompt its own way. 1.3.0 records the
-iPhone screen, keeps every clip light
-enough for a PR, and adds `fastEvidenceSheet`. 1.2.0 made the tool faster, made failures
-explain themselves, drove system apps and installed without Homebrew.
+See [CHANGELOG.md](CHANGELOG.md). 1.11 installs with `npx`, adds `fastUIClean`, `start` / `do` /
+`save` sessions that build a flow on the live app, controls (`set_switch`, `set_slider`,
+`set_picker`, `tap_alert`), assertions (`assert_value`, `assert_count`), device state
+(appearance, location, permissions, clipboard, status bar), skips SwiftLint in test builds, and
+stops `scroll_to` at the end of a list. 1.10.0 locks the iPhone and shuts simulators down at the
+end of the work. 1.9.0 waits for a still screen before each screenshot. 1.8.0 adds
+`two_finger_drag` on an iPhone. 1.7.0 files every passing run as PR evidence in one folder per
+ticket on the Desktop. 1.6.0 reaches a screen visited before in one request (`fastUIMap
+--path-to`). 1.5.0 makes step-by-step runs fast on both engines. 1.4.0 adds the gestures a tester
+uses and a screen map recorded from normal runs.
 
 ## Setup per project
 
@@ -86,6 +127,7 @@ shows the smallest complete flow.
 
 - `SETUP.md` — setup an AI agent can follow, with checks and fixes
 - `.claude-plugin/` — plugin + marketplace manifests
+- `package.json`, `npm/install.js` — the npm package behind `npx fast-ios-device-test`
 - `agents/ui-explorer.md` — Haiku subagent for long step-by-step searches (experimental)
 - `skills/fast-ios-device-test/SKILL.md` — agent instructions (flow file, single flow, several flows or simulators)
 - `skills/fast-ios-device-test/references/device.md` — fastDeviceTest on a physical iPhone
@@ -104,4 +146,3 @@ shows the smallest complete flow.
 - `scripts/fast_media.py` — review-quality video re-encode and the one-final-clip rule, shared by both engines (`scripts/test_fast_media.py`)
 - `scripts/fast_device.py` + `device-runner/` — physical-iPhone flow runner (XCUITest, auto-signed; the `.xcodeproj` is committed, regenerate with `xcodegen generate` after editing `project.yml`)
 - `vendor/` — the AXe release tarball `install.sh` unpacks when no `axe` ≥ 1.8.0 is on PATH (MIT, see `vendor/AXe-LICENSE`)
-- `docs/` — optimization research and the implementation plan behind 1.2.0
