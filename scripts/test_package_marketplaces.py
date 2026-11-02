@@ -35,6 +35,18 @@ class MarketplacePackageTests(unittest.TestCase):
                 (out / "stage" / "antigravity" / "plugin.json").read_text()
             )
             self.assertEqual(version, antigravity_manifest["version"])
+            self.assertIn("iPhone Duo", antigravity_manifest["description"])
+            antigravity_readme = (out / "stage" / "antigravity" / "README.md").read_text()
+            self.assertIn('"type":"duo"', antigravity_readme)
+            self.assertIn("--duo-pose", antigravity_readme)
+
+            gemini_manifest = json.loads(
+                (out / "stage" / "gemini-cli" / "gemini-extension.json").read_text()
+            )
+            self.assertIn("iPhone Duo", gemini_manifest["description"])
+            gemini_context = (out / "stage" / "gemini-cli" / "GEMINI_EXTENSION.md").read_text()
+            self.assertIn('"type":"duo"', gemini_context)
+            self.assertIn("--duo-pose", gemini_context)
 
 
 if __name__ == "__main__":

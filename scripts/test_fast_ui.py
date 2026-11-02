@@ -1237,6 +1237,12 @@ class LifecycleTests(unittest.TestCase):
             self.assertEqual(fast_ui.resolve_simulator("iPhone Duo"), second)
         self.assertEqual(fast_ui.resolve_simulator(first), first)
 
+    def test_simulator_list_timeout_has_a_clear_error(self) -> None:
+        with mock.patch.object(fast_ui, "command", side_effect=subprocess.TimeoutExpired("simctl", 30)) as command:
+            with self.assertRaisesRegex(fast_ui.FastUIError, "timed out after 30s.*Device Hub"):
+                fast_ui.resolve_simulator("iPhone Duo")
+        self.assertEqual(command.call_args.kwargs["timeout"], 30)
+
     def test_ensure_booted_starts_a_shutdown_simulator(self) -> None:
         with mock.patch.object(fast_ui, "command") as command, mock.patch.object(fast_ui, "ensure_device_hub"):
             fast_ui.ensure_booted("SIM")
@@ -1513,6 +1519,7 @@ class DuoTests(unittest.TestCase):
     ENUMERATE = """Port:\n    UUID: AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA\n    Default width: 1398\nPort:\n    UUID: BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB\n    Default width: 2007\n"""
 
     def tearDown(self) -> None:
+        fast_ui.clear_duo_display("SIM")
         fast_ui.ACTIVE_DUO_DISPLAY.clear()
 
     def test_display_uuid_and_screenshot_target_framebuffer(self) -> None:
@@ -1534,6 +1541,52 @@ class DuoTests(unittest.TestCase):
             self.assertEqual(fast_ui.set_duo_pose("SIM", "book"), "inner")
             self.assertEqual(fast_ui.set_duo_pose("SIM", "tabletop"), "inner")
         self.assertEqual(clicked, ["closed", "open", "book", "open", "rotate", "book"])
+
+    def test_duo_action_persists_display_for_screenshot_in_next_do_process(self) -> None:
+        calls: list[list[str]] = []
+
+        def fake_command(args, **kwargs):
+            calls.append(args)
+            stdout = self.ENUMERATE if args[:5] == ["xcrun", "simctl", "io", "SIM", "enumerate"] else ""
+            return mock.Mock(stdout=stdout, stderr="", returncode=0)
+
+        tree = sim_tree("Demo", button("Ready"))
+        with tempfile.TemporaryDirectory() as raw, \
+                mock.patch.object(fast_ui, "LOCK_DIR", Path(raw) / "locks"), \
+                mock.patch.object(fast_ui, "command", side_effect=fake_command), \
+                mock.patch.object(fast_ui, "ensure_device_hub"), \
+                mock.patch.object(fast_ui, "simulator_name", return_value="iPhone Duo"), \
+                mock.patch.object(fast_ui, "click_duo_button"), \
+                mock.patch.object(fast_ui, "duo_display_is_landscape", return_value=False), \
+                mock.patch.object(fast_ui, "axe", side_effect=FakeAxe(tree)), \
+                mock.patch.object(fast_ui.time, "sleep"), \
+                contextlib.redirect_stdout(io.StringIO()):
+            out = Path(raw) / "out"
+            self.assertEqual(fast_ui.run_do([
+                '{"type":"duo","pose":"closed"}', "--simulator", "SIM", "--out", str(out)
+            ]), 0)
+            # A new CLI process starts with an empty module-level dictionary.
+            fast_ui.ACTIVE_DUO_DISPLAY.clear()
+            self.assertEqual(fast_ui.run_do([
+                '{"type":"screenshot","name":"outer.png","stable":false}',
+                "--simulator", "SIM", "--out", str(out),
+            ]), 0)
+
+        screenshot_call = next(call for call in calls if "screenshot" in call)
+        self.assertIn("--display=AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA", screenshot_call)
+
+    def test_recorder_reads_persisted_display(self) -> None:
+        with tempfile.TemporaryDirectory() as raw, \
+                mock.patch.object(fast_ui, "LOCK_DIR", Path(raw) / "locks"), \
+                mock.patch.object(fast_ui, "command"), \
+                mock.patch.object(fast_ui, "duo_display_uuid", return_value="INNER") as display_uuid, \
+                mock.patch.object(fast_ui.subprocess, "Popen") as popen, \
+                mock.patch.object(fast_ui.time, "sleep"):
+            fast_ui.persist_duo_display("SIM", "inner")
+            fast_ui.ACTIVE_DUO_DISPLAY.clear()
+            fast_ui.Recorder("SIM", Path(raw) / "run.mp4").start()
+        display_uuid.assert_called_once_with("SIM", "inner")
+        self.assertIn("--display=INNER", popen.call_args.args[0])
 
     def test_duo_action_reports_pose_and_display(self) -> None:
         with mock.patch.object(fast_ui, "set_duo_pose", return_value="inner") as pose:
@@ -1647,6 +1700,14 @@ class ShutdownTests(unittest.TestCase):
         self.assertEqual(shutdowns, [["xcrun", "simctl", "shutdown", "B"]])
         _, none = self.run_shutdown("--simulator", "Z")
         self.assertIn("SHUTDOWN none booted", none)
+
+    def test_shutdown_clears_persisted_duo_display(self) -> None:
+        with tempfile.TemporaryDirectory() as raw, mock.patch.object(fast_ui, "LOCK_DIR", Path(raw)):
+            fast_ui.persist_duo_display("A", "outer")
+            fast_ui.ACTIVE_DUO_DISPLAY.clear()
+            self.run_shutdown("--simulator", "A")
+            fast_ui.ACTIVE_DUO_DISPLAY.clear()
+            self.assertIsNone(fast_ui.active_duo_display("A"))
 
 
 def pbxproj_with(script: str, name: str = "SwiftLint") -> str:

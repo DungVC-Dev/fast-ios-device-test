@@ -16,16 +16,29 @@ The engine is:
 "${CLAUDE_PLUGIN_ROOT:-$HOME/.local}/bin/fastSimulatorTest" start <draft.json> | do '<action json>' | labels | save <flow.json>
 ```
 
-Exploring or checking one screen step by step → `fastSimulatorTest do '<action or array>' --simulator <udid>`
+Exploring or checking one screen step by step → `fastSimulatorTest do '<action or array>' --simulator <udid-or-name>`
 (the skill's "Step by step"). A new screen to turn into a flow: `start` + `do` step by step + `save`,
 not repeated full runs with `dump`.
+
+iPhone Duo requires Xcode 27.1. Use `"simulator":"iPhone Duo"`; the engine selects that Xcode,
+boots the device and opens Device Hub. In one flow, switch and capture displays with:
+
+```json
+[{"type":"duo","pose":"closed"},{"type":"screenshot","name":"outer.png"},
+ {"type":"duo","pose":"open"},{"type":"screenshot","name":"inner.png"}]
+```
+
+The poses are `closed` (outer portrait), `open` (flat inner landscape), `book` and `tabletop`.
+For a recorded pose matrix, run one row per `--duo-pose closed|open|book|tabletop`, all with the
+same `--session` and `--record`: a video records one framebuffer, while a flow that switches poses
+uses screenshots. An explicit screenshot/motion may set `"display":"outer|inner"`.
 
 One requested behavior → one flow, written and run at once (no extra cases or variants the user
 did not ask for). The user listed several flows: up to about 5 on one simulator →
 `--build-only` once, then run them here with `--reuse-app`; more flows or 2+ simulators →
 the skill's fan-out, collated with `fastUIReport`. "quay"/"record" → `--record`.
 
-At the end of the work, `fastSimulatorTest shutdown` (every booted simulator, or `--simulator <udid>`;
+At the end of the work, `fastSimulatorTest shutdown` (every booted simulator, or `--simulator <udid-or-name>`;
 spare one Xcode is running the app on).
 
 Return the PASS/FAIL lines (a flow × simulator table when fanned out) and one concise cause

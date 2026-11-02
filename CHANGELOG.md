@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Fixed iPhone Duo display selection across separate `do` and session processes: screenshots and
+  recordings now retain the selected outer/inner framebuffer until the simulator is shut down.
+- Claude Code, Gemini CLI and Antigravity instructions now explain the complete iPhone Duo
+  workflow: outer/inner flow steps, closed/open/book/tabletop pose matrices, per-framebuffer
+  recordings and review of every pose row.
+
 ## 2.0.4 — 2026-11-03
 
 - `fastSimulatorTest` supports the Xcode 27.1 iPhone Duo in Device Hub: a flow can select the
