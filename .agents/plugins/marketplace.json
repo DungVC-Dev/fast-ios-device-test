@@ -1,0 +1,20 @@
+{
+  "name": "fast-ios-device-test",
+  "interface": {
+    "displayName": "Fast iOS Device Test"
+  },
+  "plugins": [
+    {
+      "name": "fast-ios-device-test",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

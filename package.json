@@ -1,7 +1,7 @@
 {
   "name": "fast-ios-device-test",
   "version": "2.0.0",
-  "description": "Fast iOS UI-flow verification for Claude Code: Simulator and physical-iPhone flows, matrix runs, video review. `npx fast-ios-device-test` installs the skill and commands.",
+  "description": "Fast iOS UI-flow verification for AI coding agents: Simulator and physical-iPhone flows, matrix runs, video review, and PR evidence.",
   "bin": {
     "fast-ios-device-test": "npm/install.js"
   },
@@ -12,9 +12,15 @@
     "skills/",
     "commands/",
     "agents/",
+    "assets/",
     "device-runner/",
     "vendor/",
+    ".agents/",
+    ".antigravity-plugin/",
     ".claude-plugin/",
+    "plugin.json",
+    "gemini-extension.json",
+    "GEMINI_EXTENSION.md",
     "README.md",
     "GUIDE.md",
     "SETUP.md",
@@ -35,6 +41,9 @@
   "keywords": [
     "claude-code",
     "claude-skill",
+    "codex-plugin",
+    "antigravity-plugin",
+    "gemini-cli-extension",
     "ios",
     "xcode",
     "simulator",

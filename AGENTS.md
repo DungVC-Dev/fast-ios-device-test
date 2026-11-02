@@ -16,8 +16,8 @@ it directly for how a flow is written. Where it mentions a subagent, do the step
 ## Project overview
 
 `fast-ios-device-test` — fast iOS UI-flow verification for AI agents. It ships as the npm package
-`fast-ios-device-test` (`npx fast-ios-device-test` installs it), a Claude Code plugin, and a
-release zip. macOS only; needs Xcode 26 or 27.
+`fast-ios-device-test` (`npx fast-ios-device-test` installs it), plugins for Claude Code, Codex and
+Antigravity, a Gemini CLI extension, and a release zip. macOS only; needs Xcode 26 or 27.
 
 - `/fastSimulatorTest` drives an app on Simulator through a JSON flow (AXe, bundled in `vendor/`).
 - `/fastDeviceTest` runs the same flows on a physical iPhone through a cached, auto-signed
@@ -51,8 +51,12 @@ User-facing docs: `README.md` (English), `GUIDE.md` (Vietnamese, for testers), `
 | `install.sh` | Installer: no flag = copy to `~/.local/share/fast-ios-device-test` and link; `--link` (link this clone), `--check [--device <name>]`, `--uninstall` |
 | `npm/install.js` | `npx` entry: passes flags to `install.sh`, adds the `clean` subcommand (runs `scripts/fast_ui_clean.py`), refuses `--link` |
 | `.claude-plugin/` | Plugin + marketplace manifests |
+| `plugin.json`, `.agents/plugins/` | Portable Codex plugin manifest + repo marketplace catalog |
+| `.antigravity-plugin/`, `gemini-extension.json` | Antigravity plugin manifest + Gemini CLI extension manifest |
+| `assets/fast-ios-device-test.png` | Shared Codex/Antigravity marketplace icon |
 | `vendor/` | AXe release tarball (MIT) |
 | `release.sh`, `make-zip.sh`, `.github/workflows/` | Release, zip, npm publish, upstream sync |
+| `scripts/package_marketplaces.py` | Clean Codex, Antigravity and Gemini CLI marketplace ZIPs under `build/plugin-packages/` |
 
 ## Commands
 
@@ -64,6 +68,13 @@ Run each in a subshell so the working directory does not change between commands
 
 # Extra tests that need Pillow (python3 -m pip install --user pillow)
 (cd scripts && python3 -m unittest test_fast_evidence test_fast_evidence_sheet test_fast_ui_review)
+
+# Provider package inventory and version checks
+(cd scripts && python3 -m unittest test_package_marketplaces)
+
+# Build clean provider ZIPs; validate the Antigravity staging folder with agy
+python3 scripts/package_marketplaces.py
+agy plugin validate --strict build/plugin-packages/stage/antigravity
 
 # Install from this clone for local testing, then verify (last line must be CHECK OK)
 ./install.sh --link && ./install.sh --check
@@ -101,7 +112,7 @@ After `./install.sh --link`, edits to `scripts/`, `skills/`, `commands/` and `ag
 - Work on a branch and open a PR. Never push to `main`, tag, or publish unless the maintainer
   explicitly asks.
 - Releases: `./release.sh patch|minor|major|X.Y.Z` from a clean, up-to-date `main`. It turns
-  `## Unreleased` into the version heading, bumps `package.json` and `.claude-plugin/plugin.json`,
+  `## Unreleased` into the version heading, bumps `package.json` and every provider plugin manifest,
   runs the tests, commits, tags `vX.Y.Z` and pushes. The tag triggers
   `.github/workflows/publish.yml` (npm Trusted Publisher + GitHub release with the zip).
   Do not bump versions by hand.
