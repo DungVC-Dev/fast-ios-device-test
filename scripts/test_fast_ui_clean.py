@@ -89,13 +89,15 @@ class CleanTests(unittest.TestCase):
         project = self.root / "App"
         runs = project / "build/fast-ui/home/run/metrics.json"
         device = project / "build/fast-device-tests/x/DerivedData/a"
+        app_build = project / "build/fast-ui-dd/Build/Products/a"
         keep = project / "build/Other/a"
-        for path in (runs, device, keep):
+        for path in (runs, device, app_build, keep):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("x")
         self.run_clean("--yes", "--project", str(project))
         self.assertFalse(runs.exists())
         self.assertFalse(device.exists())
+        self.assertFalse(app_build.exists())
         self.assertTrue(keep.exists())
 
 

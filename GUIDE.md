@@ -12,6 +12,8 @@ Chỉ cần có sẵn Xcode 26 hoặc 27. Không cần Homebrew hay xcodegen: AX
 
 **Một lệnh:** `npx fast-ios-device-test` (chạy lại để cập nhật; `npx fast-ios-device-test --check` để xem còn thiếu gì).
 
+Dọn cache và bản build khi test (tool vẫn còn): `npx fast-ios-device-test clean --project <thư mục project> --yes` (không có `--yes` chỉ liệt kê). Gỡ tool khỏi máy: `npx fast-ios-device-test --uninstall` (cache và `build/` vẫn giữ, muốn xoá thì chạy `clean` trước).
+
 **Tự cài (để sửa tool):**
 
 1. Mở Terminal, chạy:

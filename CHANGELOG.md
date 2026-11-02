@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.11.3 — 2026-11-02
+
+- `npx fast-ios-device-test --uninstall` (`install.sh --uninstall`) removes the tool: the links that
+  point at it, the copied tool and the bundled AXe. Caches and build output stay.
+- `npx fast-ios-device-test clean` runs `fastUIClean` without an install; `--project` now also
+  deletes `build/fast-ui-dd`, the Simulator app builds. README separates cleaning from uninstalling.
+
 ## 1.11.2 — 2026-11-02
 
 - README: every way to install (npx, asking Claude, the Claude Code plugin, a clone, the release

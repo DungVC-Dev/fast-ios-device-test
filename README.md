@@ -31,6 +31,8 @@ nor xcodegen is needed. Restart Claude Code after installing.
 npx fast-ios-device-test                                   # install, or upgrade to the latest
 npx fast-ios-device-test --check                           # what is there and what is missing; changes nothing
 npx fast-ios-device-test --check --device "<iPhone name>"  # also checks that iPhone for fastDeviceTest
+npx fast-ios-device-test clean                             # caches and test builds (see below)
+npx fast-ios-device-test --uninstall                       # remove the tool
 ```
 
 Needs Node.js 18+ for `npx`. The tool is copied to `~/.local/share/fast-ios-device-test`, so it
@@ -84,16 +86,34 @@ folder can be deleted.
 Pillow is installed when possible; only video review (`fastUIReview`, `fastEvidenceSheet`, the
 `motion` action) needs it.
 
+### Clean caches and test builds
+
+The tools leave builds and run output behind; this deletes them and keeps the tool installed.
+It lists what would go with sizes, and deletes only with `--yes`:
+
+```bash
+npx fast-ios-device-test clean                          # list: iPhone runner build, helpers, idle locks, sessions
+npx fast-ios-device-test clean --project ~/MyApp --yes  # also that project's runs and test builds
+npx fast-ios-device-test clean --maps --yes             # also the screen maps fastUIMap prints
+```
+
+`--project <root>` adds `build/fast-ui` (runs, screenshots, videos), `build/fast-ui-dd` (the
+Simulator app builds, the flows' `derived_data` by convention) and `build/fast-device-tests` (the
+iPhone test builds). `fastUIClean` is the same command once installed. Evidence on the Desktop is
+never touched; a simulator a flow is using, a running iPhone runner and the journal a killed run
+left for its repair are skipped and named. A flow whose `derived_data` points elsewhere keeps that
+folder: delete it yourself.
+
 ### Uninstall
 
 ```bash
-fastUIClean --maps --yes     # caches, simulator locks, screen maps (evidence on the Desktop stays)
-rm -rf ~/.local/share/fast-ios-device-test ~/.claude/skills/fast-ios-device-test \
-  ~/.claude/agents/ui-explorer.md ~/.claude/commands/fast{SimulatorTest,DeviceTest,UIReview}.md \
-  ~/.local/bin/fast{SimulatorTest,UITest,DeviceTest,UIReport,UIReview,EvidenceSheet,UIMap,UIClean}
+npx fast-ios-device-test --uninstall      # or install.sh --uninstall from a clone
 ```
 
-`~/.local/share/axe` can go too if nothing else uses AXe.
+Removes the skill, the slash commands, the subagent, the launchers (only links that point at this
+tool), the copied tool in `~/.local/share/fast-ios-device-test` and the bundled AXe (a Homebrew
+`axe` stays). Caches, screen maps and each project's `build/` output stay: run `clean` first to
+remove them too. A clone used with `--link` stays where it is.
 
 ### Optional: Apple's own tools
 

@@ -2,6 +2,8 @@
 # One-shot setup. Default: copy this folder to ~/.local/share and wire the skill,
 # the slash commands and the launchers into Claude Code + PATH.
 # `install.sh --link`  links this folder in place instead of copying (for editing).
+# `install.sh --uninstall` removes what install.sh put in place (links, the copied tool, the
+# bundled AXe) and keeps caches and test output: `fastUIClean` deletes those.
 # `install.sh --check` prints versions and what is missing, and changes nothing;
 # `install.sh --check --device <name|udid>` also checks that iPhone (fastDeviceTest check).
 # Safe to re-run; re-running from a newer shared folder upgrades in place.
@@ -19,7 +21,42 @@ CHECK_DEVICE=""
 case "${1:-}" in
     --link) MODE="link" ;;
     --check) MODE="check"; [[ "${2:-}" == "--device" ]] && CHECK_DEVICE="${3:-}" ;;
+    --uninstall) MODE="uninstall" ;;
 esac
+
+LINKS=(
+    "$SKILLS_DIR/fast-ios-device-test"
+    "$COMMANDS_DIR/fastSimulatorTest.md" "$COMMANDS_DIR/fastDeviceTest.md" "$COMMANDS_DIR/fastUIReview.md"
+    "$AGENTS_DIR/ui-explorer.md"
+    "$BIN_DIR/fastSimulatorTest" "$BIN_DIR/fastUITest" "$BIN_DIR/fastDeviceTest" "$BIN_DIR/fastUIReport"
+    "$BIN_DIR/fastUIReview" "$BIN_DIR/fastEvidenceSheet" "$BIN_DIR/fastUIMap" "$BIN_DIR/fastUIClean"
+)
+
+if [[ "$MODE" == "uninstall" ]]; then
+    # Only links that point at a copy of this tool (any folder holding scripts/fast_ui.py
+    # or the skill): a file the user put there, or a link elsewhere, stays.
+    for path in "${LINKS[@]}"; do
+        [[ -L "$path" ]] || continue
+        target="$(readlink "$path")"
+        case "$target" in
+        */scripts/fast_*.py | */skills/fast-ios-device-test | */commands/fast*.md | */agents/ui-explorer.md)
+            rm "$path"; echo "removed: $path" ;;
+        *) echo "kept: $path (points at $target)" ;;
+        esac
+    done
+    # The bundled AXe only when its wrapper is the one install.sh wrote; a Homebrew axe stays.
+    if [[ -f "$BIN_DIR/axe" ]] && grep -q "exec \"$AXE_HOME/axe\"" "$BIN_DIR/axe" 2>/dev/null; then
+        rm -f "$BIN_DIR/axe"; rm -rf "$AXE_HOME"; echo "removed: bundled AXe ($AXE_HOME)"
+    fi
+    echo "uninstalled. Caches, screen maps and build output under each project's build/ were kept;"
+    echo "delete them first with: npx fast-ios-device-test clean [--project <root>] --maps --yes"
+    echo "A clone used with --link stays where it is."
+    # Last: this script may itself live in the copied tool.
+    if [[ -d "$INSTALL_DIR" && -f "$INSTALL_DIR/install.sh" ]]; then
+        echo "removed: $INSTALL_DIR"; rm -rf "$INSTALL_DIR"
+    fi
+    exit 0
+fi
 
 # `|| true`: with no Xcode selected `xcodebuild` is a failing shim, and under `set -eo pipefail`
 # that would end the script before it could say so.

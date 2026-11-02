@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
-"""Clear the caches fastSimulatorTest / fastDeviceTest leave on the Mac.
+"""Clear the caches and build output fastSimulatorTest / fastDeviceTest leave on the Mac (the tool
+itself stays installed; `install.sh --uninstall` removes it).
 
     fastUIClean                      list what would go, with sizes (nothing is deleted)
     fastUIClean --yes                delete it
-    fastUIClean --project <root>     also that project's build/fast-ui and build/fast-device-tests
+    fastUIClean --project <root>     also that project's runs and test builds (build/fast-ui,
+                                     build/fast-ui-dd, build/fast-device-tests)
     fastUIClean --maps --yes         also the screen maps (~/Library/Caches/fast-ui-map)
 
 Evidence filed on the Desktop is never touched. A simulator lock a running flow holds, and the
@@ -117,7 +119,9 @@ def targets(project: Path | None, maps: bool) -> tuple[list[Path], list[str]]:
     if maps and map_dir().exists():
         remove.append(map_dir())
     if project is not None:
-        for name in ("build/fast-ui", "build/fast-device-tests"):
+        # Run output, the Simulator app builds (the flows' `derived_data`, build/fast-ui-dd by
+        # convention) and the iPhone test builds.
+        for name in ("build/fast-ui", "build/fast-ui-dd", "build/fast-device-tests"):
             path = project / name
             if not path.exists():
                 continue
