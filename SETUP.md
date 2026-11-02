@@ -31,7 +31,8 @@ Expected: a path inside an `Xcode.app` and `Xcode 26.x` or `27.x`. If it prints
 npx fast-ios-device-test
 ```
 
-Expected: `link: …` lines, `engine self-test: OK` and `done.` Running it again upgrades. No
+Expected: `link: …` lines, `engine self-test: OK` and `done.` To upgrade later:
+`npx fast-ios-device-test update` (also updates the Codex and Claude Code plugins). No
 Node.js (`npx: command not found`), or the user wants to edit the tool: clone instead:
 
 ```bash
@@ -47,6 +48,15 @@ The installer needs no Homebrew: it unpacks the bundled AXe into `~/.local/share
 skill into `~/.claude/skills`, the slash commands into `~/.claude/commands`, the `ui-explorer`
 subagent into `~/.claude/agents` and the launchers into `~/.local/bin`.
 
+That is all Claude Code needs. Any other agent also needs the skill installed for it; this
+installer does not do that:
+
+| Agent | Command |
+|---|---|
+| Codex | `codex plugin marketplace add DungVC-Dev/fast-ios-device-test` then `codex plugin add fast-ios-device-test@fast-ios-device-test` |
+| Antigravity | `agy plugin install https://github.com/DungVC-Dev/fast-ios-device-test` |
+| Gemini CLI | `gemini extensions install https://github.com/DungVC-Dev/fast-ios-device-test` |
+
 ## 3. Check
 
 ```bash
@@ -60,16 +70,20 @@ Expected last line: `CHECK OK`. `CHECK missing: …` names what to fix:
 | `xcode` | step 1 |
 | `axe` or `axe-1.8.0` (the check line reads `axe=<version>`) | rerun `install.sh --link` (it unpacks the bundled AXe) |
 | a launcher, `skill`, `ui-explorer agent` | rerun `install.sh --link` |
+| `… (broken link)`: a link whose clone was moved or deleted (a `broken link:` line names it) | rerun `install.sh --link` from the clone you keep |
+| `codex skill (broken link)` | rerun `install.sh --link` (it re-points a dangling Codex or Antigravity link), or relink by hand (README, "Development install") |
+| `codex skill (empty plugin)` | `codex plugin add fast-ios-device-test@fast-ios-device-test`, then restart Codex |
+| `antigravity skill (empty plugin)` | `agy plugin install https://github.com/DungVC-Dev/fast-ios-device-test`, then restart Antigravity |
 | `~/.local/bin` not on PATH (a `note:` line) | add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc`, open a new shell |
 
 `pillow=no` and `xcodegen=no` are fine: only video review needs Pillow; the runner project ships
 ready.
 
-## 4. Restart Claude Code
+## 4. Restart the agent
 
-The skill, the slash commands and the subagent load when Claude Code starts. An agent cannot
-restart it: tell the user to quit and reopen Claude Code (or start a new session), then
-continue with step 5 in that session.
+The skill (and in Claude Code the slash commands and the subagent) loads when the agent starts.
+An agent cannot restart itself: tell the user to quit and reopen it (or start a new session),
+then continue with step 5 in that session.
 
 ## 5. Simulator smoke test
 

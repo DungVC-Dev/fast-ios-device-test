@@ -14,6 +14,7 @@ timing rules are in that skill's `SKILL.md`. The engine is:
 "${CLAUDE_PLUGIN_ROOT:-$HOME/.local}/bin/fastDeviceTest" <flow.json> [--device <udid|name>] [--install <App.app>]
 ```
 
+One requested behavior → one flow, run at once; more cases only when the user lists them.
 Same flow JSON as the simulator; the app must already be installed. Several iPhones →
 use the one the user named (a unique part of the name is enough). More than one run, or
 step-by-step exploration → `fastDeviceTest serve`, then flows or `fastDeviceTest do '<json>'`,

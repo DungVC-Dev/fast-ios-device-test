@@ -10,7 +10,23 @@ Chỉ cần có sẵn Xcode 26 hoặc 27. Không cần Homebrew hay xcodegen: AX
 **Cách nhanh nhất:** nhờ AI cài: "làm theo SETUP.md trong https://github.com/DungVC-Dev/fast-ios-device-test".
 [SETUP.md](SETUP.md) có từng bước, lệnh kiểm tra, kết quả mong đợi và cách sửa từng lỗi.
 
-**Một lệnh:** `npx fast-ios-device-test` (chạy lại để cập nhật; `npx fast-ios-device-test --check` để xem còn thiếu gì).
+Cài hai phần:
+
+1. **Bộ chạy trên Mac** (engine, AXe, các lệnh `fast…`), dùng chung cho mọi agent:
+   `npx fast-ios-device-test`. Cập nhật: `npx fast-ios-device-test update` (cập nhật luôn plugin
+   Codex và Claude Code; Antigravity và Gemini thì in ra lệnh cần chạy). Khi có bản mới,
+   `fastSimulatorTest`/`fastDeviceTest` in một dòng `update available: …` (tối đa một lần mỗi ngày,
+   không tự cài; tắt bằng `FAST_IOS_NO_UPDATE_CHECK=1`). Với Claude Code, lệnh này đã cài luôn
+   skill, các lệnh `/fastSimulatorTest`, `/fastDeviceTest`, `/fastUIReview` và subagent.
+2. **Skill cho agent khác** (bộ chạy ở bước 1 không cài phần này):
+   - Codex: `codex plugin marketplace add DungVC-Dev/fast-ios-device-test` rồi
+     `codex plugin add fast-ios-device-test@fast-ios-device-test`
+   - Antigravity: `agy plugin install https://github.com/DungVC-Dev/fast-ios-device-test`
+   - Gemini CLI: `gemini extensions install https://github.com/DungVC-Dev/fast-ios-device-test`
+
+Kiểm tra: `npx fast-ios-device-test --check`, dòng cuối phải là `CHECK OK`. Lệnh này cũng báo khi
+skill của Codex hoặc Antigravity bị hỏng (link trỏ vào thư mục đã xoá, plugin rỗng). Sau đó thoát
+rồi mở lại agent.
 
 Dọn cache và bản build khi test (tool vẫn còn): `npx fast-ios-device-test clean --project <thư mục project> --yes` (không có `--yes` chỉ liệt kê). Gỡ tool khỏi máy: `npx fast-ios-device-test --uninstall` (cache và `build/` vẫn giữ, muốn xoá thì chạy `clean` trước).
 
@@ -22,10 +38,14 @@ Dọn cache và bản build khi test (tool vẫn còn): `npx fast-ios-device-tes
    ~/fast-ios-device-test/install.sh --link
    ~/fast-ios-device-test/install.sh --check          # dòng cuối phải là CHECK OK
    ```
-2. Thoát rồi mở lại Claude Code.
+   Dùng Codex hoặc Antigravity thì link skill từ bản clone (README, mục "Development install"):
+   `ln -sfn ~/fast-ios-device-test/skills/fast-ios-device-test ~/.codex/skills/fast-ios-device-test`
+   hoặc `~/.gemini/config/skills/fast-ios-device-test`.
+2. Thoát rồi mở lại agent.
 
 Cập nhật bản mới: `git -C ~/fast-ios-device-test pull && ~/fast-ios-device-test/install.sh --link`.
-Giữ nguyên thư mục `~/fast-ios-device-test` vì skill và lệnh trỏ vào đó. Không dùng git thì tải
+Giữ nguyên thư mục `~/fast-ios-device-test` vì skill và lệnh trỏ vào đó (dời hoặc xoá thư mục thì
+`--check` báo `broken link`; chạy lại `install.sh --link` từ bản clone mới). Không dùng git thì tải
 zip ở trang [Releases](https://github.com/DungVC-Dev/fast-ios-device-test/releases), giải nén và chạy
 `install.sh` trong đó (không thêm cờ).
 

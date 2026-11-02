@@ -14,7 +14,7 @@ loaded twice.
   clean marketplace bundle with `python3 scripts/package_marketplaces.py`, then validate and install
   `build/plugin-packages/stage/antigravity`. Run the engines through launchers in `~/.local/bin`.
 - `skills/fast-ios-device-test/SKILL.md` is a standard Agent Skill. Antigravity loads it from the
-  plugin, or globally when it is linked into `~/.gemini/antigravity-cli/skills/`; Gemini CLI loads
+  plugin, or globally when it is linked into `~/.gemini/config/skills/`; Gemini CLI loads
   it from the extension declared by `gemini-extension.json`.
 - `install.sh` only installs into `~/.claude`. Never run it to probe flags: any unknown
   argument triggers a real install (details in `AGENTS.md`).

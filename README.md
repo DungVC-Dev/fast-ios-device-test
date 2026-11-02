@@ -118,6 +118,10 @@ gemini extensions install https://github.com/DungVC-Dev/fast-ios-device-test
 
 #### Claude Code Plugin Marketplace
 
+Claude Code needs no plugin: step 2 already links the skill, the slash commands and the subagent
+into `~/.claude`. Add the plugin only to manage it with `/plugin`; with both, Claude Code lists the
+skill and the commands twice.
+
 ```text
 /plugin marketplace add DungVC-Dev/fast-ios-device-test
 /plugin install fast-ios-device-test@fast-ios-device-test
@@ -134,7 +138,7 @@ launchers on your Mac. Pick one installation method:
 
 | Way | Commands | Tool folder (`$TOOL` below) |
 |---|---|---|
-| **npx** (recommended) | `npx fast-ios-device-test` (run again to upgrade) | `~/.local/share/fast-ios-device-test` |
+| **npx** (recommended) | `npx fast-ios-device-test` (upgrade: `npx fast-ios-device-test update`) | `~/.local/share/fast-ios-device-test` |
 | **git clone** (to edit the tool) | `git clone https://github.com/DungVC-Dev/fast-ios-device-test.git ~/fast-ios-device-test`<br>`~/fast-ios-device-test/install.sh --link` | the clone, e.g. `~/fast-ios-device-test` (keep it; upgrade with `git -C ~/fast-ios-device-test pull`) |
 | **Release zip** (no Node.js, no git) | Download `fast-ios-device-test-<version>.zip` from [Releases](https://github.com/DungVC-Dev/fast-ios-device-test/releases), unzip, run its `install.sh` | `~/.local/share/fast-ios-device-test` (the unzipped folder can be deleted) |
 
@@ -161,6 +165,19 @@ npx fast-ios-device-test --check --device "<iPhone name>"  # also checks that iP
 From a clone or the zip, run `install.sh --check` instead. The last line is `CHECK OK`, or
 `CHECK missing: …` with the fix for each item.
 
+### Update
+
+```bash
+npx fast-ios-device-test update
+```
+
+Installs the latest npm version (an older cached npx package hands over to it), then updates each
+agent's plugin it finds: Codex and Claude Code directly, Antigravity and Gemini CLI by printing
+the command. A `--link` clone is left alone: it prints the `git pull` + `install.sh --link` to run.
+Restart the agents afterwards. Once a day, `fastSimulatorTest` and `fastDeviceTest` print
+`update available: <installed> -> <latest>` when npm has a newer version; they never install it
+themselves. `FAST_IOS_NO_UPDATE_CHECK=1` turns that line off.
+
 <details>
 <summary><strong>Development install: link a local clone into Codex or Antigravity</strong></summary>
 
@@ -172,8 +189,8 @@ mkdir -p ~/.codex/skills
 ln -sfn "$TOOL/skills/fast-ios-device-test" ~/.codex/skills/fast-ios-device-test
 
 # Antigravity
-mkdir -p ~/.gemini/antigravity-cli/skills
-ln -sfn "$TOOL/skills/fast-ios-device-test" ~/.gemini/antigravity-cli/skills/fast-ios-device-test
+mkdir -p ~/.gemini/config/skills
+ln -sfn "$TOOL/skills/fast-ios-device-test" ~/.gemini/config/skills/fast-ios-device-test
 ```
 
 Restart the agent after linking. Codex loads the skill when a request matches it or when you name
@@ -260,10 +277,11 @@ at this tool), the copied tool in `~/.local/share/fast-ios-device-test` and the 
 Homebrew `axe` stays). A clone used with `--link` stays where it is. Caches, screen maps and each
 project's `build/` output stay: run `clean` first to remove them too.
 
-The Codex and Antigravity links are yours to remove:
+It also removes a Codex or Antigravity skill link that points into that copy or at nothing. A
+link to a clone that still exists is yours to remove:
 
 ```bash
-rm -f ~/.codex/skills/fast-ios-device-test ~/.gemini/antigravity-cli/skills/fast-ios-device-test
+rm -f ~/.codex/skills/fast-ios-device-test ~/.gemini/config/skills/fast-ios-device-test
 ```
 
 ## What's new

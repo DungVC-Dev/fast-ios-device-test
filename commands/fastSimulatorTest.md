@@ -20,7 +20,8 @@ Exploring or checking one screen step by step → `fastSimulatorTest do '<action
 (the skill's "Step by step"). A new screen to turn into a flow: `start` + `do` step by step + `save`,
 not repeated full runs with `dump`.
 
-Decide the shape first: one flow → write and run it; up to about 5 flows on one simulator →
+One requested behavior → one flow, written and run at once (no extra cases or variants the user
+did not ask for). The user listed several flows: up to about 5 on one simulator →
 `--build-only` once, then run them here with `--reuse-app`; more flows or 2+ simulators →
 the skill's fan-out, collated with `fastUIReport`. "quay"/"record" → `--record`.
 

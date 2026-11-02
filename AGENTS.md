@@ -49,7 +49,8 @@ User-facing docs: `README.md` (English), `GUIDE.md` (Vietnamese, for testers), `
 | `commands/` | Slash commands `fastSimulatorTest`, `fastDeviceTest`, `fastUIReview` |
 | `agents/ui-explorer.md` | Haiku subagent for long step-by-step searches (experimental) |
 | `install.sh` | Installer: no flag = copy to `~/.local/share/fast-ios-device-test` and link; `--link` (link this clone), `--check [--device <name>]`, `--uninstall` |
-| `npm/install.js` | `npx` entry: passes flags to `install.sh`, adds the `clean` subcommand (runs `scripts/fast_ui_clean.py`), refuses `--link` |
+| `npm/install.js` | `npx` entry: passes flags to `install.sh`, adds the `clean` subcommand (runs `scripts/fast_ui_clean.py`) and `update` (latest npm version, a `--link` clone gets `git pull` advice, then each agent's plugin), refuses `--link` |
+| `scripts/fast_update.py` | Installed vs latest npm version (`install.sh --check`), the once-a-day "update available" line both engines print (`FAST_IOS_NO_UPDATE_CHECK=1` turns it off) |
 | `.claude-plugin/` | Plugin + marketplace manifests |
 | `plugin.json`, `.agents/plugins/` | Portable Codex plugin manifest + repo marketplace catalog |
 | `.antigravity-plugin/`, `gemini-extension.json` | Antigravity plugin manifest + Gemini CLI extension manifest |
@@ -64,7 +65,7 @@ Run each in a subshell so the working directory does not change between commands
 
 ```bash
 # Tests — must pass before any commit (same set release.sh runs)
-(cd scripts && python3 -m unittest test_fast_ui test_fast_media test_fast_ui_map test_fast_guard test_fast_ui_clean)
+(cd scripts && python3 -m unittest test_fast_ui test_fast_media test_fast_ui_map test_fast_guard test_fast_ui_clean test_install test_fast_update)
 
 # Extra tests that need Pillow (python3 -m pip install --user pillow)
 (cd scripts && python3 -m unittest test_fast_evidence test_fast_evidence_sheet test_fast_ui_review)
@@ -88,7 +89,10 @@ agy plugin validate --strict build/plugin-packages/stage/antigravity
 the user's `~/.claude` and `~/.local/bin` links away from a `--link` clone. Read its source
 instead of probing it. Only run it with `--link` or `--check`. To test the installer without
 touching the user's setup, point it elsewhere with `FAST_IOS_INSTALL_DIR`, `FAST_IOS_BIN_DIR`,
-`FAST_IOS_AXE_DIR`, `CLAUDE_SKILLS_DIR`, `CLAUDE_COMMANDS_DIR` and `CLAUDE_AGENTS_DIR`.
+`FAST_IOS_AXE_DIR`, `CLAUDE_SKILLS_DIR`, `CLAUDE_COMMANDS_DIR`, `CLAUDE_AGENTS_DIR`, `CODEX_HOME`,
+`CODEX_SKILLS_DIR`, `CODEX_PLUGIN_CACHE` and `ANTIGRAVITY_SKILLS_DIR` (`scripts/test_install.py`
+does this). The installer never creates a Codex or Antigravity skill link; it re-points one left
+dangling, removes one into the copy it uninstalls, and `--check` fails on a broken one.
 
 After `./install.sh --link`, edits to `scripts/`, `skills/`, `commands/` and `agents/` take effect at once.
 

@@ -28,6 +28,7 @@ from fast_media import VIDEO_SUFFIXES, prune_artifacts, publish_video, shrink_vi
 import fast_evidence  # noqa: E402
 import fast_guard  # noqa: E402
 from fast_ui_map import record  # noqa: E402
+from fast_update import print_notice  # noqa: E402
 RUNNER_SOURCE = HERE.parent / "device-runner"
 CACHE_ROOT = Path(os.environ.get("FAST_DEVICE_CACHE", Path.home() / "Library/Caches/fast-device-test"))
 PROFILE_DIRS = [
@@ -995,3 +996,5 @@ if __name__ == "__main__":
     except FastDeviceError as error:
         print(f"FAIL error={error}", file=sys.stderr)
         raise SystemExit(1)
+    finally:
+        print_notice()

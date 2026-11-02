@@ -4,7 +4,10 @@
 # `install.sh --link`  links this folder in place instead of copying (for editing).
 # `install.sh --uninstall` removes what install.sh put in place (links, the copied tool, the
 # bundled AXe) and keeps caches and test output: `fastUIClean` deletes those.
-# `install.sh --check` prints versions and what is missing, and changes nothing;
+# Codex and Antigravity skill links (README, "Development install") are never created here, but
+# one left dangling (its clone moved or deleted) is re-pointed at this copy: a dead link hides
+# the skill from that agent while the launchers still work.
+# `install.sh --check` prints versions and what is missing or broken, and changes nothing;
 # `install.sh --check --device <name|udid>` also checks that iPhone (fastDeviceTest check).
 # Safe to re-run; re-running from a newer shared folder upgrades in place.
 set -euo pipefail
@@ -16,6 +19,11 @@ COMMANDS_DIR="${CLAUDE_COMMANDS_DIR:-$HOME/.claude/commands}"
 BIN_DIR="${FAST_IOS_BIN_DIR:-$HOME/.local/bin}"
 AGENTS_DIR="${CLAUDE_AGENTS_DIR:-$HOME/.claude/agents}"
 AXE_HOME="${FAST_IOS_AXE_DIR:-$HOME/.local/share/axe}"
+CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
+CODEX_SKILLS_DIR="${CODEX_SKILLS_DIR:-$CODEX_HOME_DIR/skills}"
+CODEX_PLUGIN_CACHE="${CODEX_PLUGIN_CACHE:-$CODEX_HOME_DIR/plugins/cache/fast-ios-device-test}"
+ANTIGRAVITY_SKILLS_DIR="${ANTIGRAVITY_SKILLS_DIR:-$HOME/.gemini/config/skills}"
+ANTIGRAVITY_PLUGIN_DIR="${ANTIGRAVITY_PLUGIN_DIR:-$HOME/.gemini/config/plugins/fast-ios-device-test}"
 MODE="copy"
 CHECK_DEVICE=""
 case "${1:-}" in
@@ -32,6 +40,22 @@ LINKS=(
     "$BIN_DIR/fastUIReview" "$BIN_DIR/fastEvidenceSheet" "$BIN_DIR/fastUIMap" "$BIN_DIR/fastUIClean"
 )
 
+# Other agents' links to this skill: the user makes them, install.sh only keeps them working.
+OTHER_SKILL_LINKS=("codex:$CODEX_SKILLS_DIR/fast-ios-device-test" "antigravity:$ANTIGRAVITY_SKILLS_DIR/fast-ios-device-test")
+
+# A link's target as an absolute path (`readlink` returns a relative target as written).
+link_target() {
+    local target
+    target="$(readlink "$1")"
+    [[ "$target" == /* ]] || target="$(dirname "$1")/$target"
+    printf '%s\n' "$target"
+}
+
+# True when a plugin folder holds the main skill (not only the setup skill).
+plugin_has_skill() {
+    [[ -n "$(find "$1" -path '*/skills/fast-ios-device-test/SKILL.md' 2>/dev/null | head -1)" ]]
+}
+
 if [[ "$MODE" == "uninstall" ]]; then
     # Only links that point at a copy of this tool (any folder holding scripts/fast_ui.py
     # or the skill): a file the user put there, or a link elsewhere, stays.
@@ -43,6 +67,19 @@ if [[ "$MODE" == "uninstall" ]]; then
             rm "$path"; echo "removed: $path" ;;
         *) echo "kept: $path (points at $target)" ;;
         esac
+    done
+    # A Codex/Antigravity link into the copy deleted below would be left dangling; one already
+    # dangling serves nothing. A link to a clone that still exists stays.
+    install_real="$(cd "$INSTALL_DIR" 2>/dev/null && pwd -P || echo "$INSTALL_DIR")"
+    for entry in "${OTHER_SKILL_LINKS[@]}"; do
+        path="${entry#*:}"
+        [[ -L "$path" ]] || continue
+        target="$(link_target "$path")"
+        target_real="$(cd "$(dirname "$target")" 2>/dev/null && echo "$(pwd -P)/$(basename "$target")" || echo "$target")"
+        if [[ ! -e "$path" || "$target_real" == "$install_real" || "$target_real" == "$install_real/"* \
+              || "$target" == "$INSTALL_DIR" || "$target" == "$INSTALL_DIR/"* ]]; then
+            rm "$path"; echo "removed: $path"
+        fi
     done
     # The bundled AXe only when its wrapper is the one install.sh wrote; a Homebrew axe stays.
     if [[ -f "$BIN_DIR/axe" ]] && grep -q "exec \"$AXE_HOME/axe\"" "$BIN_DIR/axe" 2>/dev/null; then
@@ -106,14 +143,50 @@ if [[ "$MODE" == "check" ]]; then
         echo "axe=missing"; missing+=(axe)
     fi
     echo "python=$(python3 --version 2>&1 | sed 's/Python //') ($(command -v python3))"
+    # The version the launchers run (a --link clone or the copy), and the latest on npm.
+    installed_root=""
+    [[ -e "$BIN_DIR/fastSimulatorTest" ]] && installed_root="$(cd "$(dirname "$(link_target "$BIN_DIR/fastSimulatorTest")")/.." 2>/dev/null && pwd -P || true)"
+    python3 "$SOURCE/scripts/fast_update.py" --status "${installed_root:-$SOURCE}" || true
     python3 -c "import PIL" 2>/dev/null && echo "pillow=yes" || echo "pillow=no (only fastUIReview, fastEvidenceSheet and the motion action need it)"
     command -v xcodegen >/dev/null && echo "xcodegen=yes (optional)" || echo "xcodegen=no (optional: device-runner ships its xcodeproj)"
     echo "profiles=$(profile_count) development profiles (fastDeviceTest needs one that lists the iPhone)"
+    # `-L` alone is true for a link whose target was deleted (a moved or removed clone).
+    need_link() {
+        if [[ ! -L "$1" ]]; then missing+=("$2")
+        elif [[ ! -e "$1" ]]; then echo "  broken link: $1 -> $(readlink "$1")"; missing+=("$2 (broken link)")
+        fi
+    }
     for name in fastSimulatorTest fastDeviceTest fastUIReview fastUIReport fastEvidenceSheet fastUIMap fastUIClean; do
-        [[ -L "$BIN_DIR/$name" ]] || missing+=("$name launcher")
+        need_link "$BIN_DIR/$name" "$name launcher"
     done
-    [[ -L "$SKILLS_DIR/fast-ios-device-test" ]] || missing+=(skill)
-    [[ -L "$AGENTS_DIR/ui-explorer.md" ]] || missing+=("ui-explorer agent")
+    need_link "$SKILLS_DIR/fast-ios-device-test" skill
+    need_link "$AGENTS_DIR/ui-explorer.md" "ui-explorer agent"
+    # Codex and Antigravity are optional; a broken install of either is not.
+    for entry in "${OTHER_SKILL_LINKS[@]}"; do
+        agent="${entry%%:*}"; path="${entry#*:}"
+        if [[ -L "$path" && ! -e "$path" ]]; then
+            echo "$agent=broken skill link: $path -> $(readlink "$path") (rerun install.sh, or relink it: README \"Development install\")"
+            missing+=("$agent skill (broken link)")
+        elif [[ -e "$path/SKILL.md" ]]; then
+            echo "$agent=skill link ($(readlink "$path" 2>/dev/null || echo "$path"))"
+        else
+            if [[ "$agent" == codex ]]; then
+                plugin="$CODEX_PLUGIN_CACHE"; home="$CODEX_HOME_DIR"
+                fix="codex plugin add fast-ios-device-test@fast-ios-device-test, then restart Codex"
+            else
+                plugin="$ANTIGRAVITY_PLUGIN_DIR"; home="$(dirname "$ANTIGRAVITY_SKILLS_DIR")"
+                fix="agy plugin install https://github.com/DungVC-Dev/fast-ios-device-test, then restart Antigravity"
+            fi
+            if plugin_has_skill "$plugin"; then
+                echo "$agent=plugin ($plugin)"
+            elif [[ -d "$plugin" ]]; then
+                echo "$agent=plugin folder without the fast-ios-device-test skill: $plugin ($fix)"
+                missing+=("$agent skill (empty plugin)")
+            elif [[ -d "$home" ]]; then
+                echo "$agent=no skill (optional: $fix)"
+            fi
+        fi
+    done
     if [[ -n "$CHECK_DEVICE" ]]; then
         python3 "$SOURCE/scripts/fast_device.py" check --device "$CHECK_DEVICE" | sed 's/^/  /' || missing+=("iPhone $CHECK_DEVICE")
     fi
@@ -125,6 +198,11 @@ if [[ "$MODE" == "copy" ]]; then
     # Default: copy the shared folder to a stable local path, so the original
     # (Downloads, AirDrop, a synced drive) can be deleted or moved afterwards.
     if [[ "$SOURCE" != "$INSTALL_DIR" ]]; then
+        if [[ -e "$INSTALL_DIR/.git" ]]; then
+            echo "error: $INSTALL_DIR is a git clone; a plain install would delete it."
+            echo "  Update it with: git -C \"$INSTALL_DIR\" pull && \"$INSTALL_DIR/install.sh\" --link"
+            exit 1
+        fi
         rm -rf "$INSTALL_DIR"
         mkdir -p "$(dirname "$INSTALL_DIR")"
         cp -R "$SOURCE" "$INSTALL_DIR"
@@ -164,6 +242,13 @@ link "$HERE/scripts/fast_ui_review.py" "$BIN_DIR/fastUIReview"
 link "$HERE/scripts/fast_evidence_sheet.py" "$BIN_DIR/fastEvidenceSheet"
 link "$HERE/scripts/fast_ui_map.py" "$BIN_DIR/fastUIMap"
 link "$HERE/scripts/fast_ui_clean.py" "$BIN_DIR/fastUIClean"
+for entry in "${OTHER_SKILL_LINKS[@]}"; do
+    path="${entry#*:}"
+    # Only a dangling link (its name says it is this skill): a working one may be a clone the
+    # user links on purpose.
+    [[ -L "$path" && ! -e "$path" ]] || continue
+    link "$HERE/skills/fast-ios-device-test" "$path"
+done
 chmod +x "$HERE/scripts/fast_ui.py" "$HERE/scripts/fast_ui_report.py" "$HERE/scripts/fast_ui_review.py" "$HERE/scripts/fast_device.py" \
     "$HERE/scripts/fast_evidence_sheet.py" "$HERE/scripts/fast_ui_map.py" "$HERE/scripts/fast_ui_clean.py" \
     "$HERE/scripts/fast_device_test.sh" "$HERE/scripts/shims/swiftlint"
