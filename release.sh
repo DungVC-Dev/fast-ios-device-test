@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Cut a release: ./release.sh patch|minor|major|X.Y.Z
 # Turns CHANGELOG.md's "## Unreleased" into "## X.Y.Z — <date>", sets the version in package.json
-# and .claude-plugin/plugin.json, runs the tests, commits, tags vX.Y.Z and pushes. The tag starts
+# and every provider manifest, runs the tests, commits, tags vX.Y.Z and pushes. The tag starts
 # .github/workflows/publish.yml, which publishes to npm and creates the GitHub release with the zip.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -31,7 +31,13 @@ grep -q '^## Unreleased' CHANGELOG.md || {
 python3 - "$version" <<'EOF'
 import datetime, json, pathlib, sys
 version = sys.argv[1]
-for name in ("package.json", ".claude-plugin/plugin.json"):
+for name in (
+    "package.json",
+    "plugin.json",
+    ".claude-plugin/plugin.json",
+    ".antigravity-plugin/plugin.json",
+    "gemini-extension.json",
+):
     path = pathlib.Path(name)
     data = json.loads(path.read_text())
     data["version"] = version
@@ -40,8 +46,8 @@ log = pathlib.Path("CHANGELOG.md")
 log.write_text(log.read_text().replace("## Unreleased", f"## {version} — {datetime.date.today()}", 1))
 EOF
 
-(cd scripts && python3 -m unittest test_fast_ui test_fast_media test_fast_ui_map test_fast_guard test_fast_ui_clean >/dev/null 2>&1) \
-    || { git checkout -- package.json .claude-plugin/plugin.json CHANGELOG.md; echo "error: tests fail (cd scripts && python3 -m unittest …); nothing released"; exit 1; }
+(cd scripts && python3 -m unittest test_fast_ui test_fast_media test_fast_ui_map test_fast_guard test_fast_ui_clean test_package_marketplaces >/dev/null 2>&1) \
+    || { git checkout -- package.json plugin.json .claude-plugin/plugin.json .antigravity-plugin/plugin.json gemini-extension.json CHANGELOG.md; echo "error: tests fail (cd scripts && python3 -m unittest …); nothing released"; exit 1; }
 
 git commit -qam "release $version"
 git tag "v$version"

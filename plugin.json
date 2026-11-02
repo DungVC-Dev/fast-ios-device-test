@@ -1,0 +1,51 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "fast-ios-device-test",
+  "version": "2.0.0",
+  "description": "Fast iOS UI-flow verification on Simulator and physical iPhone from a local macOS agent.",
+  "author": {
+    "name": "DungVC",
+    "url": "https://github.com/DungVC-Dev"
+  },
+  "homepage": "https://github.com/DungVC-Dev/fast-ios-device-test",
+  "repository": "https://github.com/DungVC-Dev/fast-ios-device-test",
+  "keywords": [
+    "ios",
+    "xcode",
+    "simulator",
+    "xctest",
+    "ui-testing"
+  ],
+  "extensions": {
+    "com.openai": {
+      "requires_local_executor": true,
+      "onboardingSkill": "./skills/fast-ios-device-test-setup/SKILL.md",
+      "interface": {
+        "displayName": "Fast iOS Device Test",
+        "shortDescription": "Fast iOS UI flow tests",
+        "longDescription": "Verify focused iOS UI flows quickly on Simulator or a connected physical iPhone. The plugin writes guarded JSON flows, drives real UI interactions, records video when requested, reviews runs, and prepares captioned PR evidence. It runs only on a local Mac and requires Xcode 26 or 27; physical-device runs also require a development profile for the connected iPhone.",
+        "developerName": "DungVC",
+        "category": "Developer Tools",
+        "capabilities": [
+          "Run iOS Simulator UI flows",
+          "Run physical iPhone UI flows",
+          "Record and review UI test sessions",
+          "Prepare captioned PR evidence"
+        ],
+        "websiteURL": "https://github.com/DungVC-Dev/fast-ios-device-test",
+        "supportURL": "https://github.com/DungVC-Dev/fast-ios-device-test/issues",
+        "defaultPrompt": [
+          "Set up Fast iOS Device Test on this Mac.",
+          "Verify this iOS flow on Simulator and record it.",
+          "Run this UI flow on my connected iPhone."
+        ],
+        "brandColor": "#006BCE",
+        "logo": "./assets/fast-ios-device-test.png",
+        "composerIcon": "./assets/fast-ios-device-test.png"
+      },
+      "publication": {
+        "release_notes": "Adds a portable Codex plugin package with guided local setup."
+      }
+    }
+  }
+}

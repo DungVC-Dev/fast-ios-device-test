@@ -1,0 +1,26 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "fast-ios-device-test",
+  "displayName": "Fast iOS Device Test",
+  "version": "2.0.0",
+  "description": "Run fast iOS UI-flow verification on Simulator and physical iPhone from a local Mac.",
+  "logo": "assets/fast-ios-device-test.png",
+  "suggestedPrompts": [
+    "Set up Fast iOS Device Test on this Mac",
+    "Verify this iOS flow on Simulator and record it",
+    "Run this UI flow on my connected iPhone"
+  ],
+  "author": {
+    "name": "DungVC",
+    "url": "https://github.com/DungVC-Dev"
+  },
+  "homepage": "https://github.com/DungVC-Dev/fast-ios-device-test",
+  "repository": "https://github.com/DungVC-Dev/fast-ios-device-test",
+  "keywords": [
+    "ios",
+    "xcode",
+    "simulator",
+    "xctest",
+    "ui-testing"
+  ]
+}

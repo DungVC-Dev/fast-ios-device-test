@@ -77,9 +77,9 @@ What the installer puts where:
 
 ### 2. Connect your agent
 
-| | Claude Code | Codex | Antigravity CLI |
+| | Claude Code | Codex | Antigravity CLI / Gemini CLI |
 |---|---|---|---|
-| Skill | installed by step 1 | link it (below) | link it (below) |
+| Skill | installed by step 1 | install the plugin or link it | install the plugin/extension or link it |
 | Slash commands | `/fastSimulatorTest`, `/fastDeviceTest`, `/fastUIReview` | none: ask in plain words | none: ask in plain words |
 | `ui-explorer` subagent | yes | no (the agent does the steps itself) | no (the agent does the steps itself) |
 | Launchers on `PATH` | yes | yes | yes |
@@ -104,7 +104,16 @@ Other ways for Claude Code:
 
 #### Codex
 
-Link the skill into Codex's skills folder, then restart Codex:
+Install the repository marketplace and plugin, then restart Codex:
+
+```bash
+codex plugin marketplace add DungVC-Dev/fast-ios-device-test
+codex plugin add fast-ios-device-test@fast-ios-device-test
+```
+
+The plugin includes a guided setup skill and is marked Desktop only because it invokes Xcode and
+local device tools. Step 1 already installed those launchers. To work directly from a clone instead,
+link the skill into Codex's skills folder:
 
 ```bash
 TOOL=~/.local/share/fast-ios-device-test     # or your clone, e.g. ~/fast-ios-device-test
@@ -115,18 +124,36 @@ ln -sfn "$TOOL/skills/fast-ios-device-test" ~/.codex/skills/fast-ios-device-test
 Codex then loads the skill when a request matches it, or when you name it with
 `$fast-ios-device-test`.
 
-#### Antigravity CLI
+#### Antigravity CLI and Gemini CLI
 
-Antigravity CLI (`agy`) replaces Gemini CLI. Link the skill into its global skills folder, then
-restart `agy`:
+Install the plugin from GitHub, then restart Antigravity CLI:
+
+```bash
+agy plugin install https://github.com/DungVC-Dev/fast-ios-device-test
+agy plugin list
+```
+
+The same repository is also a Gemini CLI extension:
+
+```bash
+gemini extensions install https://github.com/DungVC-Dev/fast-ios-device-test
+```
+
+To work directly from a clone without installing the plugin, link the skill into Antigravity CLI's
+global skills folder, then restart `agy`:
 
 ```bash
 TOOL=~/.local/share/fast-ios-device-test     # or your clone, e.g. ~/fast-ios-device-test
-mkdir -p ~/.gemini/config/skills
-ln -sfn "$TOOL/skills/fast-ios-device-test" ~/.gemini/config/skills/fast-ios-device-test
+mkdir -p ~/.gemini/antigravity-cli/skills
+ln -sfn "$TOOL/skills/fast-ios-device-test" ~/.gemini/antigravity-cli/skills/fast-ios-device-test
 ```
 
-Antigravity loads the skill on demand when a request matches its description.
+Antigravity and Gemini CLI load the skill on demand when a request matches its description.
+
+Maintainers can build clean marketplace-upload ZIPs for Codex, Antigravity and Gemini CLI with
+`python3 scripts/package_marketplaces.py`. The provider staging folders and ZIPs are written under
+`build/plugin-packages/`; the Antigravity bundle must pass
+`agy plugin validate --strict build/plugin-packages/stage/antigravity` before submission.
 
 ### 3. Check
 
@@ -137,7 +164,8 @@ npx fast-ios-device-test --check --device "<iPhone name>"  # also checks that iP
 
 From a clone or the zip, run `install.sh --check` instead. The last line is `CHECK OK`, or
 `CHECK missing: …` with the fix for each item. It checks the Claude Code install; for Codex or
-Antigravity, `ls -l` the link you made and confirm it points at `$TOOL/skills/fast-ios-device-test`.
+Antigravity manual links, `ls -l` the link you made and confirm it points at
+`$TOOL/skills/fast-ios-device-test`.
 
 #### Optional: Apple's own tools
 
@@ -208,7 +236,7 @@ project's `build/` output stay: run `clean` first to remove them too.
 The Codex and Antigravity links are yours to remove:
 
 ```bash
-rm -f ~/.codex/skills/fast-ios-device-test ~/.gemini/config/skills/fast-ios-device-test
+rm -f ~/.codex/skills/fast-ios-device-test ~/.gemini/antigravity-cli/skills/fast-ios-device-test
 ```
 
 ## What's new
@@ -250,7 +278,9 @@ Actions then publishes to npm and creates the GitHub release with the zip.
 
 - `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`: guidance for agents editing this repo
 - `README.md`, `GUIDE.md` (Vietnamese, for testers), `SETUP.md` (setup an AI agent can follow, with checks and fixes), `CHANGELOG.md`
-- `.claude-plugin/`: plugin + marketplace manifests
+- `plugin.json`, `.agents/plugins/`: portable Codex plugin + marketplace catalog
+- `.antigravity-plugin/`, `gemini-extension.json`: Antigravity plugin + Gemini CLI extension
+- `.claude-plugin/`: Claude Code plugin + marketplace manifests
 - `package.json`, `npm/install.js`: the npm package behind `npx fast-ios-device-test`
 - `install.sh`: installer (`--link`, `--check`, `--uninstall`)
 - `skills/fast-ios-device-test/SKILL.md`: agent instructions (flow file, single flow, several flows or simulators)

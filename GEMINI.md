@@ -10,11 +10,11 @@ loaded twice.
 ## Antigravity notes
 
 - The slash commands in `commands/` and the `ui-explorer` subagent in `agents/` are written for
-  Claude Code; Antigravity does not load them. Run the engines directly instead
-  (`scripts/fast_ui.py`, `scripts/fast_device.py`, or the launchers in `~/.local/bin`).
-- `skills/fast-ios-device-test/SKILL.md` is a standard Agent Skill. Antigravity picks it up
-  globally when it is linked into `~/.gemini/config/skills/` (see README, "Use with Codex or
-  Antigravity CLI"); otherwise read it directly for how a flow is written. Where it mentions a
-  subagent, do the steps yourself.
+  Claude Code. The Antigravity source manifest is `.antigravity-plugin/plugin.json`; build its
+  clean marketplace bundle with `python3 scripts/package_marketplaces.py`, then validate and install
+  `build/plugin-packages/stage/antigravity`. Run the engines through launchers in `~/.local/bin`.
+- `skills/fast-ios-device-test/SKILL.md` is a standard Agent Skill. Antigravity loads it from the
+  plugin, or globally when it is linked into `~/.gemini/antigravity-cli/skills/`; Gemini CLI loads
+  it from the extension declared by `gemini-extension.json`.
 - `install.sh` only installs into `~/.claude`. Never run it to probe flags: any unknown
   argument triggers a real install (details in `AGENTS.md`).
