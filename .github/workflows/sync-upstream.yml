@@ -1,0 +1,59 @@
+name: Sync upstream
+
+# Applies what changed in the repo named by the UPSTREAM_REPO variable (owner/name) since the
+# commit recorded in .github/upstream-sha, as one commit on main. No shared history is needed.
+# A change that does not apply fails the run and opens an issue.
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  sync:
+    if: vars.UPSTREAM_REPO != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Apply upstream changes
+        id: apply
+        env:
+          UPSTREAM: ${{ vars.UPSTREAM_REPO }}
+          OWN: ${{ github.repository }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          last=$(cat .github/upstream-sha)
+          git clone --quiet --filter=blob:none "https://github.com/$UPSTREAM.git" /tmp/upstream
+          head=$(git -C /tmp/upstream rev-parse HEAD)
+          if [ "$head" = "$last" ]; then
+            echo "Already up to date."
+            exit 0
+          fi
+          git -C /tmp/upstream diff --binary "$last" "$head" -- . ':!.github' > /tmp/upstream.patch
+          if [ -s /tmp/upstream.patch ] && ! git apply --3way --whitespace=nowarn /tmp/upstream.patch; then
+            echo "conflict=true" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          grep -rlI --exclude-dir=.git --exclude-dir=.github "github.com/$UPSTREAM" . \
+            | xargs -r sed -i "s#github.com/$UPSTREAM#github.com/$OWN#g"
+          echo "$head" > .github/upstream-sha
+          git add -A
+          git commit -m "Sync upstream changes up to ${head:0:7}"
+          git push origin main
+
+      - name: Report conflict
+        if: failure() && steps.apply.outputs.conflict == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Upstream sync conflict"
+          if [ -z "$(gh issue list --state open --search "in:title \"$title\"" --json number -q '.[].number')" ]; then
+            gh issue create --title "$title" --body "Upstream changes since $(cat .github/upstream-sha) do not apply cleanly to main; apply them by hand. Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          fi
