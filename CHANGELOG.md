@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- README: install in two steps (the tool, then each agent), with how to use the skill from Codex
+  (`~/.codex/skills`) and Antigravity CLI (`~/.gemini/config/skills`) next to Claude Code.
+- `AGENTS.md`, `CLAUDE.md` and `GEMINI.md` give Codex, Claude Code and Antigravity CLI the
+  project guidance for editing this repo.
+
 ## 1.11.4 — 2026-11-02
 
 - `clean --scope current|others` deletes only the current task's runs, or every other task's

@@ -1,0 +1,107 @@
+# AGENTS.md
+
+Guidance for Codex (and any agent that reads AGENTS.md) working in this repository.
+`AGENTS.md` (Codex) and `CLAUDE.md` (Claude Code) carry the same
+project facts below their intro; when you change a fact, change it in both. `GEMINI.md`
+(Antigravity CLI) holds only Antigravity notes, because Antigravity also loads `AGENTS.md`.
+
+The slash commands in `commands/` and the `ui-explorer` subagent in `agents/` are written for
+Claude Code; Codex does not load them. Run the engines directly instead (`scripts/fast_ui.py`,
+`scripts/fast_device.py`, or the launchers in `~/.local/bin`).
+`skills/fast-ios-device-test/SKILL.md` is a standard Agent Skill: Codex picks it up when it is
+linked into `~/.codex/skills/` (see README, "Use with Codex or Antigravity CLI"); otherwise read
+it directly for how a flow is written. Where it mentions a subagent, do the steps yourself.
+`install.sh` only installs into `~/.claude`.
+
+## Project overview
+
+`fast-ios-device-test` — fast iOS UI-flow verification for AI agents. It ships as the npm package
+`fast-ios-device-test` (`npx fast-ios-device-test` installs it), a Claude Code plugin, and a
+release zip. macOS only; needs Xcode 26 or 27.
+
+- `/fastSimulatorTest` drives an app on Simulator through a JSON flow (AXe, bundled in `vendor/`).
+- `/fastDeviceTest` runs the same flows on a physical iPhone through a cached, auto-signed
+  XCUITest runner (`device-runner/`), including Settings, Shortcuts and SpringBoard.
+- `/fastUIReview` builds contact sheets from recorded runs. Other launchers: `fastUIMap`,
+  `fastEvidenceSheet`, `fastUIClean`, `fastUIReport`, and `fastUITest` (legacy alias of
+  `fastSimulatorTest`).
+
+User-facing docs: `README.md` (English), `GUIDE.md` (Vietnamese, for testers), `SETUP.md`
+(step-by-step setup an agent can follow), `CHANGELOG.md`.
+
+## Repository structure
+
+| Path | What |
+|---|---|
+| `scripts/fast_ui.py` | Simulator flow engine (`--record`, `--session`) |
+| `scripts/fast_device.py` | Physical-iPhone engine |
+| `device-runner/` | XCUITest runner app. The `.xcodeproj` is committed; after editing `project.yml` run `cd device-runner && xcodegen generate` |
+| `scripts/fast_guard.py` | Checks `do` requests (destructive steps, shapes) for both engines |
+| `scripts/fast_media.py` | Video re-encode, one-final-clip rule |
+| `scripts/fast_evidence.py`, `scripts/fast_evidence_sheet.py` | PR evidence folder on the Desktop, captioned sheet |
+| `scripts/fast_ui_map.py`, `scripts/fast_ui_clean.py`, `scripts/fast_ui_report.py`, `scripts/fast_ui_review.py` | `fastUIMap`, `fastUIClean`, `fastUIReport`, `fastUIReview` |
+| `scripts/test_*.py` | Unit tests, one file per module |
+| `scripts/runner_logic_checks.swift` | Pure-logic checks for the runner, compiled by `test_fast_ui.RunnerLogicTests` (skipped without `swiftc`) |
+| `scripts/shims/swiftlint` | No-op SwiftLint used to skip linting in test builds |
+| `scripts/fastUnitTest`, `scripts/fast_device_test.sh`, `scripts/fastUnitTest.command.md.disabled` | Experimental on-device XCTest runner; not installed as a command |
+| `bin/` | Repo-local symlinks to `scripts/` for the plugin install. `install.sh` does not use them: it links `scripts/*.py` into `~/.local/bin` itself |
+| `skills/fast-ios-device-test/` | The skill (`SKILL.md` + `references/device.md`, `review.md`, `usage.md`): how an agent *uses* the tool |
+| `commands/` | Slash commands `fastSimulatorTest`, `fastDeviceTest`, `fastUIReview` |
+| `agents/ui-explorer.md` | Haiku subagent for long step-by-step searches (experimental) |
+| `install.sh` | Installer: no flag = copy to `~/.local/share/fast-ios-device-test` and link; `--link` (link this clone), `--check [--device <name>]`, `--uninstall` |
+| `npm/install.js` | `npx` entry: passes flags to `install.sh`, adds the `clean` subcommand (runs `scripts/fast_ui_clean.py`), refuses `--link` |
+| `.claude-plugin/` | Plugin + marketplace manifests |
+| `vendor/` | AXe release tarball (MIT) |
+| `release.sh`, `make-zip.sh`, `.github/workflows/` | Release, zip, npm publish, upstream sync |
+
+## Commands
+
+Run each in a subshell so the working directory does not change between commands.
+
+```bash
+# Tests — must pass before any commit (same set release.sh runs)
+(cd scripts && python3 -m unittest test_fast_ui test_fast_media test_fast_ui_map test_fast_guard test_fast_ui_clean)
+
+# Extra tests that need Pillow (python3 -m pip install --user pillow)
+(cd scripts && python3 -m unittest test_fast_evidence test_fast_evidence_sheet test_fast_ui_review)
+
+# Install from this clone for local testing, then verify (last line must be CHECK OK)
+./install.sh --link && ./install.sh --check
+
+# Build the release zip next to the repo folder
+./make-zip.sh
+```
+
+`install.sh` treats any unknown argument as a plain install: `./install.sh clean` or
+`./install.sh --help` **copies** the clone over `~/.local/share/fast-ios-device-test` and re-points
+the user's `~/.claude` and `~/.local/bin` links away from a `--link` clone. Read its source
+instead of probing it. Only run it with `--link` or `--check`. To test the installer without
+touching the user's setup, point it elsewhere with `FAST_IOS_INSTALL_DIR`, `FAST_IOS_BIN_DIR`,
+`FAST_IOS_AXE_DIR`, `CLAUDE_SKILLS_DIR`, `CLAUDE_COMMANDS_DIR` and `CLAUDE_AGENTS_DIR`.
+
+After `./install.sh --link`, edits to `scripts/`, `skills/`, `commands/` and `agents/` take effect at once.
+
+## Conventions
+
+- Python 3 standard library only in the engines; Pillow is optional (video review, evidence
+  sheets) and must degrade gracefully when missing.
+- Any behaviour change gets a test in the matching `scripts/test_*.py`.
+- Keep the docs in step with the code: when a command, flag or action changes, update
+  `skills/fast-ios-device-test/` (what agents read), `README.md`, and `GUIDE.md`/`SETUP.md` when
+  they cover it. When commands change, also update the descriptions in `.claude-plugin/`.
+- A new launcher needs a `link` line and a `chmod` entry in `install.sh`, a `bin/` symlink, and
+  its files covered by `package.json` `files` (the npm package ships only what is listed there).
+- Write every user-visible change under `## Unreleased` at the top of `CHANGELOG.md` (add that
+  heading under `# Changelog` if it is missing; `release.sh` refuses to run without it).
+- Do not edit `.github/upstream-sha` by hand. When `UPSTREAM_REPO` is set, the sync-upstream
+  workflow commits straight to `main` every 6 hours, so rebase a branch on `main` before merging.
+
+## Git and releases
+
+- Work on a branch and open a PR. Never push to `main`, tag, or publish unless the maintainer
+  explicitly asks.
+- Releases: `./release.sh patch|minor|major|X.Y.Z` from a clean, up-to-date `main`. It turns
+  `## Unreleased` into the version heading, bumps `package.json` and `.claude-plugin/plugin.json`,
+  runs the tests, commits, tags `vX.Y.Z` and pushes. The tag triggers
+  `.github/workflows/publish.yml` (npm Trusted Publisher + GitHub release with the zip).
+  Do not bump versions by hand.
