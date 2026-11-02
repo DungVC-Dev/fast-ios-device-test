@@ -9,6 +9,8 @@
   once a day when npm has a newer version (checked in the background, never blocks a run, never
   installs; `FAST_IOS_NO_UPDATE_CHECK=1` or `CI` turns it off). `install.sh --check` prints the
   installed and the latest version.
+- A plain install (`npx fast-ios-device-test`, `install.sh` without a flag) refuses to replace
+  `~/.local/share/fast-ios-device-test` when it is a git clone, instead of deleting it.
 
 - `install.sh --check` fails on a broken link (a launcher, the skill or the subagent pointing at
   a moved or deleted clone) instead of passing it, and reports the Codex and Antigravity skill:

@@ -138,6 +138,17 @@ class InstallCheckTests(unittest.TestCase):
         self.assertEqual(Path(os.readlink(codex)), REPO / "skills" / "fast-ios-device-test")
         self.assertEqual(Path(os.readlink(antigravity)), elsewhere)
 
+    @unittest.skipUnless(shutil.which("xcodebuild"), "install needs Xcode")
+    def test_plain_install_refuses_to_delete_a_clone_in_the_install_folder(self):
+        share = self.home / "share"
+        (share / ".git").mkdir(parents=True)
+        (share / "keep.txt").write_text("mine")
+        self.env["PATH"] = f"{self.dirs['bin']}:{os.environ.get('PATH', '')}"
+        code, out = self.run_install()
+        self.assertNotEqual(code, 0)
+        self.assertIn("is a git clone", out)
+        self.assertEqual((share / "keep.txt").read_text(), "mine")
+
     def test_uninstall_removes_a_relative_link_into_the_copy(self):
         skill = self.home / "share" / "skills" / "fast-ios-device-test"
         skill.mkdir(parents=True)

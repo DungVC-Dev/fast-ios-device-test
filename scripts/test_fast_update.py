@@ -102,6 +102,33 @@ class NoticeTests(unittest.TestCase):
                 self.assertIn(f"update available: fast-ios-device-test {version} -> 999.0.0", ran.stderr)
 
 
+    def test_concurrent_runs_print_the_notice_once(self):
+        self.seed(checked_at=10**10, latest="999.0.0")
+        code = ("import fast_update; line = fast_update.notice(now=10**10 + 5, current='1.0.0', spawn=False);"
+                "print('LINE' if line else '')")
+        env = dict(os.environ, FAST_IOS_UPDATE_CACHE=str(self.cache))
+        runs = [subprocess.Popen([sys.executable, "-c", code], cwd=REPO / "scripts", env=env,
+                                 stdout=subprocess.PIPE, text=True) for _ in range(8)]
+        printed = sum(run.communicate(timeout=60)[0].count("LINE") for run in runs)
+        self.assertEqual(printed, 1)
+
+    def test_a_closed_stderr_pipe_keeps_the_exit_code(self):
+        self.seed(checked_at=10**10, latest="999.0.0")
+        env = dict(os.environ, FAST_IOS_UPDATE_CACHE=str(self.cache))
+        run = subprocess.Popen([sys.executable, str(REPO / "scripts" / "fast_ui.py"), "--help"], env=env,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        run.stderr.close()
+        self.assertEqual(run.wait(timeout=60), 0)
+
+    def test_a_closed_stderr_never_moves_the_notice_to_stdout(self):
+        self.seed(checked_at=10**10, latest="999.0.0")
+        env = dict(os.environ, FAST_IOS_UPDATE_CACHE=str(self.cache))
+        ran = subprocess.run(f'"{sys.executable}" "{REPO / "scripts" / "fast_ui.py"}" --help 2>&-',
+                             shell=True, env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(ran.returncode, 0)
+        self.assertNotIn("update available", ran.stdout)
+
+
 @unittest.skipUnless(shutil.which("node"), "needs node")
 class NpmUpdateTests(unittest.TestCase):
     def setUp(self):
@@ -160,6 +187,27 @@ class NpmUpdateTests(unittest.TestCase):
         self.assertEqual(calls, ["codex plugin marketplace upgrade fast-ios-device-test",
                                  "codex plugin add fast-ios-device-test@fast-ios-device-test",
                                  "claude plugin update fast-ios-device-test@fast-ios-device-test"])
+
+    def test_a_clone_in_the_install_folder_is_not_overwritten(self):
+        share = self.home / "share"
+        (share / ".git").mkdir(parents=True)
+        (share / "keep.txt").write_text("mine")
+        ran, _ = self.update()
+        self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+        self.assertIn("git clone", ran.stdout)
+        self.assertEqual((share / "keep.txt").read_text(), "mine")
+
+    def test_a_failed_plugin_update_fails_the_command(self):
+        self.linked_clone()
+        (self.stubs / "codex").write_text(f'#!/bin/sh\necho "codex $*" >> "{self.log}"\nexit 3\n')
+        skill = self.home / ".codex" / "plugins" / "cache" / "fast-ios-device-test" / "p" / "1" / "skills" / "fast-ios-device-test"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text("x")
+        ran, calls = self.update()
+        self.assertEqual(ran.returncode, 1)
+        self.assertIn("codex: the plugin update failed", ran.stdout)
+        self.assertNotIn("restart Codex", ran.stdout)
+        self.assertEqual(calls, ["codex plugin marketplace upgrade fast-ios-device-test"])
 
     def test_no_plugin_installed_runs_no_agent_command(self):
         self.linked_clone()

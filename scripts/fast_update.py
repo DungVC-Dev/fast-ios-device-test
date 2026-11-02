@@ -13,6 +13,8 @@ turns it off.
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import json
 import os
 import subprocess
@@ -73,7 +75,7 @@ def write_cache(data: dict) -> None:
     path = cache_file()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_suffix(".tmp")
+        temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
         temporary.write_text(json.dumps(data))
         temporary.replace(path)
     except OSError:
@@ -82,11 +84,12 @@ def write_cache(data: dict) -> None:
 
 def refresh() -> None:
     latest = fetch_latest()
-    data = read_cache()
-    data["checked_at"] = time.time()
-    if latest:
-        data["latest"] = latest
-    write_cache(data)
+    with cache_lock():
+        data = read_cache()
+        data["checked_at"] = time.time()
+        if latest:
+            data["latest"] = latest
+        write_cache(data)
 
 
 def start_refresh() -> None:
@@ -98,11 +101,33 @@ def start_refresh() -> None:
         pass
 
 
+@contextlib.contextmanager
+def cache_lock():
+    """Serialises read-modify-write of the cache across engines running at once."""
+    handle = None
+    try:
+        path = cache_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = open(path.with_name(path.name + ".lock"), "a")
+        fcntl.flock(handle, fcntl.LOCK_EX)
+    except OSError:
+        pass
+    try:
+        yield
+    finally:
+        if handle:
+            handle.close()
+
+
 def notice(now: float | None = None, current: str | None = None, spawn: bool = True) -> str | None:
     """The line to print, or None. Starts a refresh when the cache is a day old."""
     if os.environ.get("FAST_IOS_NO_UPDATE_CHECK") or os.environ.get("CI"):
         return None
-    now = time.time() if now is None else now
+    with cache_lock():
+        return _notice(time.time() if now is None else now, current, spawn)
+
+
+def _notice(now: float, current: str | None, spawn: bool) -> str | None:
     data = read_cache()
     if "checked_at" not in data or now - float(data["checked_at"]) >= DAY:
         data["checked_at"] = now  # one refresh a day even when several runs start together
@@ -121,12 +146,15 @@ def notice(now: float | None = None, current: str | None = None, spawn: bool = T
 
 
 def print_notice() -> None:
+    if sys.stderr is None:  # stderr closed (`2>&-`): print(file=None) would write to stdout
+        return
     try:
         line = notice()
-    except Exception:
-        return
-    if line:
-        print(line, file=sys.stderr)
+        if line:
+            print(line, file=sys.stderr)
+    except Exception:  # a closed stderr must not replace the engine's exit code
+        with contextlib.suppress(Exception):
+            sys.stderr = open(os.devnull, "w")  # nothing left for the exit-time flush to fail on
 
 
 def main(argv: list[str]) -> int:

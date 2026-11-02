@@ -198,6 +198,11 @@ if [[ "$MODE" == "copy" ]]; then
     # Default: copy the shared folder to a stable local path, so the original
     # (Downloads, AirDrop, a synced drive) can be deleted or moved afterwards.
     if [[ "$SOURCE" != "$INSTALL_DIR" ]]; then
+        if [[ -e "$INSTALL_DIR/.git" ]]; then
+            echo "error: $INSTALL_DIR is a git clone; a plain install would delete it."
+            echo "  Update it with: git -C \"$INSTALL_DIR\" pull && \"$INSTALL_DIR/install.sh\" --link"
+            exit 1
+        fi
         rm -rf "$INSTALL_DIR"
         mkdir -p "$(dirname "$INSTALL_DIR")"
         cp -R "$SOURCE" "$INSTALL_DIR"

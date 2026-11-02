@@ -80,15 +80,18 @@ function onPath(command) {
 }
 
 // Each agent's plugin updates on its own; the runtime above does not touch it.
+// Returns 1 when an agent's update command failed.
 function updatePlugins() {
+  let failed = 0;
   const codexHome = process.env.CODEX_HOME || path.join(home, ".codex");
   const codexCache = process.env.CODEX_PLUGIN_CACHE || path.join(codexHome, "plugins", "cache", PACKAGE);
   if (hasSkill(codexCache)) {
     if (onPath("codex")) {
       console.log("codex: updating the plugin");
-      run("codex", ["plugin", "marketplace", "upgrade", PACKAGE]);
-      run("codex", ["plugin", "add", `${PACKAGE}@${PACKAGE}`]);
-      console.log("codex: restart Codex to load it");
+      const ok = run("codex", ["plugin", "marketplace", "upgrade", PACKAGE]) === 0
+        && run("codex", ["plugin", "add", `${PACKAGE}@${PACKAGE}`]) === 0;
+      if (ok) console.log("codex: restart Codex to load it");
+      else { console.log("codex: the plugin update failed (output above)"); failed = 1; }
     } else {
       console.log(`codex: run codex plugin marketplace upgrade ${PACKAGE} && codex plugin add ${PACKAGE}@${PACKAGE}`);
     }
@@ -99,8 +102,8 @@ function updatePlugins() {
   if (claudeText.includes(`"${PACKAGE}@`)) {
     if (onPath("claude")) {
       console.log("claude: updating the plugin");
-      run("claude", ["plugin", "update", `${PACKAGE}@${PACKAGE}`]);
-      console.log("claude: restart Claude Code to load it");
+      if (run("claude", ["plugin", "update", `${PACKAGE}@${PACKAGE}`]) === 0) console.log("claude: restart Claude Code to load it");
+      else { console.log("claude: the plugin update failed (output above)"); failed = 1; }
     } else {
       console.log(`claude: run claude plugin update ${PACKAGE}@${PACKAGE}`);
     }
@@ -113,6 +116,7 @@ function updatePlugins() {
   if (exists(geminiExtension)) {
     console.log(`gemini: run gemini extensions update ${PACKAGE}`);
   }
+  return failed;
 }
 
 async function update() {
@@ -126,17 +130,18 @@ async function update() {
   if (!latest) console.log("update: npm could not be reached; installing this package's version");
   const installDir = process.env.FAST_IOS_INSTALL_DIR || path.join(home, ".local", "share", PACKAGE);
   const installed = installedRoot();
-  if (installed && path.resolve(installed) !== path.resolve(installDir) && exists(path.join(installed, ".git"))) {
+  // A git clone anywhere, the install folder included, is the user's: never copy over it.
+  const clone = [installed, installDir].find((dir) => dir && exists(path.join(dir, ".git")));
+  if (clone) {
     // A --link clone: copying over it would re-point the links away from the clone being edited.
-    console.log(`update: the tool is a linked clone (${installed}); update it with:`);
-    console.log(`  git -C "${installed}" pull && "${installed}/install.sh" --link`);
+    console.log(`update: the tool is a git clone (${clone}); update it with:`);
+    console.log(`  git -C "${clone}" pull && "${clone}/install.sh" --link`);
   } else {
     const status = run("bash", [path.join(root, "install.sh")]);
     if (status !== 0) return status;
     console.log(`update: the runtime is ${current}`);
   }
-  updatePlugins();
-  return 0;
+  return updatePlugins();
 }
 
 async function main() {
