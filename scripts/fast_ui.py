@@ -796,7 +796,7 @@ def screenshot(udid: str, path: Path, display: str | None = None) -> None:
     if image_type == "jpg":
         image_type = "jpeg"
     # simctl io hangs for good when the simulator dies mid-run; fail the flow instead of waiting forever.
-    selected = display or ACTIVE_DUO_DISPLAY.get(udid)
+    selected = display or active_duo_display(udid)
     display_arg = [f"--display={duo_display_uuid(udid, selected)}"] if selected else []
     command(
         ["xcrun", "simctl", "io", udid, "screenshot", *display_arg, f"--type={image_type}", str(path)],
@@ -923,6 +923,58 @@ LOCK_DIR = Path(os.environ.get("FAST_UI_LOCK_DIR") or Path.home() / "Library/Cac
 DISPOSABLE_PREFIXES = ("fastwf-", "fastui-")
 
 
+def duo_display_state_path(udid: str) -> Path:
+    return LOCK_DIR / f"{udid}.duo.json"
+
+
+def active_duo_display(udid: str) -> str | None:
+    """Return the display selected by the latest Duo action, including a previous process."""
+    if udid in ACTIVE_DUO_DISPLAY:
+        return ACTIVE_DUO_DISPLAY[udid]
+    try:
+        display = json.loads(duo_display_state_path(udid).read_text(encoding="utf-8")).get("display")
+    except (OSError, json.JSONDecodeError, AttributeError):
+        return None
+    if display not in DUO_DISPLAY_WIDTHS:
+        return None
+    ACTIVE_DUO_DISPLAY[udid] = display
+    return display
+
+
+def persist_duo_display(udid: str, display: str) -> None:
+    """Atomically keep a Duo framebuffer selection for later CLI invocations."""
+    if display not in DUO_DISPLAY_WIDTHS:
+        raise FastUIError(f"Duo display must be outer or inner, not {display!r}")
+    path = duo_display_state_path(udid)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        temporary.write_text(json.dumps({"display": display}) + "\n", encoding="utf-8")
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    ACTIVE_DUO_DISPLAY[udid] = display
+
+
+def clear_duo_display(udid: str) -> None:
+    ACTIVE_DUO_DISPLAY.pop(udid, None)
+    duo_display_state_path(udid).unlink(missing_ok=True)
+
+
+def list_simulators(scope: str) -> dict[str, Any]:
+    """List simulators without letting an unhealthy CoreSimulator/Device Hub hang the CLI."""
+    try:
+        result = command(["xcrun", "simctl", "list", "devices", scope, "--json"], timeout=30)
+    except subprocess.TimeoutExpired:
+        raise FastUIError(
+            "simctl list devices timed out after 30s; CoreSimulator or Device Hub is not responding"
+        ) from None
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise FastUIError(f"simctl list devices returned invalid JSON: {error}") from error
+
+
 def simulator_name(udid: str) -> str:
     try:
         with (Path.home() / "Library/Developer/CoreSimulator/Devices" / udid / "device.plist").open("rb") as stream:
@@ -953,7 +1005,7 @@ def resolve_simulator(value: str) -> str:
     # contain spaces ("iPhone Duo", "iPhone 17 Pro"). Keep those aliases backward-compatible.
     if SIMULATOR_UDID.fullmatch(value) or not any(character.isspace() for character in value):
         return value
-    listed = json.loads(command(["xcrun", "simctl", "list", "devices", "available", "--json"], timeout=30).stdout)
+    listed = list_simulators("available")
     matches = [
         device for devices in listed.get("devices", {}).values() for device in devices
         if device.get("name") == value and device.get("isAvailable", True)
@@ -1097,7 +1149,8 @@ class Recorder:
         stop_stale_recorder(self.udid)
         self.path.unlink(missing_ok=True)
         self.started = time.perf_counter()
-        display_arg = [f"--display={duo_display_uuid(self.udid, self.display)}"] if self.display else []
+        selected = self.display or active_duo_display(self.udid)
+        display_arg = [f"--display={duo_display_uuid(self.udid, selected)}"] if selected else []
         self.process = subprocess.Popen(
             [
                 "xcrun", "simctl", "io", self.udid, "recordVideo", *display_arg,
@@ -1290,7 +1343,7 @@ def set_duo_pose(udid: str, pose: str) -> str:
         if pose in ("book", "tabletop"):
             click_duo_button(udid, "book")
         display = "inner"
-    ACTIVE_DUO_DISPLAY[udid] = display
+    persist_duo_display(udid, display)
     invalidate_hierarchy(udid)
     return display
 
@@ -2869,7 +2922,7 @@ def run_shutdown(argv: list[str]) -> int:
     args = parser.parse_args(argv)
     if args.simulator:
         select_duo_toolchain(args.simulator)
-    listed = json.loads(command(["xcrun", "simctl", "list", "devices", "booted", "--json"]).stdout)
+    listed = list_simulators("booted")
     booted = [device for devices in listed.get("devices", {}).values() for device in devices
               if device.get("state") == "Booted"]
     if args.simulator:
@@ -2878,6 +2931,11 @@ def run_shutdown(argv: list[str]) -> int:
     for device in booted:
         stop_stale_recorder(device["udid"])
         command(["xcrun", "simctl", "shutdown", device["udid"]], timeout=60)
+        clear_duo_display(device["udid"])
+    # A targeted shutdown also means "leave this simulator stopped". Clear stale state when it
+    # was already off, so its next boot cannot inherit an old framebuffer choice.
+    if args.simulator and not booted:
+        clear_duo_display(wanted)
     names = ", ".join(f"{device.get('name')} ({device['udid']})" for device in booted)
     print(f"SHUTDOWN simulators={names}" if booted else "SHUTDOWN none booted")
     return 0
@@ -2888,7 +2946,11 @@ def main() -> int:
     if sys.argv[1:2] == ["do"] and not session_do(sys.argv[2:]):
         return run_do(sys.argv[2:])
     if sys.argv[1:2] == ["shutdown"]:
-        return run_shutdown(sys.argv[2:])
+        try:
+            return run_shutdown(sys.argv[2:])
+        except (FastUIError, OSError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired) as error:
+            print(f"FAIL error={error}", file=sys.stderr)
+            return 1
     if len(sys.argv) > 1 and sys.argv[1] in SESSION_COMMANDS:
         try:
             return session_main(sys.argv[1:])
