@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.0.2 — 2026-11-02
 
 - Put Codex and Antigravity marketplace installs first in the README and replace the long bullet
   table of contents with a compact icon navigation bar.
