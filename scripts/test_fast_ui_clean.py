@@ -26,6 +26,8 @@ class CleanTests(unittest.TestCase):
             mock.patch.object(fast_ui_clean, "CACHES", self.caches),
             mock.patch.object(fast_ui_clean.tempfile, "gettempdir", return_value=str(self.tmp)),
             mock.patch.object(fast_ui_clean, "runner_serving", return_value=False),
+            # Never the menu, even when the tests run in a terminal.
+            mock.patch.object(fast_ui_clean.sys.stdin, "isatty", return_value=False),
             mock.patch.dict(fast_ui_clean.os.environ, {}, clear=False),
         ]
         for patch in patches:
@@ -99,6 +101,47 @@ class CleanTests(unittest.TestCase):
         self.assertFalse(device.exists())
         self.assertFalse(app_build.exists())
         self.assertTrue(keep.exists())
+
+    def make_run(self, project: Path, root: str, task: str, run: str, age: float) -> Path:
+        folder = project / root / task / run
+        folder.mkdir(parents=True)
+        (folder / "metrics.json").write_text("{}")
+        stamp = 1_700_000_000 + age
+        fast_ui_clean.os.utime(folder, (stamp, stamp))
+        return folder
+
+    def test_scopes_pick_the_current_task_or_the_others(self) -> None:
+        project = self.root / "App"
+        home = self.make_run(project, "build/fast-ui", "home", "r1", 10)
+        dark = self.make_run(project, "build/fast-ui", "home@dark", "r1", 20)
+        login = self.make_run(project, "build/fast-device", "login", "r1", 30)  # the latest run
+        build = project / "build/fast-ui-dd/a"
+        build.mkdir(parents=True)
+        out = self.run_clean("--project", str(project), "--scope", "others", "--yes")
+        self.assertIn("TASK current=login", out)
+        self.assertFalse(home.exists())
+        self.assertFalse(dark.exists())
+        self.assertTrue(login.exists())
+        self.assertTrue(build.exists())
+        self.run_clean("--project", str(project), "--scope", "current", "--yes")
+        self.assertFalse(login.exists())
+        self.assertTrue(build.exists())
+
+    def test_named_task_and_variants(self) -> None:
+        project = self.root / "App"
+        home = self.make_run(project, "build/fast-ui", "home", "r1", 10)
+        dark = self.make_run(project, "build/fast-ui", "home@dark", "r1", 20)
+        login = self.make_run(project, "build/fast-ui", "login", "r1", 30)
+        self.run_clean("--project", str(project), "--scope", "current", "--task", "home", "--yes")
+        self.assertFalse(home.exists())
+        self.assertFalse(dark.exists())
+        self.assertTrue(login.exists())
+
+    def test_device_runs_go_with_scope_all(self) -> None:
+        project = self.root / "App"
+        run = self.make_run(project, "build/fast-device", "login", "r1", 10)
+        self.run_clean("--project", str(project), "--yes")
+        self.assertFalse(run.exists())
 
 
 if __name__ == "__main__":

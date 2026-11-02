@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- `clean --scope current|others` deletes only the current task's runs, or every other task's
+  (keeping the test builds and caches the current task uses); the current task is the latest
+  run's, or `--task <name>`. In a terminal, `clean --project <root>` asks which and confirms.
+  `--project` now also deletes the iPhone runs in `build/fast-device`.
+- `./release.sh patch|minor|major|X.Y.Z` cuts a release; the publish workflow now also creates
+  the GitHub release with the zip and the CHANGELOG section.
+
 ## 1.11.3 — 2026-11-02
 
 - `npx fast-ios-device-test --uninstall` (`install.sh --uninstall`) removes the tool: the links that

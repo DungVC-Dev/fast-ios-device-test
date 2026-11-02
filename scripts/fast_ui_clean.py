@@ -8,6 +8,13 @@ itself stays installed; `install.sh --uninstall` removes it).
     fastUIClean --project <root>     also that project's runs and test builds (build/fast-ui,
                                      build/fast-ui-dd, build/fast-device-tests)
     fastUIClean --maps --yes         also the screen maps (~/Library/Caches/fast-ui-map)
+    fastUIClean --project <root> --scope current [--task <name>] --yes
+                                     only the runs of the current task (default: the latest run's)
+    fastUIClean --project <root> --scope others --yes
+                                     the runs of every task but the current one; builds stay
+
+A task is a flow: its runs sit in build/fast-ui/<task>/ (Simulator) and build/fast-device/<task>/
+(iPhone); `home@dark` counts as `home`. Run in a terminal without --scope to pick from a menu.
 
 Evidence filed on the Desktop is never touched. A simulator lock a running flow holds, and the
 iPhone runner's cache while a runner is serving, are skipped and named.
@@ -94,6 +101,41 @@ def runner_serving() -> bool:
     return found.returncode == 0
 
 
+# Per-task run folders (one subfolder per flow), then builds shared by every task.
+RUN_ROOTS = ("build/fast-ui", "build/fast-device")
+BUILD_DIRS = ("build/fast-ui-dd", "build/fast-device-tests")
+SCOPES = ("all", "current", "others")
+
+
+def task_of(folder: Path) -> str:
+    """`home@dark@xxl` is a variant of `home`."""
+    return folder.name.split("@")[0]
+
+
+def task_folders(project: Path) -> list[Path]:
+    return [folder for root in RUN_ROOTS if (project / root).is_dir()
+            for folder in sorted((project / root).iterdir()) if folder.is_dir()]
+
+
+def current_task(project: Path) -> str | None:
+    """The task of the latest run in either engine."""
+    latest: tuple[float, str] | None = None
+    for folder in task_folders(project):
+        for run in folder.iterdir():
+            try:
+                stamp = run.stat().st_mtime
+            except OSError:
+                continue
+            if latest is None or stamp > latest[0]:
+                latest = (stamp, task_of(folder))
+    return latest[1] if latest else None
+
+
+def task_targets(project: Path, scope: str, task: str) -> list[Path]:
+    """Run folders of `task` (scope current) or of every other task (scope others)."""
+    return [folder for folder in task_folders(project) if (task_of(folder) == task) == (scope == "current")]
+
+
 def targets(project: Path | None, maps: bool) -> tuple[list[Path], list[str]]:
     """What to delete, and what is skipped with the reason."""
     remove: list[Path] = []
@@ -121,15 +163,29 @@ def targets(project: Path | None, maps: bool) -> tuple[list[Path], list[str]]:
     if project is not None:
         # Run output, the Simulator app builds (the flows' `derived_data`, build/fast-ui-dd by
         # convention) and the iPhone test builds.
-        for name in ("build/fast-ui", "build/fast-ui-dd", "build/fast-device-tests"):
+        for name in (*RUN_ROOTS, *BUILD_DIRS):
             path = project / name
             if not path.exists():
                 continue
-            if busy and name == "build/fast-ui":
+            if busy and name in RUN_ROOTS:
                 skipped.append(f"{path} (a flow is running; its run folder is being written)")
             else:
                 remove.append(path)
     return remove, skipped
+
+
+def ask_scope(project: Path, task: str | None) -> str | None:
+    """Menu for a person at a terminal; None when they cancel."""
+    task = task or current_task(project) or "?"
+    print(f"Clean what in {project}?")
+    print(f"  1) the current task's runs ({task})")
+    print(f"  2) the runs of every task but {task} (builds stay)")
+    print("  3) everything: all runs, the test builds and the tools' caches")
+    try:
+        answer = input("1/2/3 (anything else cancels): ").strip()
+    except EOFError:
+        answer = ""
+    return {"1": "current", "2": "others", "3": "all"}.get(answer)
 
 
 def delete(path: Path) -> None:
@@ -146,12 +202,48 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--yes", action="store_true", help="Delete; without it only list")
     parser.add_argument("--project", type=Path, help="Project root whose build/fast-ui and build/fast-device-tests go too")
     parser.add_argument("--maps", action="store_true", help="Also the screen maps fastUIMap prints")
+    parser.add_argument("--scope", choices=SCOPES,
+                        help="all (default): everything; current: the current task's runs; others: every other task's runs")
+    parser.add_argument("--task", help="The current task (flow name); default: the task of the latest run")
     args = parser.parse_args(argv)
     project = args.project.expanduser().resolve() if args.project else None
     if project is not None and not project.is_dir():
         print(f"FAIL error=no such project root: {project}", file=sys.stderr)
         return 1
-    remove, skipped = targets(project, args.maps)
+    scope = args.scope
+    asked = scope is None and project is not None and sys.stdin.isatty()
+    if asked:
+        scope = ask_scope(project, args.task)
+        if scope is None:
+            return 0
+    scope = scope or "all"
+    if scope == "all":
+        remove, skipped = targets(project, args.maps)
+    else:
+        if project is None:
+            print(f"FAIL error=--scope {scope} needs --project <root>", file=sys.stderr)
+            return 1
+        task = args.task or current_task(project)
+        if task is None:
+            print(f"FAIL error=no runs under {project}/build/fast-ui or build/fast-device", file=sys.stderr)
+            return 1
+        print(f"TASK current={task}")
+        remove, skipped = task_targets(project, scope, task), []
+        if scope == "current" and any(held(lock) for lock in lock_dir().glob("*.lock")):
+            # A flow is running, most likely this task's: its run folder is being written.
+            skipped = [f"{path} (a flow is running; its run folder may be being written)" for path in remove]
+            remove = []
+    if asked and not args.yes and remove:
+        # Someone at a terminal: list, then ask, instead of making them run it again with --yes.
+        for path in remove:
+            print(f"  {human(size_of(path))} {path}")
+        try:
+            args.yes = input(f"Delete these {len(remove)}? [y/N] ").strip().lower() in ("y", "yes")
+        except EOFError:
+            args.yes = False
+        if not args.yes:
+            print("CANCELLED")
+            return 0
     total = 0
     for path in remove:
         size = size_of(path)

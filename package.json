@@ -40,5 +40,8 @@
     "simulator",
     "xctest",
     "ui-test"
-  ]
+  ],
+  "scripts": {
+    "release": "bash release.sh"
+  }
 }

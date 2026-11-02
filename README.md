@@ -95,9 +95,17 @@ It lists what would go with sizes, and deletes only with `--yes`:
 npx fast-ios-device-test clean                          # list: iPhone runner build, helpers, idle locks, sessions
 npx fast-ios-device-test clean --project ~/MyApp --yes  # also that project's runs and test builds
 npx fast-ios-device-test clean --maps --yes             # also the screen maps fastUIMap prints
+npx fast-ios-device-test clean --project ~/MyApp --scope current --yes   # only the current task's runs
+npx fast-ios-device-test clean --project ~/MyApp --scope others --yes    # every task's runs but the current one
 ```
 
-`--project <root>` adds `build/fast-ui` (runs, screenshots, videos), `build/fast-ui-dd` (the
+A task is a flow: its runs sit in `build/fast-ui/<task>/` and `build/fast-device/<task>/`
+(`home@dark` counts as `home`). The current task is the one with the latest run, or
+`--task <name>`. `--scope others` keeps the test builds and the tools' caches, which the current
+task still uses. Run in a terminal with `--project` and no `--scope`, it asks which of the three
+and confirms before deleting.
+
+`--project <root>` adds `build/fast-ui` and `build/fast-device` (runs, screenshots, videos), `build/fast-ui-dd` (the
 Simulator app builds, the flows' `derived_data` by convention) and `build/fast-device-tests` (the
 iPhone test builds). `fastUIClean` is the same command once installed. Evidence on the Desktop is
 never touched; a simulator a flow is using, a running iPhone runner and the journal a killed run
@@ -121,8 +129,9 @@ For exploring a screen with Xcode 27's tools (pinch, drag, rotate, app console l
 writing a flow, register its MCP server once: `claude mcp add xcode -- xcrun mcpbridge`. The
 skill says when to use which.
 
-Maintainers: `bash make-zip.sh` builds the release zip next to the folder; pushing a `v*` tag
-that matches `package.json` publishes to npm from GitHub Actions.
+Maintainers: write what changed under `## Unreleased` in CHANGELOG.md, then
+`./release.sh patch` (or `minor`, `major`, `X.Y.Z`). It sets the version, runs the tests, commits,
+tags and pushes; GitHub Actions then publishes to npm and creates the GitHub release with the zip.
 
 ## What's new
 
