@@ -1,5 +1,5 @@
 ---
-description: Run a UI test on Simulator via a JSON flow (one screen, a system app, or a matrix of cases × simulators)
+description: Run a UI test on Simulator via a JSON flow (one screen, a system app, iPhone Duo poses, or a matrix)
 argument-hint: <screen, flow, or list of cases; optionally which simulators>
 allowed-tools: Bash, Read, Grep, Glob, Write, Edit, Agent
 ---
@@ -12,7 +12,7 @@ in this plugin): flow format, selectors, timing rules, the two-rerun cap and whe
 The engine is:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-$HOME/.local}/bin/fastSimulatorTest" <flow.json> [--reuse-app|--build-only|--record|--session <name>]
+"${CLAUDE_PLUGIN_ROOT:-$HOME/.local}/bin/fastSimulatorTest" <flow.json> [--reuse-app|--build-only|--record|--session <name>|--duo-pose <pose>]
 "${CLAUDE_PLUGIN_ROOT:-$HOME/.local}/bin/fastSimulatorTest" start <draft.json> | do '<action json>' | labels | save <flow.json>
 ```
 

@@ -14,8 +14,10 @@ import plistlib
 import re
 import shlex
 import signal
+import struct
 import subprocess
 import sys
+import tempfile
 import time
 from contextlib import contextmanager
 from datetime import datetime
@@ -768,12 +770,38 @@ def drag(udid: str, start: list[float], end: list[float], hold: float, duration:
     time.sleep(max(post_delay, TAP_SETTLE))
 
 
-def screenshot(udid: str, path: Path) -> None:
+DUO_DISPLAY_WIDTHS = {"outer": 1398, "inner": 2007}
+DUO_POSES = ("closed", "open", "book", "tabletop")
+# The display selected by the latest `duo` action, per simulator. A plain flow never enters it.
+ACTIVE_DUO_DISPLAY: dict[str, str] = {}
+
+
+def duo_display_uuid(udid: str, display: str) -> str:
+    if display not in DUO_DISPLAY_WIDTHS:
+        raise FastUIError(f"Duo display must be outer or inner, not {display!r}")
+    result = command(["xcrun", "simctl", "io", udid, "enumerate"], timeout=10)
+    uuid = ""
+    for line in result.stdout.splitlines():
+        found_uuid = re.search(r"\bUUID:\s*([0-9A-Fa-f-]{36})", line)
+        if found_uuid:
+            uuid = found_uuid.group(1)
+        found_width = re.search(r"\bDefault width:\s*(\d+)", line)
+        if found_width and uuid and int(found_width.group(1)) == DUO_DISPLAY_WIDTHS[display]:
+            return uuid
+    raise FastUIError(f"iPhone Duo {display} display is not available; open the device in Device Hub")
+
+
+def screenshot(udid: str, path: Path, display: str | None = None) -> None:
     image_type = path.suffix.removeprefix(".").lower() or "png"
     if image_type == "jpg":
         image_type = "jpeg"
     # simctl io hangs for good when the simulator dies mid-run; fail the flow instead of waiting forever.
-    command(["xcrun", "simctl", "io", udid, "screenshot", f"--type={image_type}", str(path)], timeout=30)
+    selected = display or ACTIVE_DUO_DISPLAY.get(udid)
+    display_arg = [f"--display={duo_display_uuid(udid, selected)}"] if selected else []
+    command(
+        ["xcrun", "simctl", "io", udid, "screenshot", *display_arg, f"--type={image_type}", str(path)],
+        timeout=30,
+    )
 
 
 # A popup sliding in or a toast fading in changes several percent of the screen between two
@@ -785,17 +813,19 @@ STABLE_INTERVAL = 0.25
 STABLE_REGION = [0, 0.07, 1, 1]
 
 
-def stable_screenshot(udid: str, path: Path, timeout: float, ratio: float) -> bool | None:
+def stable_screenshot(
+    udid: str, path: Path, timeout: float, ratio: float, display: str | None = None
+) -> bool | None:
     """Shoot until two shots in a row differ by at most `ratio`, keeping the last one; an image
     taken mid-animation is not evidence. True when settled, False after `timeout`, None without
     Pillow (one plain shot)."""
-    screenshot(udid, path)
+    screenshot(udid, path, display)
     probe = path.with_name(f".probe-{path.name}")
     deadline = time.monotonic() + timeout
     try:
         while time.monotonic() < deadline:
             time.sleep(STABLE_INTERVAL)
-            screenshot(udid, probe)
+            screenshot(udid, probe, display)
             try:
                 changed = motion_ratio(path, probe, STABLE_REGION, 12)
             except (FastUIError, OSError):
@@ -819,29 +849,34 @@ UI_SETTINGS: dict[str, dict[str, str]] = {
         "accessibility-extra-extra-extra-large": "ax-xxxl",
     },
 }
+VARIANT_TAGS = {**UI_SETTINGS, "duo_pose": {pose: f"duo-{pose}" for pose in DUO_POSES}}
 
 
-def ui_variant(setup: dict[str, Any], appearance: str | None, content_size: str | None) -> dict[str, str]:
+def ui_variant(
+    setup: dict[str, Any], appearance: str | None, content_size: str | None, duo_pose: str | None = None
+) -> dict[str, str]:
     """Effective simulator UI settings: CLI overrides win over `setup`."""
     variant: dict[str, str] = {}
-    for key, override in (("appearance", appearance), ("content_size", content_size)):
+    for key, override in (("appearance", appearance), ("content_size", content_size), ("duo_pose", duo_pose)):
         value = override or setup.get(key)
         if not value:
             continue
-        if value not in UI_SETTINGS[key]:
-            raise FastUIError(f"unsupported {key} '{value}'; use one of {', '.join(UI_SETTINGS[key])}")
+        if value not in VARIANT_TAGS[key]:
+            raise FastUIError(f"unsupported {key} '{value}'; use one of {', '.join(VARIANT_TAGS[key])}")
         variant[key] = value
     return variant
 
 
 def variant_name(name: str, variant: dict[str, str]) -> str:
-    return name + "".join(f"@{UI_SETTINGS[key][variant[key]]}" for key in UI_SETTINGS if key in variant)
+    return name + "".join(f"@{VARIANT_TAGS[key][variant[key]]}" for key in VARIANT_TAGS if key in variant)
 
 
 def apply_ui_settings(udid: str, variant: dict[str, str], previous: dict[str, str]) -> None:
     """Set the variant, recording each replaced value in `previous` before it changes so a
     failure halfway still restores what was already switched."""
     for key, value in variant.items():
+        if key not in UI_SETTINGS:
+            continue
         current = command(["xcrun", "simctl", "ui", udid, key]).stdout.strip()
         if current == value:
             continue
@@ -894,6 +929,44 @@ def simulator_name(udid: str) -> str:
             return str(plistlib.load(stream).get("name", ""))
     except (OSError, plistlib.InvalidFileException):
         return ""
+
+
+SIMULATOR_UDID = re.compile(r"^[0-9A-Fa-f-]{36}$")
+
+
+def select_duo_toolchain(simulator: str, requested: bool = False) -> None:
+    """Use the Xcode 27.1 toolchain that owns Device Hub when a flow names iPhone Duo."""
+    if os.environ.get("DEVELOPER_DIR") or ("iPhone Duo" not in simulator and not requested):
+        return
+    xcode = Path(os.environ.get("DUO_XCODE", "/Applications/Xcode 27.1.app")).expanduser()
+    developer = xcode / "Contents/Developer"
+    if not developer.exists():
+        raise FastUIError(
+            f"iPhone Duo needs Xcode 27.1; set DEVELOPER_DIR or DUO_XCODE (not found: {developer})"
+        )
+    os.environ["DEVELOPER_DIR"] = str(developer)
+
+
+def resolve_simulator(value: str) -> str:
+    """Accept the long-standing UDID form or one unambiguous available simulator name."""
+    # Short aliases are also used by test harnesses and wrapper scripts; real Apple device names
+    # contain spaces ("iPhone Duo", "iPhone 17 Pro"). Keep those aliases backward-compatible.
+    if SIMULATOR_UDID.fullmatch(value) or not any(character.isspace() for character in value):
+        return value
+    listed = json.loads(command(["xcrun", "simctl", "list", "devices", "available", "--json"], timeout=30).stdout)
+    matches = [
+        device for devices in listed.get("devices", {}).values() for device in devices
+        if device.get("name") == value and device.get("isAvailable", True)
+    ]
+    booted = [device for device in matches if device.get("state") == "Booted"]
+    if len(booted) == 1:
+        return str(booted[0]["udid"])
+    if len(matches) == 1:
+        return str(matches[0]["udid"])
+    if not matches:
+        raise FastUIError(f"no available simulator named {value!r}; run xcrun simctl list devices available")
+    choices = ", ".join(f"{device.get('name')} ({device.get('udid')}, {device.get('state')})" for device in matches)
+    raise FastUIError(f"simulator name {value!r} is ambiguous: {choices}; use its UDID")
 
 
 class SimulatorLease:
@@ -1010,9 +1083,10 @@ def journal(key: str, value: Any = True) -> None:
 class Recorder:
     """Records the simulator screen with `simctl io recordVideo` for one run."""
 
-    def __init__(self, udid: str, path: Path) -> None:
+    def __init__(self, udid: str, path: Path, display: str | None = None) -> None:
         self.udid = udid
         self.path = path
+        self.display = display
         self.process: subprocess.Popen[bytes] | None = None
         self.started: float | None = None
 
@@ -1023,9 +1097,10 @@ class Recorder:
         stop_stale_recorder(self.udid)
         self.path.unlink(missing_ok=True)
         self.started = time.perf_counter()
+        display_arg = [f"--display={duo_display_uuid(self.udid, self.display)}"] if self.display else []
         self.process = subprocess.Popen(
             [
-                "xcrun", "simctl", "io", self.udid, "recordVideo",
+                "xcrun", "simctl", "io", self.udid, "recordVideo", *display_arg,
                 "--codec", "hevc", "--force", str(self.path),
             ],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -1109,6 +1184,8 @@ def verify_app(path: Path, bundle_id: str) -> None:
 def ensure_booted(udid: str) -> None:
     # Installing into a shut-down simulator fails only after the build has
     # already spent a minute, so boot (or confirm boot) up front.
+    # `bootstatus -b` waits for a boot in progress but does not start a shut-down device.
+    command(["xcrun", "simctl", "boot", udid], check=False, timeout=30)
     command(["xcrun", "simctl", "bootstatus", udid, "-b"], timeout=120)
     ensure_device_hub(udid)
 
@@ -1140,6 +1217,86 @@ def ensure_device_hub(udid: str) -> None:
         if axe(udid, "describe-ui", check=False).returncode == 0:
             return
         time.sleep(1)
+
+
+DUO_POSE_BUTTONS = {"rotate": 4, "closed": 5, "book": 6, "open": 7}
+DUO_TOOLBAR_GROUP = "group 3 of splitter group 1 of group 1 of splitter group 1 of group 1 of window 1"
+
+
+def click_duo_button(udid: str, button: str) -> None:
+    ensure_device_hub(udid)
+    number = DUO_POSE_BUTTONS[button]
+    click = (
+        'tell application "System Events" to tell process "DeviceHub" to click button '
+        f"{number} of {DUO_TOOLBAR_GROUP}"
+    )
+    result = command(["osascript", "-e", click], check=False, timeout=15)
+    if result.returncode != 0:
+        reopen = (
+            'tell application "System Events" to tell process "DeviceHub" to click '
+            f'(first menu item of menu 1 of menu bar item "Window" of menu bar 1 whose name contains "{udid}")'
+        )
+        # Some Device Hub builds name the menu item after the device, not its UDID.
+        if command(["osascript", "-e", reopen], check=False, timeout=15).returncode != 0:
+            name = simulator_name(udid) or "iPhone Duo"
+            reopen = reopen.replace(udid, name)
+            command(["osascript", "-e", reopen], check=False, timeout=15)
+        time.sleep(2)
+        result = command(["osascript", "-e", click], check=False, timeout=15)
+    if result.returncode != 0:
+        raise FastUIError("Device Hub's iPhone Duo controls are not reachable; open its device window and allow Accessibility")
+    time.sleep(3)
+
+
+def png_dimensions(path: Path) -> tuple[int, int]:
+    with path.open("rb") as stream:
+        header = stream.read(24)
+    if len(header) != 24 or header[:8] != b"\x89PNG\r\n\x1a\n":
+        raise FastUIError(f"Device Hub returned an invalid PNG: {path}")
+    return struct.unpack(">II", header[16:24])
+
+
+def duo_display_is_landscape(udid: str, display: str) -> bool:
+    handle, raw = tempfile.mkstemp(prefix="fast-ui-duo-", suffix=".png")
+    os.close(handle)
+    probe = Path(raw)
+    try:
+        screenshot(udid, probe, display)
+        width, height = png_dimensions(probe)
+        return width > height
+    finally:
+        probe.unlink(missing_ok=True)
+
+
+def set_duo_pose(udid: str, pose: str) -> str:
+    """Drive Device Hub into a deterministic pose and return the visible app display."""
+    if pose not in DUO_POSES:
+        raise FastUIError(f"Duo pose must be one of {', '.join(DUO_POSES)}, not {pose!r}")
+    name = simulator_name(udid)
+    if name and "iPhone Duo" not in name:
+        raise FastUIError(f"duo needs an iPhone Duo simulator, not {name!r}")
+    if pose == "closed":
+        click_duo_button(udid, "closed")
+        if duo_display_is_landscape(udid, "outer"):
+            click_duo_button(udid, "rotate")
+        display = "outer"
+    else:
+        # Flat first gives the inner framebuffer a stable orientation to inspect. Book is a
+        # vertical hinge; tabletop is the same fold after rotating the open device 90 degrees.
+        click_duo_button(udid, "open")
+        want_landscape = pose in ("open", "book")
+        if duo_display_is_landscape(udid, "inner") != want_landscape:
+            click_duo_button(udid, "rotate")
+        if pose in ("book", "tabletop"):
+            click_duo_button(udid, "book")
+        display = "inner"
+    ACTIVE_DUO_DISPLAY[udid] = display
+    invalidate_hierarchy(udid)
+    return display
+
+
+def duo_display_for_pose(pose: str | None) -> str | None:
+    return None if not pose else ("outer" if pose == "closed" else "inner")
 
 
 @contextmanager
@@ -1437,7 +1594,7 @@ GESTURE_KINDS = {
 TRAIL_GESTURES = GESTURE_KINDS | {
     "type_text", "launch", "activate", "terminate", "open_url", "pinch", "rotate", "orientation",
     "press_key", "press_button", "shake", "two_finger_tap", "two_finger_drag", "key_combo", "clear_text",
-    "dismiss_keyboard",
+    "dismiss_keyboard", "duo",
 }
 # HID keycodes for `press_key` and `key_combo` (AXe on the Simulator).
 KEY_CODES = {
@@ -1811,6 +1968,9 @@ def run_action(
 
     if kind == "wait":
         wait_selector(udid, action, timeout, optional_prompt_labels)
+    elif kind == "duo":
+        display = set_duo_pose(udid, str(required(action, "pose", f"action {index}")))
+        return {"pose": action["pose"], "display": display}
     elif kind in IPHONE_ONLY:
         raise FastUIError(
             f"{kind} works on an iPhone only, not on the Simulator: {IPHONE_ONLY[kind]}; run it with fastDeviceTest"
@@ -1974,14 +2134,15 @@ def run_action(
     elif kind == "screenshot":
         clear_prompts(udid, optional_prompt_labels)
         path = artifacts / action.get("name", f"step-{index:02d}.png")
+        display = action.get("display")
         if action.get("stable", True) is False:
-            screenshot(udid, path)
-            return {"path": str(path)}
+            screenshot(udid, path, display)
+            return {"path": str(path), **({"display": display} if display else {})}
         stable = stable_screenshot(
             udid, path, float(action.get("stable_timeout", STABLE_TIMEOUT)),
-            float(action.get("stable_ratio", STABLE_RATIO)),
+            float(action.get("stable_ratio", STABLE_RATIO)), display,
         )
-        return {"path": str(path), "stable": stable}
+        return {"path": str(path), "stable": stable, **({"display": display} if display else {})}
     elif kind == "motion":
         frame_count = int(action.get("frames", 3))
         if frame_count < 2:
@@ -1992,7 +2153,7 @@ def run_action(
         paths: list[Path] = []
         for frame_index in range(frame_count):
             path = artifacts / f"{action.get('name', 'motion')}-{frame_index + 1}.png"
-            screenshot(udid, path)
+            screenshot(udid, path, action.get("display"))
             paths.append(path)
             if frame_index + 1 < frame_count:
                 time.sleep(float(action.get("interval", 0.35)))
@@ -2454,7 +2615,9 @@ def session_main(argv: list[str]) -> int:
         base = flow_path.parent
         app = required(spec, "app", "flow")
         setup = spec.get("setup", {})
-        udid = required(app, "simulator", "app")
+        simulator = str(required(app, "simulator", "app"))
+        select_duo_toolchain(simulator, bool(setup.get("duo_pose")))
+        udid = resolve_simulator(simulator)
         bundle_id = required(app, "bundle_id", "app")
         ensure_not_busy(udid)
         phases: dict[str, float] = {}
@@ -2468,6 +2631,8 @@ def session_main(argv: list[str]) -> int:
         else:
             command(["xcrun", "simctl", "terminate", udid, bundle_id], check=False)
         set_preferences(udid, bundle_id, setup.get("preferences", {}))
+        if setup.get("duo_pose"):
+            set_duo_pose(udid, str(setup["duo_pose"]))
         command(["xcrun", "simctl", "launch", udid, bundle_id, *map(str, setup.get("launch_arguments", []))])
         phases["install_launch"] = round(time.perf_counter() - started - phases["prepare"], 2)
         root = session_root(spec, base)
@@ -2494,6 +2659,7 @@ def session_main(argv: list[str]) -> int:
         ensure_booted(udid)
         actions = [] if verb == "labels" else json.loads(args.target or "{}")
         actions = actions if isinstance(actions, list) else [actions]
+        check_actions(actions)
         result: dict[str, Any] | None = None
         for action in actions:
             index = len(session["actions"]) + 1
@@ -2570,6 +2736,10 @@ def parse_arguments() -> argparse.Namespace:
         help="Run as a Dynamic Type variant (overrides setup.content_size; task name gets @<short size>)",
     )
     parser.add_argument(
+        "--duo-pose", choices=DUO_POSES,
+        help="Set an iPhone Duo pose before launch; task name gets @duo-<pose>",
+    )
+    parser.add_argument(
         "--before", action="store_true",
         help="This run shows the bug (e.g. on the base build): a failure at the outcome step is filed as "
         "the case's before shot (env FAST_EVIDENCE=0 files nothing)",
@@ -2626,7 +2796,12 @@ def run_do(argv: list[str]) -> int:
         print(f"FAIL error=step {risky[0]}: '{risky[1]}' looks destructive; send it alone or add \"confirm\": true",
               file=sys.stderr)
         return 1
-    udid = args.simulator
+    try:
+        select_duo_toolchain(args.simulator, any(action.get("type") == "duo" for action in actions))
+        udid = resolve_simulator(args.simulator)
+    except (FastUIError, OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as error:
+        print(f"FAIL error={error}", file=sys.stderr)
+        return 1
     args.out.mkdir(parents=True, exist_ok=True)
     TRAIL = new_trail(args.app) if args.app else None
     results: list[dict[str, Any]] = []
@@ -2692,11 +2867,14 @@ def run_shutdown(argv: list[str]) -> int:
     )
     parser.add_argument("--simulator", help="UDID of the one simulator to shut down")
     args = parser.parse_args(argv)
+    if args.simulator:
+        select_duo_toolchain(args.simulator)
     listed = json.loads(command(["xcrun", "simctl", "list", "devices", "booted", "--json"]).stdout)
     booted = [device for devices in listed.get("devices", {}).values() for device in devices
               if device.get("state") == "Booted"]
     if args.simulator:
-        booted = [device for device in booted if device.get("udid") == args.simulator]
+        wanted = resolve_simulator(args.simulator)
+        booted = [device for device in booted if device.get("udid") == wanted]
     for device in booted:
         stop_stale_recorder(device["udid"])
         command(["xcrun", "simctl", "shutdown", device["udid"]], timeout=60)
@@ -2714,7 +2892,7 @@ def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] in SESSION_COMMANDS:
         try:
             return session_main(sys.argv[1:])
-        except (FastUIError, OSError, json.JSONDecodeError, subprocess.TimeoutExpired) as error:
+        except (FastUIError, OSError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired) as error:
             print(f"FAIL error={error}", file=sys.stderr)
             return 1
     args = parse_arguments()
@@ -2729,10 +2907,17 @@ def main() -> int:
     base = flow_path.parent
     app = required(spec, "app", "flow")
     setup = spec.get("setup", {})
-    variant = ui_variant(setup, args.appearance, args.content_size)
+    variant = ui_variant(setup, args.appearance, args.content_size, args.duo_pose)
     name = variant_name(required(spec, "name", "flow"), variant)
-    udid = required(app, "simulator", "app")
+    simulator = str(required(app, "simulator", "app"))
+    select_duo_toolchain(simulator, bool(variant.get("duo_pose")))
+    udid = resolve_simulator(simulator)
     bundle_id = required(app, "bundle_id", "app")
+    actions = required(spec, "actions", "flow")
+    try:
+        check_actions(actions)
+    except ValueError as error:
+        raise FastUIError(str(error)) from error
     TRAIL = new_trail(bundle_id)
     # A prebuilt app is driven as installed; a fresh install needs an .app to put back.
     fresh_install = bool(setup.get("fresh_install", not app.get("prebuilt")))
@@ -2774,7 +2959,8 @@ def main() -> int:
     results: list[dict[str, Any]] = []
     built = False
     current_step = "prepare"
-    recorder = Recorder(udid, artifacts / "run.mp4") if args.record else None
+    duo_pose = variant.get("duo_pose")
+    recorder = Recorder(udid, artifacts / "run.mp4", duo_display_for_pose(duo_pose)) if args.record else None
     video: Path | None = None
     labels_per_step: list[dict[str, Any]] = []
     previous_ui = PREVIOUS_UI
@@ -2844,6 +3030,8 @@ def main() -> int:
             if previous_ui:
                 journal("ui", dict(previous_ui))
             set_preferences(udid, bundle_id, setup.get("preferences", {}))
+            if duo_pose:
+                set_duo_pose(udid, duo_pose)
             if recorder:
                 recorder.start()
             launch = ["xcrun", "simctl", "launch", udid, bundle_id]
@@ -2858,7 +3046,7 @@ def main() -> int:
 
         optional_prompt_labels = setup.get("optional_permission_labels", [])
         defaults = {"settle": True} if setup.get("settle_after_actions") else {}
-        for index, action in enumerate(required(spec, "actions", "flow"), start=1):
+        for index, action in enumerate(actions, start=1):
             current_step = f"{index:02d}_{action.get('type', 'unknown')}"
             _CURRENT_STEP[0] = current_step
             with metrics.measure(current_step):

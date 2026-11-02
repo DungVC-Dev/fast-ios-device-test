@@ -84,6 +84,7 @@ Agent tự chọn giữa viết flow (để chạy lại, chạy nhiều máy, q
 ```
 /fastSimulatorTest mở tab Lyrics ở trạng thái premium, chụp màn hình
 /fastSimulatorTest màn Home, chạy cả sáng và tối, có quay video
+/fastSimulatorTest kiểm tra Home trên iPhone Duo ở closed, open, book và tabletop
 /fastDeviceTest trên iPhone của tôi: mở Home, kiểm tra không hiện paywall
 /fastDeviceTest trên iPhone, có quay video: mở paywall rồi đóng
 /fastDeviceTest bấm giữ widget ngoài màn hình chính, mở Edit Widget
@@ -107,6 +108,9 @@ Agent tự chọn giữa viết flow (để chạy lại, chạy nhiều máy, q
   iPhone, chúng chỉ là tham số khi mở app, không ghi vào máy.
 - Quay video được cả Simulator lẫn iPhone thật (iPhone dùng tính năng quay của XCTest, không cần
   Control Center hay QuickTime); video nén nhẹ, khoảng 1–2 MB cho 20 giây.
+- iPhone Duo cần Xcode 27.1. Flow dùng `{"type":"duo","pose":"closed|open|book|tabletop"}`
+  để đổi màn hình/tư thế; `screenshot` có thể ghi `"display":"outer"` hoặc `"inner"`.
+  Chạy matrix bằng `--duo-pose`; mỗi dòng có hậu tố `@duo-<pose>` và video quay đúng framebuffer.
 - Bàn phím tiếng Việt (Telex) trên máy sẽ biến chữ agent gõ; số và phím thì không sao.
 
 Có gì mới: xem [CHANGELOG.md](CHANGELOG.md).

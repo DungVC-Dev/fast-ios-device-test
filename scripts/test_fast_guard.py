@@ -64,6 +64,18 @@ class RiskyStepTests(unittest.TestCase):
             fast_guard.check_actions([{"type": "tap_label", "label": "Go", "expect": "About"}])
         fast_guard.check_actions([{"type": "tap_label", "label": "Go", "expect": {"label": "About"}}])
 
+    def test_duo_and_display_shapes_are_checked(self) -> None:
+        fast_guard.check_actions([
+            {"type": "duo", "pose": "tabletop"},
+            {"type": "screenshot", "display": "inner"},
+        ])
+        with self.assertRaisesRegex(ValueError, "duo pose"):
+            fast_guard.check_actions([{"type": "duo", "pose": "tent"}])
+        with self.assertRaisesRegex(ValueError, "display must"):
+            fast_guard.check_actions([{"type": "screenshot", "display": "both"}])
+        with self.assertRaisesRegex(ValueError, "supported only"):
+            fast_guard.check_actions([{"type": "tap_point", "x": 1, "y": 2, "display": "outer"}])
+
     def test_prompt_labels_parse_from_text_or_rules(self) -> None:
         self.assertEqual(fast_guard.parse_prompt_labels("Allow, Don’t Allow"), ["Allow", "Don’t Allow"])
         self.assertEqual(fast_guard.parse_prompt_labels('[{"title_contains": "track", "tap": "Ask App Not to Track"}]'),

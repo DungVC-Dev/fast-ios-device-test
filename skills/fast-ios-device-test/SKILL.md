@@ -43,7 +43,7 @@ Everything the engine needs is in the flow; there is no per-project config.
     "scheme": "MyApp-DEV",
     "configuration": "Debug-DEV",
     "bundle_id": "com.example.myapp.dev",
-    "simulator": "<simulator UDID>",
+    "simulator": "<simulator UDID or unique full name>",
     "derived_data": "/abs/MyApp/build/fast-ui-dd",
     "app_path": "/abs/MyApp/build/fast-ui-dd/Build/Products/Debug-DEV-iphonesimulator/MyApp.app",
     "build_inputs": ["/abs/MyApp/MyApp", "/abs/MyApp/MyApp.xcodeproj/project.pbxproj"]
@@ -69,8 +69,9 @@ Everything the engine needs is in the flow; there is no per-project config.
   session finds them and they go when the user deletes the folder after the merge. Never under
   `build/fast-ui` or `build/fast-device` (pruned after `FAST_UI_KEEP_DAYS`). Throwaway flows may
   stay in the session scratchpad.
-- Absolute paths only (a flow outside the repo must name `project_root`). `simulator` is a UDID from `xcrun simctl list devices available` that
-  nobody else runs the app on. `derived_data` is its own folder, never Xcode's DerivedData;
+- Absolute paths only (a flow outside the repo must name `project_root`). `simulator` is a UDID
+  or unique full name from `xcrun simctl list devices available` that nobody else runs the app on.
+  `derived_data` is its own folder, never Xcode's DerivedData;
   `app_path` is the `.app` inside it. `build_inputs` (source folders + `project.pbxproj`) drive
   the build cache; without them every run rebuilds.
 - Selector keys on `wait`, `wait_absent`, `assert_absent`, `tap_first`, `tap_label`, `scroll_to`
@@ -85,6 +86,12 @@ Everything the engine needs is in the flow; there is no per-project config.
   `two_finger_drag`, `orientation`. Keys and which engine runs what: the table in
   [references/usage.md](references/usage.md#gestures-keyboard-controls-assertions-and-device-state).
   Prove a control changed with `assert_value`, not by the tap succeeding.
+- **iPhone Duo (Xcode 27.1):** use `"simulator": "iPhone Duo"`. A step
+  `{"type":"duo","pose":"closed|open|book|tabletop"}` selects the pose (`closed` uses the
+  outer display; the others use the inner display). A following `screenshot` automatically
+  targets that framebuffer, or can set `"display":"outer|inner"` explicitly. For a recorded
+  matrix, run the flow once per `--duo-pose`; see
+  [references/usage.md](references/usage.md#iphone-duo-xcode-271).
 - `tap_label` matches a `Button`; when the flow sets no `element_type` and exactly one node of
   any type has the label, it taps that node and reports `fallback_type`.
 
@@ -187,4 +194,5 @@ message, each with its flow paths, UDID, the command
 `fastSimulatorTest <flow> --reuse-app --session <name> [--record]`, the two-rerun cap and
 "return only the PASS/FAIL lines"; never two agents on one simulator. Collate with
 `fastUIReport --root <artifacts-root> --session <name>` and paste its table. Variants:
-`--appearance light|dark`, `--content-size <simctl name>` are their own rows.
+`--appearance light|dark`, `--content-size <simctl name>` and iPhone Duo
+`--duo-pose closed|open|book|tabletop` are their own rows.

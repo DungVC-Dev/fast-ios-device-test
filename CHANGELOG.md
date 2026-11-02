@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `fastSimulatorTest` supports the Xcode 27.1 iPhone Duo in Device Hub: a flow can select the
+  simulator by name, switch between `closed`, `open`, `book` and `tabletop` with the `duo`
+  action, and capture the outer or inner framebuffer. `setup.duo_pose` / `--duo-pose` create
+  named matrix rows and target screen recordings at the matching display.
+
 ## 2.0.3 — 2026-11-02
 
 - `npx fast-ios-device-test update`: installs the latest npm version (an older cached npx package

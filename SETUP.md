@@ -93,7 +93,7 @@ Xcode's run destination; ask the user before using one of those).
 ```bash
 xcrun simctl list devices available | grep -E "iPhone"     # (Shutdown) / (Booted) per simulator
 fastSimulatorTest do '[{"type":"launch"},{"type":"wait","label":"General","timeout":90}]' \
-  --simulator <udid> --app com.apple.Preferences
+  --simulator '<udid or unique simulator name>' --app com.apple.Preferences
 ```
 
 Expected: `PASS actions=2 labels=["Settings", …, "General", …]`. The first run boots the
@@ -101,6 +101,11 @@ simulator and, on Xcode 27, opens Device Hub (Xcode's simulator window) by itsel
 nothing to open by hand. Allow a minute. Shut it down afterwards if the user
 does not need it: `xcrun simctl shutdown <udid>`. Save the UDID for later as
 `FAST_SIMULATOR=<udid>` if the user wants a default.
+
+For iPhone Duo, install Xcode as `/Applications/Xcode 27.1.app` and use
+`--simulator 'iPhone Duo'`; the engine selects that toolchain automatically. For another path,
+set `DUO_XCODE` (or `DEVELOPER_DIR`). Device Hub must have Accessibility permission to change pose.
+The engine can then use `--duo-pose closed|open|book|tabletop`, or the same `duo` action in a flow.
 
 ## 6. iPhone (optional)
 
@@ -138,7 +143,7 @@ and `fastSimulatorTest shutdown` shuts down the booted simulators.
 ## 7. Optional
 
 - Defaults so commands need fewer flags: `FAST_DEVICE=<udid or full name>`,
-  `FAST_SIMULATOR=<udid>`, `FAST_UI_APP=<bundle id>`.
+  `FAST_SIMULATOR=<udid or unique full name>`, `FAST_UI_APP=<bundle id>`.
 - Xcode 27's MCP server for exploring with Apple's tools: `claude mcp add xcode -- xcrun mcpbridge`
   (skip it when `claude mcp list` already shows `xcode`).
 - Nothing is configured per project: flows carry the scheme, bundle id and simulator.
@@ -155,6 +160,7 @@ and `fastSimulatorTest shutdown` shuts down the booted simulators.
 | `the runner ended without a reply: …` | XCTest ended the test (the reason follows) | fix the step it names; the next request starts a new runner |
 | iOS asks to "Enable UI Automation" | first UI test on that iPhone | Settings › Developer › Enable UI Automation |
 | `describe-ui failed …` / `automation session` on the Simulator | Device Hub not running (Xcode 27) or the simulator still booting | rerun; the engine opens Device Hub itself |
+| `Device Hub's iPhone Duo controls are not reachable` | the Duo window is closed or macOS Accessibility is denied | open the Duo device window in Device Hub and allow the terminal/agent under Privacy & Security › Accessibility |
 | `CHECK missing: …` | see the table in step 3 | rerun `install.sh --link` |
 
 Where to read next: [skills/fast-ios-device-test/SKILL.md](skills/fast-ios-device-test/SKILL.md)
