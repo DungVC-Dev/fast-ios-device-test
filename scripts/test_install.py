@@ -6,9 +6,13 @@ import json
 import os
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
+
+import tool_manager
 
 REPO = Path(__file__).resolve().parent.parent
 LAUNCHERS = ["fastSimulatorTest", "fastDeviceTest", "fastUIReview", "fastUIReport",
@@ -29,6 +33,8 @@ class InstallCheckTests(unittest.TestCase):
                         FAST_IOS_INSTALL_DIR=str(self.home / "share"),
                         FAST_IOS_BIN_DIR=str(self.dirs["bin"]),
                         FAST_IOS_AXE_DIR=str(self.home / "axe"),
+                        FAST_IOS_BAGUETTE_DIR=str(self.home / "baguette"),
+                        FAST_IOS_INSTALL_TOOLS="axe",
                         CLAUDE_SKILLS_DIR=str(self.dirs["skills"]),
                         CLAUDE_COMMANDS_DIR=str(self.dirs["commands"]),
                         CLAUDE_AGENTS_DIR=str(self.dirs["agents"]),
@@ -44,6 +50,14 @@ class InstallCheckTests(unittest.TestCase):
             (self.dirs["bin"] / name).symlink_to(REPO / "scripts" / "fast_ui.py")
         (self.dirs["skills"] / "fast-ios-device-test").symlink_to(REPO / "skills" / "fast-ios-device-test")
         (self.dirs["agents"] / "ui-explorer.md").symlink_to(REPO / "agents" / "ui-explorer.md")
+        pin = json.loads((REPO / "vendor" / "tools.json").read_text())["baguette"]
+        local = self.home / "baguette" / "baguette"
+        local.parent.mkdir(exist_ok=True)
+        local.write_text(f"#!/bin/sh\necho {pin['version']}\n")
+        local.chmod(0o755)
+        wrapper = self.dirs["bin"] / "baguette"
+        wrapper.write_text(f'#!/bin/sh\nexec "{local}" "$@"\n')
+        wrapper.chmod(0o755)
 
     def run_install(self, *args):
         result = subprocess.run(["bash", str(REPO / "install.sh"), *args], env=self.env,
@@ -118,7 +132,7 @@ class InstallCheckTests(unittest.TestCase):
         self.assertNotIn("antigravity-cli/skills", source)
 
     def test_pin_matches_vendored_archive_and_install_axe_ignores_path_copy(self):
-        pin = json.loads((REPO / "vendor" / "axe.json").read_text())
+        pin = json.loads((REPO / "vendor" / "tools.json").read_text())["axe"]
         archive = REPO / "vendor" / Path(pin["url"]).name
         self.assertEqual(hashlib.sha256(archive.read_bytes()).hexdigest(), pin["sha256"])
         fake = self.home / "path-bin"
@@ -148,9 +162,39 @@ class InstallCheckTests(unittest.TestCase):
         wrapper.write_text(f'#!/bin/sh\nexec "{local}" "$@"\n')
         wrapper.chmod(0o755)
         _, out = self.run_install("--check")
-        pinned = json.loads((REPO / "vendor" / "axe.json").read_text())["version"]
+        pinned = json.loads((REPO / "vendor" / "tools.json").read_text())["axe"]["version"]
         self.assertIn(f"axe-pin={pinned} installed=0.0.1", out)
         self.assertIn(f"axe-{pinned}", self.missing_line(out))
+
+    def test_baguette_pin_is_download_only_and_generic_installer_preserves_bundle(self):
+        pin = json.loads((REPO / "vendor" / "tools.json").read_text())["baguette"]
+        self.assertFalse(pin["vendored"])
+        self.assertFalse((REPO / "vendor" / Path(pin["url"]).name).exists())
+        root = self.home / "fixture-root"
+        (root / "vendor").mkdir(parents=True)
+        fixture_pin = dict(pin, sha256="0" * 64)
+        (root / "vendor" / "tools.json").write_text(json.dumps({
+            "axe": json.loads((REPO / "vendor" / "tools.json").read_text())["axe"],
+            "baguette": fixture_pin,
+        }))
+        (root / "vendor" / "baguette-LICENSE").write_text("Apache-2.0 fixture")
+        payload = self.home / "payload" / "baguette-v0.2.12-macOS-arm64"
+        payload.mkdir(parents=True)
+        binary = payload / "Baguette"
+        binary.write_text("#!/bin/sh\necho 0.2.12\n")
+        binary.chmod(0o755)
+        (payload / "Baguette_Baguette.bundle").mkdir()
+        (payload / "Baguette_Baguette.bundle" / "resource.txt").write_text("kept")
+        archive = self.home / "baguette.tar.gz"
+        with tarfile.open(archive, "w:gz") as bundle:
+            bundle.add(payload, arcname=payload.name)
+        with mock.patch.object(tool_manager, "checked_archive", return_value=(archive, False)), \
+                mock.patch.object(tool_manager.platform, "machine", return_value="arm64"), \
+                mock.patch.dict(os.environ, self.env, clear=True):
+            tool_manager.install_one("baguette", root)
+        self.assertEqual((self.home / "baguette" / "Baguette_Baguette.bundle" / "resource.txt").read_text(), "kept")
+        self.assertEqual((self.home / "baguette" / "LICENSE").read_text(), "Apache-2.0 fixture")
+        self.assertIn("Upstream does not publish a NOTICE", (self.home / "baguette" / "NOTICE").read_text())
 
     def test_check_accepts_a_working_codex_link_and_no_codex(self):
         self.link_everything()

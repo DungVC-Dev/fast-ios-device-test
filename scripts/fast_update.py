@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Installed/latest package status, pinned/latest AXe status, and the once-a-day notice.
+"""Installed/latest package status, pinned/latest tool status, and once-a-day notices.
 
 The engines call `print_notice()` after a run. It never blocks and never installs anything:
 it reads a small cache, starts a detached refresh at most once a day, and prints one line to
@@ -9,7 +9,7 @@ turns it off.
     fast_update.py --status [root]   version=<installed> latest=<npm> (asks npm now, 3 s timeout);
                                      root: the installed tool's folder (default: this one)
     fast_update.py --refresh    update the cache (what the detached refresh runs)
-    fast_update.py --axe-status <pin.json> <axe>   pinned/installed/latest AXe (one-day cache)
+    fast_update.py --tool-status <name> <tools.json> <binary>   pinned/local/latest tool
 """
 
 from __future__ import annotations
@@ -27,7 +27,10 @@ from pathlib import Path
 
 PACKAGE = "fast-ios-device-test"
 REGISTRY = f"https://registry.npmjs.org/{PACKAGE}/latest"
-AXE_RELEASE = "https://api.github.com/repos/cameroncooke/AXe/releases/latest"
+TOOL_RELEASES = {
+    "axe": "https://api.github.com/repos/cameroncooke/AXe/releases/latest",
+    "baguette": "https://api.github.com/repos/tddworks/baguette/releases/latest",
+}
 DAY = 24 * 60 * 60
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -37,9 +40,9 @@ def cache_file() -> Path:
     return Path(os.environ.get("FAST_IOS_UPDATE_CACHE", default))
 
 
-def axe_cache_file() -> Path:
-    default = Path.home() / "Library" / "Caches" / PACKAGE / "axe-update.json"
-    return Path(os.environ.get("FAST_IOS_AXE_UPDATE_CACHE", default))
+def tool_cache_file(name: str) -> Path:
+    default = Path.home() / "Library" / "Caches" / PACKAGE / f"{name}-update.json"
+    return Path(os.environ.get(f"FAST_IOS_{name.upper()}_UPDATE_CACHE", default))
 
 
 def installed_version(root: Path = ROOT) -> str | None:
@@ -71,12 +74,13 @@ def fetch_latest(timeout: float = 3.0) -> str | None:
         return None
 
 
-def fetch_latest_axe(timeout: float = 3.0) -> str | None:
-    if os.environ.get("FAST_IOS_LATEST_AXE_VERSION"):
-        return os.environ["FAST_IOS_LATEST_AXE_VERSION"]
+def fetch_latest_tool(name: str, timeout: float = 3.0) -> str | None:
+    override = f"FAST_IOS_LATEST_{name.upper()}_VERSION"
+    if os.environ.get(override):
+        return os.environ[override]
     try:
         request = urllib.request.Request(
-            AXE_RELEASE,
+            TOOL_RELEASES[name],
             headers={"Accept": "application/vnd.github+json", "User-Agent": PACKAGE},
         )
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 (fixed HTTPS URL)
@@ -104,16 +108,16 @@ def write_cache(data: dict) -> None:
         pass
 
 
-def read_axe_cache() -> dict:
+def read_tool_cache(name: str) -> dict:
     try:
-        data = json.loads(axe_cache_file().read_text())
+        data = json.loads(tool_cache_file(name).read_text())
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}
 
 
-def write_axe_cache(data: dict) -> None:
-    path = axe_cache_file()
+def write_tool_cache(name: str, data: dict) -> None:
+    path = tool_cache_file(name)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
@@ -123,31 +127,31 @@ def write_axe_cache(data: dict) -> None:
         pass
 
 
-def latest_axe_once_a_day(now: float | None = None) -> tuple[str | None, str]:
-    """Return the cached/latest AXe version and how it was obtained for install.sh --check."""
+def latest_tool_once_a_day(name: str, now: float | None = None) -> tuple[str | None, str]:
+    """Return a cached/latest tool version and its source for install.sh --check."""
     if os.environ.get("FAST_IOS_NO_UPDATE_CHECK") or os.environ.get("CI"):
         return None, "disabled"
     current_time = time.time() if now is None else now
-    data = read_axe_cache()
+    data = read_tool_cache(name)
     source = "cache"
     if "checked_at" not in data or current_time - float(data["checked_at"]) >= DAY:
-        latest = fetch_latest_axe()
+        latest = fetch_latest_tool(name)
         data["checked_at"] = current_time
         if latest:
             data["latest"] = latest
-        write_axe_cache(data)
+        write_tool_cache(name, data)
         source = "github" if latest else "offline"
     return data.get("latest"), source
 
 
-def pinned_axe_version(path: Path) -> str | None:
+def pinned_tool_version(name: str, path: Path) -> str | None:
     try:
-        return str(json.loads(path.read_text(encoding="utf-8"))["version"])
+        return str(json.loads(path.read_text(encoding="utf-8"))[name]["version"])
     except (OSError, ValueError, KeyError, TypeError):
         return None
 
 
-def axe_binary_version(path: Path) -> str | None:
+def tool_binary_version(path: Path) -> str | None:
     try:
         result = subprocess.run([str(path), "--version"], capture_output=True, text=True, timeout=10, check=False)
     except (OSError, subprocess.TimeoutExpired):
@@ -243,13 +247,14 @@ def main(argv: list[str]) -> int:
             line += f" (update: npx {PACKAGE} update)"
         print(line)
         return 0
-    if argv[:1] == ["--axe-status"] and len(argv) >= 3:
-        pinned = pinned_axe_version(Path(argv[1]))
-        installed = axe_binary_version(Path(argv[2]))
-        latest, source = latest_axe_once_a_day()
-        line = f"axe-pin={pinned or 'unknown'} installed={installed or 'missing'} latest={latest or source}"
+    if argv[:1] == ["--tool-status"] and len(argv) >= 4 and argv[1] in TOOL_RELEASES:
+        name = argv[1]
+        pinned = pinned_tool_version(name, Path(argv[2]))
+        installed = tool_binary_version(Path(argv[3]))
+        latest, source = latest_tool_once_a_day(name)
+        line = f"{name}-pin={pinned or 'unknown'} installed={installed or 'missing'} latest={latest or source}"
         if is_newer(latest, pinned):
-            line += f" (update: npx {PACKAGE} update-axe)"
+            line += f" (update: npx {PACKAGE} update-{name})"
         print(line)
         return 0
     print(__doc__.strip())

@@ -7,9 +7,10 @@
 - Claude Code, Gemini CLI and Antigravity instructions now explain the complete iPhone Duo
   workflow: outer/inner flow steps, closed/open/book/tabletop pose matrices, per-framebuffer
   recordings and review of every pose row.
-- AXe is now a project-managed dependency pinned by version, release URL and SHA-256. Installs
-  always use the verified local copy instead of Homebrew; `update-axe` refreshes the pin and
-  offline tarball, and a daily workflow opens (but never merges) AXe update PRs.
+- AXe and baguette are project-managed dependencies pinned by version, release URL, SHA-256 and
+  licence. Installs use verified local copies instead of Homebrew; baguette's large official arm64
+  asset remains download-only, while AXe remains available offline. Tool updates and the daily
+  workflow refresh both pins and only open (never merge) dependency PRs.
 
 ## 2.0.4 — 2026-11-03
 

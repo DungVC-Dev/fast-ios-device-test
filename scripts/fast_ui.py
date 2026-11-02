@@ -116,6 +116,13 @@ def axe_executable() -> str:
     return str(local) if local.is_file() and os.access(local, os.X_OK) else "axe"
 
 
+def baguette_executable() -> str:
+    """Prefer project-managed baguette for the upcoming CarPlay engine; PATH is fallback."""
+    home = Path(os.environ.get("FAST_IOS_BAGUETTE_DIR", Path.home() / ".local/share/baguette")).expanduser()
+    local = home / "baguette"
+    return str(local) if local.is_file() and os.access(local, os.X_OK) else "baguette"
+
+
 def axe(udid: str, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     arguments = [axe_executable(), *args, "--udid", udid]
     for attempt in range(AXE_SESSION_RETRIES + 1):

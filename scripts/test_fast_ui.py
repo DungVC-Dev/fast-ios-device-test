@@ -1629,6 +1629,18 @@ class AxeErrorTests(unittest.TestCase):
                 fast_ui.axe("SIM", "describe-ui")
             self.assertEqual(command.call_args.args[0][0], "axe")
 
+    def test_local_baguette_is_preferred_and_path_is_the_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            home = Path(raw)
+            local = home / "baguette"
+            local.write_text("#!/bin/sh\n")
+            local.chmod(0o755)
+            with mock.patch.dict(fast_ui.os.environ, {"FAST_IOS_BAGUETTE_DIR": raw}):
+                self.assertEqual(fast_ui.baguette_executable(), str(local))
+            local.unlink()
+            with mock.patch.dict(fast_ui.os.environ, {"FAST_IOS_BAGUETTE_DIR": raw}):
+                self.assertEqual(fast_ui.baguette_executable(), "baguette")
+
     def test_automation_session_timeout_is_retried_once(self) -> None:
         timed_out = mock.Mock(returncode=1, stdout="", stderr="Error: Timed out creating the simulator remote automation session")
         good = mock.Mock(returncode=0, stdout="[]", stderr="")

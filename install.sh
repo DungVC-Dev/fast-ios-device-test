@@ -2,8 +2,8 @@
 # One-shot setup. Default: copy this folder to ~/.local/share and wire the skill,
 # the slash commands and the launchers into Claude Code + PATH.
 # `install.sh --link`  links this folder in place instead of copying (for editing).
-# `install.sh --install-axe` installs only the pinned AXe; `--update-axe` updates the repo pin,
-# vendored archive and local AXe. `--uninstall` removes what install.sh put in place.
+# `--install-tools` installs the pinned AXe + baguette; per-tool install/update flags are also
+# available. `--uninstall` removes what install.sh put in place.
 # Codex and Antigravity skill links (README, "Development install") are never created here, but
 # one left dangling (its clone moved or deleted) is re-pointed at this copy: a dead link hides
 # the skill from that agent while the launchers still work.
@@ -19,6 +19,7 @@ COMMANDS_DIR="${CLAUDE_COMMANDS_DIR:-$HOME/.claude/commands}"
 BIN_DIR="${FAST_IOS_BIN_DIR:-$HOME/.local/bin}"
 AGENTS_DIR="${CLAUDE_AGENTS_DIR:-$HOME/.claude/agents}"
 AXE_HOME="${FAST_IOS_AXE_DIR:-$HOME/.local/share/axe}"
+BAGUETTE_HOME="${FAST_IOS_BAGUETTE_DIR:-$HOME/.local/share/baguette}"
 CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
 CODEX_SKILLS_DIR="${CODEX_SKILLS_DIR:-$CODEX_HOME_DIR/skills}"
 CODEX_PLUGIN_CACHE="${CODEX_PLUGIN_CACHE:-$CODEX_HOME_DIR/plugins/cache/fast-ios-device-test}"
@@ -31,6 +32,10 @@ case "${1:-}" in
     --check) MODE="check"; [[ "${2:-}" == "--device" ]] && CHECK_DEVICE="${3:-}" ;;
     --install-axe) MODE="install-axe" ;;
     --update-axe) MODE="update-axe" ;;
+    --install-baguette) MODE="install-baguette" ;;
+    --update-baguette) MODE="update-baguette" ;;
+    --install-tools) MODE="install-tools" ;;
+    --update-tools) MODE="update-tools" ;;
     --uninstall) MODE="uninstall" ;;
 esac
 
@@ -58,10 +63,11 @@ plugin_has_skill() {
     [[ -n "$(find "$1" -path '*/skills/fast-ios-device-test/SKILL.md' 2>/dev/null | head -1)" ]]
 }
 
-if [[ "$MODE" == "install-axe" || "$MODE" == "update-axe" ]]; then
-    action="install"
-    [[ "$MODE" == "update-axe" ]] && action="update"
-    exec python3 "$SOURCE/scripts/axe_manager.py" "$action" --root "$SOURCE"
+if [[ "$MODE" == install-* || "$MODE" == update-* ]]; then
+    action="${MODE%%-*}"
+    tool="${MODE#*-}"
+    [[ "$tool" == "tools" ]] && tool="all"
+    exec python3 "$SOURCE/scripts/tool_manager.py" "$action" "$tool" --root "$SOURCE"
 fi
 
 if [[ "$MODE" == "uninstall" ]]; then
@@ -89,11 +95,13 @@ if [[ "$MODE" == "uninstall" ]]; then
             rm "$path"; echo "removed: $path"
         fi
     done
-    # The project-managed local AXe only when its wrapper is the one install.sh wrote; unrelated
-    # PATH copies stay.
-    if [[ -f "$BIN_DIR/axe" ]] && grep -q "exec \"$AXE_HOME/axe\"" "$BIN_DIR/axe" 2>/dev/null; then
-        rm -f "$BIN_DIR/axe"; rm -rf "$AXE_HOME"; echo "removed: local AXe ($AXE_HOME)"
-    fi
+    # Project-managed tools only when their wrappers are the ones install.sh wrote.
+    for entry in "axe:$AXE_HOME/axe:$AXE_HOME" "baguette:$BAGUETTE_HOME/baguette:$BAGUETTE_HOME"; do
+        name="${entry%%:*}"; rest="${entry#*:}"; binary="${rest%%:*}"; home="${rest#*:}"
+        if [[ -f "$BIN_DIR/$name" ]] && grep -Fq "exec \"$binary\"" "$BIN_DIR/$name" 2>/dev/null; then
+            rm -f "$BIN_DIR/$name"; rm -rf "$home"; echo "removed: local $name ($home)"
+        fi
+    done
     echo "uninstalled. Caches, screen maps and build output under each project's build/ were kept;"
     echo "delete them first with: npx fast-ios-device-test clean [--project <root>] --maps --yes"
     echo "A clone used with --link stays where it is."
@@ -108,7 +116,7 @@ fi
 # that would end the script before it could say so.
 xcode_major="$(xcodebuild -version 2>/dev/null | sed -n 's/^Xcode \([0-9]*\).*/\1/p' || true)"
 
-axe_version() { "$1" --version 2>/dev/null | grep -Eo '[0-9]+(\.[0-9]+)+' | head -1; }
+tool_version() { "$1" --version 2>/dev/null | grep -Eo '[0-9]+(\.[0-9]+)+' | head -1; }
 
 profile_count() {
     ls "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"/*.mobileprovision \
@@ -118,18 +126,21 @@ profile_count() {
 if [[ "$MODE" == "check" ]]; then
     missing=()
     [[ -n "$xcode_major" ]] && echo "xcode=$(xcodebuild -version | head -1 | sed 's/Xcode //')" || { echo "xcode=missing"; missing+=(xcode); }
-    pinned_axe="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$SOURCE/vendor/axe.json" 2>/dev/null || true)"
-    installed_axe="$(axe_version "$AXE_HOME/axe" || true)"
-    python3 "$SOURCE/scripts/fast_update.py" --axe-status "$SOURCE/vendor/axe.json" "$AXE_HOME/axe"
-    if [[ -z "$pinned_axe" ]]; then
-        missing+=("axe pin")
-    elif [[ "$installed_axe" != "$pinned_axe" ]]; then
-        missing+=("axe-$pinned_axe")
-    elif [[ ! -x "$BIN_DIR/axe" ]] || ! grep -Fq "exec \"$AXE_HOME/axe\"" "$BIN_DIR/axe" 2>/dev/null; then
-        missing+=("axe wrapper")
-    else
-        echo "axe=local $installed_axe ($AXE_HOME/axe)"
-    fi
+    for entry in "axe:$AXE_HOME/axe" "baguette:$BAGUETTE_HOME/baguette"; do
+        name="${entry%%:*}"; binary="${entry#*:}"
+        pinned="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]]["version"])' "$SOURCE/vendor/tools.json" "$name" 2>/dev/null || true)"
+        installed="$(tool_version "$binary" || true)"
+        python3 "$SOURCE/scripts/fast_update.py" --tool-status "$name" "$SOURCE/vendor/tools.json" "$binary"
+        if [[ -z "$pinned" ]]; then
+            missing+=("$name pin")
+        elif [[ "$installed" != "$pinned" ]]; then
+            missing+=("$name-$pinned")
+        elif [[ ! -x "$BIN_DIR/$name" ]] || ! grep -Fq "exec \"$binary\"" "$BIN_DIR/$name" 2>/dev/null; then
+            missing+=("$name wrapper")
+        else
+            echo "$name=local $installed ($binary)"
+        fi
+    done
     echo "python=$(python3 --version 2>&1 | sed 's/Python //') ($(command -v python3))"
     # The version the launchers run (a --link clone or the copy), and the latest on npm.
     installed_root=""
@@ -213,7 +224,7 @@ link() {
 
 [[ -n "$xcode_major" ]] || { echo "error: Xcode command line tools not found"; exit 1; }
 mkdir -p "$SKILLS_DIR" "$COMMANDS_DIR" "$BIN_DIR" "$AGENTS_DIR"
-python3 "$SOURCE/scripts/axe_manager.py" install --root "$SOURCE"
+python3 "$SOURCE/scripts/tool_manager.py" install all --root "$SOURCE"
 python3 -c "import PIL" 2>/dev/null || python3 -m pip install --user pillow >/dev/null 2>&1 \
     || echo "note: Pillow not installed; only fastUIReview, fastEvidenceSheet and the motion action need it (python3 -m pip install --user pillow)"
 

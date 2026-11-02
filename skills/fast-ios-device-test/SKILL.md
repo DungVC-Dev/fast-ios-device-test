@@ -9,9 +9,9 @@ Before the first run, confirm that `fastSimulatorTest` and `fastDeviceTest` are 
 are missing, use the bundled `fast-ios-device-test-setup` skill or run `npx fast-ios-device-test`
 and require its final `CHECK OK` before continuing. A run that ends with `update available: …`
 (at most once a day): tell the user once, at the end of the task; never update mid-task.
-The runtime uses the project's pinned AXe under `~/.local/share/axe` before any PATH copy. If
-`--check` reports an AXe mismatch, reinstall the current pin with `install.sh --install-axe`;
-only run `npx fast-ios-device-test update-axe` when the user asks to update that dependency.
+The runtime uses project-pinned AXe and baguette under `~/.local/share` before PATH copies. If
+`--check` reports a mismatch, reinstall current pins with `install.sh --install-tools` (or the
+per-tool flag); only run `npx fast-ios-device-test update-tools` when the user asks to update them.
 
 ## Which tool
 
@@ -24,7 +24,8 @@ only run `npx fast-ios-device-test update-axe` when the user asks to update that
 | PR evidence (sheet + clips) | nothing to run: every PASS flow run, and every `--before` run that failed at its outcome step, is filed in `~/Desktop/<project> <ticket>/` — "Evidence folder" in [references/usage.md](references/usage.md) |
 | Change that sheet (order, captions, a shot) | edit `source/sheet.json` there, then `fastEvidenceSheet <it>` — "Evidence sheet" in [references/usage.md](references/usage.md) |
 | Physical iPhone | read [references/device.md](references/device.md) first |
-| CarPlay Simulator, a Mac app, Apple Watch | out of reach of both engines: say so at once. Do not drive it with `osascript`, `cliclick`, `screencapture` or a hand-written XCUITest unless the user asks for that |
+| CarPlay Simulator | not yet exposed as a launcher; project-managed baguette is staged for the upcoming `fastCarPlayTest`. Do not invent a flow command yet |
+| A Mac app, Apple Watch | out of reach of both engines: say so at once. Do not drive it with `osascript`, `cliclick`, `screencapture` or a hand-written XCUITest unless the user asks for that |
 
 Never point both tools at one simulator: Xcode reinstalls the app over the fresh install.
 The engine is feature-agnostic: screen names, labels and assertions live only in flow
