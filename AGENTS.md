@@ -19,7 +19,8 @@ it directly for how a flow is written. Where it mentions a subagent, do the step
 `fast-ios-device-test` (`npx fast-ios-device-test` installs it), plugins for Claude Code, Codex and
 Antigravity, a Gemini CLI extension, and a release zip. macOS only; needs Xcode 26 or 27.
 
-- `/fastSimulatorTest` drives an app on Simulator through a JSON flow (AXe, bundled in `vendor/`),
+- `/fastSimulatorTest` drives an app on Simulator through a JSON flow (the AXe version pinned in
+  `vendor/axe.json`, installed under `~/.local/share/axe`),
   including iPhone Duo outer/inner displays and Device Hub poses on Xcode 27.1.
   Agents use the `duo` action for in-flow display changes and `--duo-pose` rows for
   one-framebuffer-per-pose recordings; they never drive Device Hub directly.
@@ -37,6 +38,7 @@ User-facing docs: `README.md` (English), `GUIDE.md` (Vietnamese, for testers), `
 | Path | What |
 |---|---|
 | `scripts/fast_ui.py` | Simulator flow engine (`--record`, `--session`) |
+| `scripts/axe_manager.py` | Installs or updates the pinned local AXe; stdlib only |
 | `scripts/fast_device.py` | Physical-iPhone engine |
 | `device-runner/` | XCUITest runner app. The `.xcodeproj` is committed; after editing `project.yml` run `cd device-runner && xcodegen generate` |
 | `scripts/fast_guard.py` | Checks `do` requests (destructive steps, shapes) for both engines |
@@ -51,15 +53,15 @@ User-facing docs: `README.md` (English), `GUIDE.md` (Vietnamese, for testers), `
 | `skills/fast-ios-device-test/` | The skill (`SKILL.md` + `references/device.md`, `review.md`, `usage.md`): how an agent *uses* the tool |
 | `commands/` | Slash commands `fastSimulatorTest`, `fastDeviceTest`, `fastUIReview` |
 | `agents/ui-explorer.md` | Haiku subagent for long step-by-step searches (experimental) |
-| `install.sh` | Installer: no flag = copy to `~/.local/share/fast-ios-device-test` and link; `--link` (link this clone), `--check [--device <name>]`, `--uninstall` |
-| `npm/install.js` | `npx` entry: passes flags to `install.sh`, adds the `clean` subcommand (runs `scripts/fast_ui_clean.py`) and `update` (latest npm version, a `--link` clone gets `git pull` advice, then each agent's plugin), refuses `--link` |
-| `scripts/fast_update.py` | Installed vs latest npm version (`install.sh --check`), the once-a-day "update available" line both engines print (`FAST_IOS_NO_UPDATE_CHECK=1` turns it off) |
+| `install.sh` | Installer: no flag = copy and link; `--link`, `--check`, `--install-axe`, `--update-axe`, `--uninstall` |
+| `npm/install.js` | `npx` entry: install plus `clean`, `update` and `update-axe`; refuses `--link` |
+| `scripts/fast_update.py` | Installed/latest npm and pinned/installed/latest AXe status; once-a-day caches respect `FAST_IOS_NO_UPDATE_CHECK=1` |
 | `.claude-plugin/` | Plugin + marketplace manifests |
 | `plugin.json`, `.agents/plugins/` | Portable Codex plugin manifest + repo marketplace catalog |
 | `.antigravity-plugin/`, `gemini-extension.json` | Antigravity plugin manifest + Gemini CLI extension manifest |
 | `assets/fast-ios-device-test.png` | Shared Codex/Antigravity marketplace icon |
-| `vendor/` | AXe release tarball (MIT) |
-| `release.sh`, `make-zip.sh`, `.github/workflows/` | Release, zip, npm publish, upstream sync |
+| `vendor/` | `axe.json` version/URL/SHA-256 pin, matching offline AXe tarball and MIT licence |
+| `release.sh`, `make-zip.sh`, `.github/workflows/` | Release, zip, npm publish, upstream sync, AXe update PR |
 | `scripts/package_marketplaces.py` | Clean Codex, Antigravity and Gemini CLI marketplace ZIPs under `build/plugin-packages/` |
 
 ## Commands
@@ -90,7 +92,8 @@ agy plugin validate --strict build/plugin-packages/stage/antigravity
 `install.sh` treats any unknown argument as a plain install: `./install.sh clean` or
 `./install.sh --help` **copies** the clone over `~/.local/share/fast-ios-device-test` and re-points
 the user's `~/.claude` and `~/.local/bin` links away from a `--link` clone. Read its source
-instead of probing it. Only run it with `--link` or `--check`. To test the installer without
+instead of probing it. Only run it with a documented flag (`--link`, `--check`, `--install-axe`,
+`--update-axe`, `--uninstall`) or no flag. To test the installer without
 touching the user's setup, point it elsewhere with `FAST_IOS_INSTALL_DIR`, `FAST_IOS_BIN_DIR`,
 `FAST_IOS_AXE_DIR`, `CLAUDE_SKILLS_DIR`, `CLAUDE_COMMANDS_DIR`, `CLAUDE_AGENTS_DIR`, `CODEX_HOME`,
 `CODEX_SKILLS_DIR`, `CODEX_PLUGIN_CACHE` and `ANTIGRAVITY_SKILLS_DIR` (`scripts/test_install.py`

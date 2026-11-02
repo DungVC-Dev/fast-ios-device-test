@@ -1,6 +1,8 @@
 """install.sh: broken links are reported by --check and a dead Codex/Antigravity skill link is
 repaired by an install. Every path points into a temporary home, never the user's setup."""
 
+import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -114,6 +116,41 @@ class InstallCheckTests(unittest.TestCase):
         source = (REPO / "install.sh").read_text()
         self.assertIn('$HOME/.gemini/config/skills', source)
         self.assertNotIn("antigravity-cli/skills", source)
+
+    def test_pin_matches_vendored_archive_and_install_axe_ignores_path_copy(self):
+        pin = json.loads((REPO / "vendor" / "axe.json").read_text())
+        archive = REPO / "vendor" / Path(pin["url"]).name
+        self.assertEqual(hashlib.sha256(archive.read_bytes()).hexdigest(), pin["sha256"])
+        fake = self.home / "path-bin"
+        fake.mkdir()
+        (fake / "axe").write_text("#!/bin/sh\necho 9.9.9\n")
+        (fake / "axe").chmod(0o755)
+        self.env["PATH"] = f"{fake}:{os.environ.get('PATH', '')}"
+        code, out = self.run_install("--install-axe")
+        self.assertEqual(code, 0, out)
+        installed = subprocess.run([str(self.home / "axe" / "axe"), "--version"], capture_output=True, text=True)
+        self.assertIn(pin["version"], installed.stdout + installed.stderr)
+        wrapper = self.dirs["bin"] / "axe"
+        self.assertIn(f'exec "{self.home / "axe" / "axe"}"', wrapper.read_text())
+        self.link_everything()
+        code, out = self.run_install("--check")
+        self.assertEqual(code, 0, out)
+        self.assertIn(f"axe-pin={pin['version']} installed={pin['version']}", out)
+        self.assertEqual(self.missing_line(out), "CHECK OK")
+
+    def test_check_requires_the_local_axe_to_match_the_pin(self):
+        self.link_everything()
+        local = self.home / "axe" / "axe"
+        local.parent.mkdir()
+        local.write_text("#!/bin/sh\necho 0.0.1\n")
+        local.chmod(0o755)
+        wrapper = self.dirs["bin"] / "axe"
+        wrapper.write_text(f'#!/bin/sh\nexec "{local}" "$@"\n')
+        wrapper.chmod(0o755)
+        _, out = self.run_install("--check")
+        pinned = json.loads((REPO / "vendor" / "axe.json").read_text())["version"]
+        self.assertIn(f"axe-pin={pinned} installed=0.0.1", out)
+        self.assertIn(f"axe-{pinned}", self.missing_line(out))
 
     def test_check_accepts_a_working_codex_link_and_no_codex(self):
         self.link_everything()

@@ -64,7 +64,8 @@ bundle id, simulator, build folder); the skill shows the smallest complete flow.
 - A Mac with Xcode 26 or 27.
 - iPhone Duo runs require Xcode 27.1 and Device Hub from that Xcode.
 - Node.js 18+ only for the `npx` install.
-- AXe 1.8.0 (the Simulator driver) is bundled, so neither Homebrew nor xcodegen is needed.
+- The AXe Simulator driver is pinned by version, URL and SHA-256 in `vendor/axe.json` and bundled
+  for offline installation. Homebrew is not used.
 - Pillow is installed when possible; only video review (`fastUIReview`, `fastEvidenceSheet`, the
   `motion` action) needs it.
 - For a physical iPhone: see [GUIDE.md](GUIDE.md) (Vietnamese) or [SETUP.md](SETUP.md).
@@ -151,7 +152,7 @@ What the installer puts where:
 |---|---|
 | The tool | `~/.local/share/fast-ios-device-test` (or your clone with `--link`) |
 | Launchers `fastSimulatorTest`, `fastDeviceTest`, `fastUIReport`, `fastUIReview`, `fastEvidenceSheet`, `fastUIMap`, `fastUIClean` | `~/.local/bin` (add it to `PATH` if the installer says so) |
-| AXe, when none ≥ 1.8.0 is on `PATH` | `~/.local/share/axe` |
+| The exact AXe version pinned by this project, plus its `~/.local/bin/axe` wrapper | `~/.local/share/axe` |
 | Claude Code skill | `~/.claude/skills/fast-ios-device-test` |
 | Claude Code slash commands `/fastSimulatorTest`, `/fastDeviceTest`, `/fastUIReview` | `~/.claude/commands` |
 | Claude Code `ui-explorer` subagent | `~/.claude/agents` |
@@ -164,7 +165,8 @@ npx fast-ios-device-test --check --device "<iPhone name>"  # also checks that iP
 ```
 
 From a clone or the zip, run `install.sh --check` instead. The last line is `CHECK OK`, or
-`CHECK missing: …` with the fix for each item.
+`CHECK missing: …` with the fix for each item. The check reports pinned, locally installed and
+latest AXe versions; its GitHub lookup is cached for one day.
 
 ### Update
 
@@ -178,6 +180,19 @@ the command. A `--link` clone is left alone: it prints the `git pull` + `install
 Restart the agents afterwards. Once a day, `fastSimulatorTest` and `fastDeviceTest` print
 `update available: <installed> -> <latest>` when npm has a newer version; they never install it
 themselves. `FAST_IOS_NO_UPDATE_CHECK=1` turns that line off.
+
+AXe updates independently of the package version, like updating a locked dependency:
+
+```bash
+npx fast-ios-device-test update-axe
+# From a clone: ./install.sh --update-axe
+```
+
+This downloads the latest universal macOS AXe release, verifies that it runs, rewrites
+`vendor/axe.json` and the matching offline tarball, then installs it locally. A normal install
+always verifies the pinned tarball's SHA-256 and installs that exact version. To reinstall only
+the existing pin without touching runtime links, run `./install.sh --install-axe`. Set
+`FAST_IOS_NO_UPDATE_CHECK=1` to disable both npm and AXe latest-version checks.
 
 <details>
 <summary><strong>Development install: link a local clone into Codex or Antigravity</strong></summary>
@@ -275,8 +290,8 @@ npx fast-ios-device-test --uninstall      # or install.sh --uninstall from a clo
 ```
 
 Removes the Claude Code skill, slash commands and subagent, the launchers (only links that point
-at this tool), the copied tool in `~/.local/share/fast-ios-device-test` and the bundled AXe (a
-Homebrew `axe` stays). A clone used with `--link` stays where it is. Caches, screen maps and each
+at this tool), the copied tool in `~/.local/share/fast-ios-device-test` and the project-managed
+local AXe. A clone used with `--link` stays where it is. Caches, screen maps and each
 project's `build/` output stay: run `clean` first to remove them too.
 
 It also removes a Codex or Antigravity skill link that points into that copy or at nothing. A

@@ -109,8 +109,15 @@ AXE_SESSION_MARKER = "automation session"
 AXE_SESSION_RETRIES = 1
 
 
+def axe_executable() -> str:
+    """Prefer the project's pinned local AXe; PATH is a compatibility fallback."""
+    home = Path(os.environ.get("FAST_IOS_AXE_DIR", Path.home() / ".local/share/axe")).expanduser()
+    local = home / "axe"
+    return str(local) if local.is_file() and os.access(local, os.X_OK) else "axe"
+
+
 def axe(udid: str, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    arguments = ["axe", *args, "--udid", udid]
+    arguments = [axe_executable(), *args, "--udid", udid]
     for attempt in range(AXE_SESSION_RETRIES + 1):
         result = command(arguments, check=False)
         transient = result.returncode != 0 and AXE_SESSION_MARKER in f"{result.stderr}\n{result.stdout}".lower()

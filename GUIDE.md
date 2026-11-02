@@ -5,7 +5,8 @@ PASS/FAIL kèm ảnh chụp.
 
 ## Cài đặt (máy mới)
 
-Chỉ cần có sẵn Xcode 26 hoặc 27. Không cần Homebrew hay xcodegen: AXe đã đóng kèm trong gói.
+Chỉ cần có sẵn Xcode 26 hoặc 27. Không cần Homebrew hay xcodegen: phiên bản AXe được khóa trong
+`vendor/axe.json`, kiểm SHA-256 rồi cài local từ tarball đóng kèm.
 
 **Cách nhanh nhất:** nhờ AI cài: "làm theo SETUP.md trong https://github.com/DungVC-Dev/fast-ios-device-test".
 [SETUP.md](SETUP.md) có từng bước, lệnh kiểm tra, kết quả mong đợi và cách sửa từng lỗi.
@@ -18,6 +19,8 @@ Cài hai phần:
    `fastSimulatorTest`/`fastDeviceTest` in một dòng `update available: …` (tối đa một lần mỗi ngày,
    không tự cài; tắt bằng `FAST_IOS_NO_UPDATE_CHECK=1`). Với Claude Code, lệnh này đã cài luôn
    skill, các lệnh `/fastSimulatorTest`, `/fastDeviceTest`, `/fastUIReview` và subagent.
+   Cập nhật riêng AXe như một dependency đã khóa: `npx fast-ios-device-test update-axe`; lệnh này
+   tải release AXe mới nhất, chạy kiểm tra version, cập nhật pin + tarball offline rồi cài lại local.
 2. **Skill cho agent khác** (bộ chạy ở bước 1 không cài phần này):
    - Codex: `codex plugin marketplace add DungVC-Dev/fast-ios-device-test` rồi
      `codex plugin add fast-ios-device-test@fast-ios-device-test`
@@ -25,7 +28,8 @@ Cài hai phần:
    - Gemini CLI: `gemini extensions install https://github.com/DungVC-Dev/fast-ios-device-test`
 
 Kiểm tra: `npx fast-ios-device-test --check`, dòng cuối phải là `CHECK OK`. Lệnh này cũng báo khi
-skill của Codex hoặc Antigravity bị hỏng (link trỏ vào thư mục đã xoá, plugin rỗng). Sau đó thoát
+version AXe pin/local/latest không khớp và khi skill của Codex hoặc Antigravity bị hỏng (link trỏ
+vào thư mục đã xoá, plugin rỗng). Sau đó thoát
 rồi mở lại agent.
 
 Dọn cache và bản build khi test (tool vẫn còn): `npx fast-ios-device-test clean --project <thư mục project> --yes` (không có `--yes` chỉ liệt kê). Gỡ tool khỏi máy: `npx fast-ios-device-test --uninstall` (cache và `build/` vẫn giữ, muốn xoá thì chạy `clean` trước).

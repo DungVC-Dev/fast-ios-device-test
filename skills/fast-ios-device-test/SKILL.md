@@ -9,6 +9,9 @@ Before the first run, confirm that `fastSimulatorTest` and `fastDeviceTest` are 
 are missing, use the bundled `fast-ios-device-test-setup` skill or run `npx fast-ios-device-test`
 and require its final `CHECK OK` before continuing. A run that ends with `update available: …`
 (at most once a day): tell the user once, at the end of the task; never update mid-task.
+The runtime uses the project's pinned AXe under `~/.local/share/axe` before any PATH copy. If
+`--check` reports an AXe mismatch, reinstall the current pin with `install.sh --install-axe`;
+only run `npx fast-ios-device-test update-axe` when the user asks to update that dependency.
 
 ## Which tool
 

@@ -2,8 +2,8 @@
 # One-shot setup. Default: copy this folder to ~/.local/share and wire the skill,
 # the slash commands and the launchers into Claude Code + PATH.
 # `install.sh --link`  links this folder in place instead of copying (for editing).
-# `install.sh --uninstall` removes what install.sh put in place (links, the copied tool, the
-# bundled AXe) and keeps caches and test output: `fastUIClean` deletes those.
+# `install.sh --install-axe` installs only the pinned AXe; `--update-axe` updates the repo pin,
+# vendored archive and local AXe. `--uninstall` removes what install.sh put in place.
 # Codex and Antigravity skill links (README, "Development install") are never created here, but
 # one left dangling (its clone moved or deleted) is re-pointed at this copy: a dead link hides
 # the skill from that agent while the launchers still work.
@@ -29,6 +29,8 @@ CHECK_DEVICE=""
 case "${1:-}" in
     --link) MODE="link" ;;
     --check) MODE="check"; [[ "${2:-}" == "--device" ]] && CHECK_DEVICE="${3:-}" ;;
+    --install-axe) MODE="install-axe" ;;
+    --update-axe) MODE="update-axe" ;;
     --uninstall) MODE="uninstall" ;;
 esac
 
@@ -56,6 +58,12 @@ plugin_has_skill() {
     [[ -n "$(find "$1" -path '*/skills/fast-ios-device-test/SKILL.md' 2>/dev/null | head -1)" ]]
 }
 
+if [[ "$MODE" == "install-axe" || "$MODE" == "update-axe" ]]; then
+    action="install"
+    [[ "$MODE" == "update-axe" ]] && action="update"
+    exec python3 "$SOURCE/scripts/axe_manager.py" "$action" --root "$SOURCE"
+fi
+
 if [[ "$MODE" == "uninstall" ]]; then
     # Only links that point at a copy of this tool (any folder holding scripts/fast_ui.py
     # or the skill): a file the user put there, or a link elsewhere, stays.
@@ -81,9 +89,10 @@ if [[ "$MODE" == "uninstall" ]]; then
             rm "$path"; echo "removed: $path"
         fi
     done
-    # The bundled AXe only when its wrapper is the one install.sh wrote; a Homebrew axe stays.
+    # The project-managed local AXe only when its wrapper is the one install.sh wrote; unrelated
+    # PATH copies stay.
     if [[ -f "$BIN_DIR/axe" ]] && grep -q "exec \"$AXE_HOME/axe\"" "$BIN_DIR/axe" 2>/dev/null; then
-        rm -f "$BIN_DIR/axe"; rm -rf "$AXE_HOME"; echo "removed: bundled AXe ($AXE_HOME)"
+        rm -f "$BIN_DIR/axe"; rm -rf "$AXE_HOME"; echo "removed: local AXe ($AXE_HOME)"
     fi
     echo "uninstalled. Caches, screen maps and build output under each project's build/ were kept;"
     echo "delete them first with: npx fast-ios-device-test clean [--project <root>] --maps --yes"
@@ -99,34 +108,7 @@ fi
 # that would end the script before it could say so.
 xcode_major="$(xcodebuild -version 2>/dev/null | sed -n 's/^Xcode \([0-9]*\).*/\1/p' || true)"
 
-axe_version() { axe --version 2>/dev/null | tr -dc '0-9.'; }
-
-# True when the axe on PATH is new enough for the selected Xcode (27 needs 1.8.0+).
-axe_ok() {
-    command -v axe >/dev/null || return 1
-    [[ "${xcode_major:-0}" -lt 27 ]] && return 0
-    [[ "$(printf '%s\n1.8.0\n' "$(axe_version)" | sort -V | head -1)" == "1.8.0" ]]
-}
-
-# The release tarball ships in vendor/, so a fresh Mac needs neither Homebrew nor a
-# download; Homebrew is only the fallback when the tarball is missing.
-install_axe() {
-    local tarball
-    tarball="$(ls "$SOURCE"/vendor/AXe-macOS-*-universal.tar.gz 2>/dev/null | head -1 || true)"
-    if [[ -n "$tarball" ]]; then
-        rm -rf "$AXE_HOME"
-        mkdir -p "$AXE_HOME" "$BIN_DIR"
-        tar -xzf "$tarball" -C "$AXE_HOME"
-        xattr -dr com.apple.quarantine "$AXE_HOME" 2>/dev/null || true
-        printf '#!/bin/bash\nexec "%s/axe" "$@"\n' "$AXE_HOME" > "$BIN_DIR/axe"
-        chmod +x "$BIN_DIR/axe" "$AXE_HOME/axe"
-        export PATH="$BIN_DIR:$PATH"
-        echo "axe: installed bundled $(basename "$tarball") into $AXE_HOME"
-        return
-    fi
-    command -v brew >/dev/null || { echo "error: no vendor/AXe tarball and no Homebrew (brew install cameroncooke/axe/axe)"; exit 1; }
-    brew install cameroncooke/axe/axe || { echo "error: Homebrew could not install 'axe'; unpack the universal tarball from https://github.com/cameroncooke/AXe/releases into $AXE_HOME"; exit 1; }
-}
+axe_version() { "$1" --version 2>/dev/null | grep -Eo '[0-9]+(\.[0-9]+)+' | head -1; }
 
 profile_count() {
     ls "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"/*.mobileprovision \
@@ -136,11 +118,17 @@ profile_count() {
 if [[ "$MODE" == "check" ]]; then
     missing=()
     [[ -n "$xcode_major" ]] && echo "xcode=$(xcodebuild -version | head -1 | sed 's/Xcode //')" || { echo "xcode=missing"; missing+=(xcode); }
-    if command -v axe >/dev/null; then
-        echo "axe=$(axe_version) ($(command -v axe))"
-        axe_ok || { echo "  axe is older than 1.8.0, which Xcode $xcode_major needs"; missing+=(axe-1.8.0); }
+    pinned_axe="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$SOURCE/vendor/axe.json" 2>/dev/null || true)"
+    installed_axe="$(axe_version "$AXE_HOME/axe" || true)"
+    python3 "$SOURCE/scripts/fast_update.py" --axe-status "$SOURCE/vendor/axe.json" "$AXE_HOME/axe"
+    if [[ -z "$pinned_axe" ]]; then
+        missing+=("axe pin")
+    elif [[ "$installed_axe" != "$pinned_axe" ]]; then
+        missing+=("axe-$pinned_axe")
+    elif [[ ! -x "$BIN_DIR/axe" ]] || ! grep -Fq "exec \"$AXE_HOME/axe\"" "$BIN_DIR/axe" 2>/dev/null; then
+        missing+=("axe wrapper")
     else
-        echo "axe=missing"; missing+=(axe)
+        echo "axe=local $installed_axe ($AXE_HOME/axe)"
     fi
     echo "python=$(python3 --version 2>&1 | sed 's/Python //') ($(command -v python3))"
     # The version the launchers run (a --link clone or the copy), and the latest on npm.
@@ -225,7 +213,7 @@ link() {
 
 [[ -n "$xcode_major" ]] || { echo "error: Xcode command line tools not found"; exit 1; }
 mkdir -p "$SKILLS_DIR" "$COMMANDS_DIR" "$BIN_DIR" "$AGENTS_DIR"
-axe_ok || install_axe
+python3 "$SOURCE/scripts/axe_manager.py" install --root "$SOURCE"
 python3 -c "import PIL" 2>/dev/null || python3 -m pip install --user pillow >/dev/null 2>&1 \
     || echo "note: Pillow not installed; only fastUIReview, fastEvidenceSheet and the motion action need it (python3 -m pip install --user pillow)"
 

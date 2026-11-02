@@ -436,9 +436,11 @@ Prebuilt app: `"app": {"bundle_id": "…", "prebuilt": true, "simulator": "<UDID
 `app_path`. `fresh_install` then defaults to false; set it true only together with an
 `app_path` to reinstall. Start such a flow with `{"type": "launch"}`.
 
-If an `axe` call fails with a SimulatorKit/PrivateFrameworks error, AXe is older
-than 1.8.0 and the selected Xcode is 27: `install.sh` unpacks the bundled 1.8.0 from
-`vendor/`. On Xcode 27 AXe also needs Device Hub running; the engine opens it when it is not.
+If an `axe` call fails with a SimulatorKit/PrivateFrameworks error, the selected Xcode may need a
+newer AXe. `install.sh --check` compares the version pinned in `vendor/axe.json` with the local
+copy under `~/.local/share/axe`; `install.sh --install-axe` restores that exact verified pin and
+`npx fast-ios-device-test update-axe` updates it only when the user requests that change. On
+Xcode 27 AXe also needs Device Hub running; the engine opens it when it is not.
 Pillow is only needed by `motion`, `fastUIReview` and `fastEvidenceSheet`.
 
 For a new task, generate the smallest temporary flow containing only its

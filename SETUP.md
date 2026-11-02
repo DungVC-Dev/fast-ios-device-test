@@ -44,9 +44,15 @@ Already cloned: run
 `git -C ~/fast-ios-device-test pull` and the same `install.sh --link`. Without git: download the
 release zip, unzip it, run its `install.sh` (no flag).
 
-The installer needs no Homebrew: it unpacks the bundled AXe into `~/.local/share/axe`, links the
+The installer needs no Homebrew: it verifies `vendor/axe.json` and the bundled archive, installs
+that exact AXe into `~/.local/share/axe`, creates `~/.local/bin/axe`, and links the
 skill into `~/.claude/skills`, the slash commands into `~/.claude/commands`, the `ui-explorer`
 subagent into `~/.claude/agents` and the launchers into `~/.local/bin`.
+
+AXe has its own locked-dependency update path: `npx fast-ios-device-test update-axe`, or
+`./install.sh --update-axe` in a clone. It verifies the downloaded binary, rewrites the version,
+URL and SHA-256 pin plus the offline tarball, and reinstalls it. `./install.sh --install-axe`
+reinstalls the current pin without changing the rest of the runtime.
 
 That is all Claude Code needs. Any other agent also needs the skill installed for it; this
 installer does not do that:
@@ -63,12 +69,14 @@ installer does not do that:
 npx fast-ios-device-test --check      # or ~/fast-ios-device-test/install.sh --check for a clone
 ```
 
-Expected last line: `CHECK OK`. `CHECK missing: …` names what to fix:
+Expected last line: `CHECK OK`. The `axe-pin=` line shows the pinned, local and latest release
+(cached for one day); `FAST_IOS_NO_UPDATE_CHECK=1` disables the latest lookup. `CHECK missing: …`
+names what to fix:
 
 | Missing | Fix |
 |---|---|
 | `xcode` | step 1 |
-| `axe` or `axe-1.8.0` (the check line reads `axe=<version>`) | rerun `install.sh --link` (it unpacks the bundled AXe) |
+| `axe-<pinned version>` or `axe wrapper` | rerun `install.sh --install-axe` (or a full install) |
 | a launcher, `skill`, `ui-explorer agent` | rerun `install.sh --link` |
 | `… (broken link)`: a link whose clone was moved or deleted (a `broken link:` line names it) | rerun `install.sh --link` from the clone you keep |
 | `codex skill (broken link)` | rerun `install.sh --link` (it re-points a dangling Codex or Antigravity link), or relink by hand (README, "Development install") |

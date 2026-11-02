@@ -1,0 +1,30 @@
+name: Check AXe release
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-pin:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update pinned AXe and vendored archive
+        run: python3 scripts/axe_manager.py update --no-install
+      - name: Open AXe update pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: automation/update-axe
+          delete-branch: true
+          commit-message: "Update pinned AXe release"
+          title: "Update pinned AXe release"
+          body: |
+            Updates `vendor/axe.json` and its verified offline tarball to the latest AXe release.
+
+            This automation only opens a pull request; it never merges or releases.
+          labels: dependencies
