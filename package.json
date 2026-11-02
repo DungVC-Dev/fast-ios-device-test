@@ -1,0 +1,44 @@
+{
+  "name": "fast-ios-device-test",
+  "version": "1.11.0",
+  "description": "Fast iOS UI-flow verification for Claude Code: Simulator and physical-iPhone flows, matrix runs, video review. `npx fast-ios-device-test` installs the skill and commands.",
+  "bin": {
+    "fast-ios-device-test": "npm/install.js"
+  },
+  "files": [
+    "npm/",
+    "install.sh",
+    "scripts/",
+    "skills/",
+    "commands/",
+    "agents/",
+    "device-runner/",
+    "vendor/",
+    ".claude-plugin/",
+    "README.md",
+    "GUIDE.md",
+    "SETUP.md",
+    "CHANGELOG.md",
+    "!**/__pycache__/**",
+    "!**/.DS_Store",
+    "!**/xcuserdata/**"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DungVC-Dev/fast-ios-device-test.git"
+  },
+  "homepage": "https://github.com/DungVC-Dev/fast-ios-device-test",
+  "author": "DungVC",
+  "keywords": [
+    "claude-code",
+    "claude-skill",
+    "ios",
+    "xcode",
+    "simulator",
+    "xctest",
+    "ui-test"
+  ]
+}

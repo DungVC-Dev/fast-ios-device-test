@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import importlib.util
+
 import json
 import os
 import plistlib
@@ -224,9 +226,11 @@ class LauncherCopyTests(unittest.TestCase):
             root = Path(raw)
             shutil.copytree(here, root / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
             (root / "bin").mkdir()
-            for launcher, script in {
-                "fastDeviceTest": "fast_device.py", "fastSimulatorTest": "fast_ui.py", "fastUIReview": "fast_ui_review.py", "fastUIMap": "fast_ui_map.py",
-            }.items():
+            launchers = {"fastDeviceTest": "fast_device.py", "fastSimulatorTest": "fast_ui.py", "fastUIMap": "fast_ui_map.py"}
+            if importlib.util.find_spec("PIL") is not None:
+                # fastUIReview imports Pillow, which install.sh treats as optional.
+                launchers["fastUIReview"] = "fast_ui_review.py"
+            for launcher, script in launchers.items():
                 shutil.copy(here / script, root / "bin" / launcher)
                 with self.subTest(launcher=launcher):
                     ran = subprocess.run(

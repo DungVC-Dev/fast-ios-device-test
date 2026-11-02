@@ -128,7 +128,8 @@ link "$HERE/scripts/fast_evidence_sheet.py" "$BIN_DIR/fastEvidenceSheet"
 link "$HERE/scripts/fast_ui_map.py" "$BIN_DIR/fastUIMap"
 link "$HERE/scripts/fast_ui_clean.py" "$BIN_DIR/fastUIClean"
 chmod +x "$HERE/scripts/fast_ui.py" "$HERE/scripts/fast_ui_report.py" "$HERE/scripts/fast_ui_review.py" "$HERE/scripts/fast_device.py" \
-    "$HERE/scripts/fast_evidence_sheet.py" "$HERE/scripts/fast_ui_map.py" "$HERE/scripts/fast_ui_clean.py"
+    "$HERE/scripts/fast_evidence_sheet.py" "$HERE/scripts/fast_ui_map.py" "$HERE/scripts/fast_ui_clean.py" \
+    "$HERE/scripts/fast_device_test.sh" "$HERE/scripts/shims/swiftlint"
 
 case ":$PATH:" in
 *":$BIN_DIR:"*) ;;

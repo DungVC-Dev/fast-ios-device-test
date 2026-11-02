@@ -10,7 +10,9 @@ Chỉ cần có sẵn Xcode 26 hoặc 27. Không cần Homebrew hay xcodegen: AX
 **Cách nhanh nhất:** nhờ AI cài: "làm theo SETUP.md trong https://github.com/DungVC-Dev/fast-ios-device-test".
 [SETUP.md](SETUP.md) có từng bước, lệnh kiểm tra, kết quả mong đợi và cách sửa từng lỗi.
 
-**Tự cài:**
+**Một lệnh:** `npx fast-ios-device-test` (chạy lại để cập nhật; `npx fast-ios-device-test --check` để xem còn thiếu gì).
+
+**Tự cài (để sửa tool):**
 
 1. Mở Terminal, chạy:
    ```bash

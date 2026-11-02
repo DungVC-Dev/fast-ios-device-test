@@ -27,6 +27,14 @@ whole setup from [SETUP.md](SETUP.md): every step has a command, the expected ou
 for each failure, including the checks for an iPhone (`fastDeviceTest check --device <name>`).
 
 ```bash
+npx fast-ios-device-test
+```
+
+That copies the tool to `~/.local/share/fast-ios-device-test` and wires the skill, commands and
+launchers; run it again to upgrade, `npx fast-ios-device-test --check` to see what is missing.
+To edit the tool, clone it instead:
+
+```bash
 git clone https://github.com/DungVC-Dev/fast-ios-device-test.git ~/fast-ios-device-test
 ~/fast-ios-device-test/install.sh --link
 ```

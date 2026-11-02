@@ -62,6 +62,11 @@ unlabelled nodes that carry an identifier.
 - Swipes by `direction` measured the screen as the largest frame in the tree, which in a long
   list is the scroll content (y −1580); they now use the application's frame.
 
+### Install with npx
+
+- `npx fast-ios-device-test` installs the tool (copied to `~/.local/share/fast-ios-device-test`) and
+  wires the skill, commands and launchers; `--check` reports what is missing.
+
 ### Cleaning up, and SwiftLint that still ran
 
 - `fastUIClean` lists the caches the tools leave on the Mac with their sizes and deletes them with
