@@ -216,6 +216,62 @@ class InputTests(unittest.TestCase):
 
 
 class ArmingTests(unittest.TestCase):
+    def test_arm_snapshot_captures_display_defaults_and_running_app(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        display = Path(folder.name) / "extended_display.plist"
+        display.write_bytes(b"previous")
+        domain = {
+            "CarPlayConfig": {"width": 800},
+            "CarPlayExtraOptions": False,
+            "DevicePreferences.U.SimulatorExternalDisplay": 42,
+        }
+        with mock.patch.object(fast_carplay, "display_plist", return_value=display), \
+             mock.patch.object(fast_carplay, "simulator_defaults", return_value=domain), \
+             mock.patch.object(fast_carplay, "simulator_app_running", return_value=True):
+            snapshot = fast_carplay.snapshot_carplay_arm_state("U")
+        self.assertEqual(snapshot["extended_display"], b"previous")
+        self.assertEqual(snapshot["defaults"]["CarPlayConfig"], (True, {"width": 800}))
+        self.assertTrue(snapshot["simulator_app_running"])
+
+    def test_restore_reinstates_display_defaults_boot_state_and_simulator_app(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        display = Path(folder.name) / "extended_display.plist"
+        display.write_bytes(b"changed")
+        snapshot = {
+            "extended_display": b"previous",
+            "defaults": {
+                "CarPlayConfig": (True, {"width": 800, "height": 480}),
+                "CarPlayExtraOptions": (False, None),
+                "DevicePreferences.U.SimulatorExternalDisplay": (False, None),
+            },
+            "simulator_app_running": True,
+        }
+        current = {
+            "CarPlayConfig": {"width": 1920, "height": 720},
+            "CarPlayExtraOptions": True,
+            "DevicePreferences.U.SimulatorExternalDisplay": 2714,
+            "Unrelated": "preserved",
+        }
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch.object(fast_carplay, "display_plist", return_value=display), \
+             mock.patch.object(fast_carplay, "simulator_defaults", return_value=current), \
+             mock.patch.object(fast_carplay, "quit_simulator_app_for_rearm") as quit_app, \
+             mock.patch.object(fast_carplay, "run", return_value=completed) as command:
+            fast_carplay.restore_carplay_arm_state(snapshot, "U", True)
+        self.assertEqual(display.read_bytes(), b"previous")
+        quit_app.assert_called_once()
+        import_call = next(call for call in command.call_args_list if call.args[0][:2] == ["defaults", "import"])
+        restored = plistlib.loads(import_call.kwargs["input_text"].encode("utf-8"))
+        self.assertEqual(restored["CarPlayConfig"], {"width": 800, "height": 480})
+        self.assertEqual(restored["Unrelated"], "preserved")
+        self.assertNotIn("CarPlayExtraOptions", restored)
+        self.assertNotIn("DevicePreferences.U.SimulatorExternalDisplay", restored)
+        self.assertIn(mock.call(["xcrun", "simctl", "boot", "U"], check=False, timeout=30),
+                      command.call_args_list)
+        self.assertTrue(any(call.args[0][0] == "open" for call in command.call_args_list))
+
     def test_open_carplay_traverses_io_submenu_before_clicking_item(self):
         completed = mock.Mock(returncode=0, stdout="false\n", stderr="")
         with mock.patch.object(fast_carplay, "run", return_value=completed) as command:
@@ -309,6 +365,13 @@ class ArmingTests(unittest.TestCase):
             with self.assertRaisesRegex(fast_carplay.CarPlayError, "non-agent Simulator window"):
                 fast_carplay.quit_simulator_app_for_rearm()
 
+    def test_rearm_can_close_its_own_extended_display_setup_dialog(self):
+        completed = mock.Mock(returncode=0, stdout="not-running\n", stderr="")
+        with mock.patch.object(fast_carplay, "run", return_value=completed) as command:
+            fast_carplay.quit_simulator_app_for_rearm()
+        script = command.call_args.args[0][-1]
+        self.assertIn('windowName is not "TV Out Extended Setup"', script)
+
     def test_opened_display_must_match_the_requested_size(self):
         with mock.patch.object(fast_carplay, "armed_display", return_value=(True, "1920x720@2")), \
              mock.patch.object(fast_carplay.time, "monotonic", side_effect=[0, 11]), \
@@ -342,17 +405,20 @@ class SessionIsolationTests(unittest.TestCase):
 
 
 class RunFlowRegressionTests(unittest.TestCase):
-    def flow(self, *, phone=False):
+    def flow(self, *, phone=False, install_path=None):
         folder = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: __import__("shutil").rmtree(folder))
         actions = [{"type": "launch"}] if phone else [
             {"surface": "car", "type": "car_screenshot", "name": "car"}
         ]
         path = folder / "flow.json"
+        app = {"project_root": str(folder), "bundle_id": "com.example", "prebuilt": True,
+               "simulator": "agent-tmp-test"}
+        if install_path:
+            app["install_path"] = install_path
         path.write_text(json.dumps({
             "version": 1, "name": "regression",
-            "app": {"project_root": str(folder), "bundle_id": "com.example", "prebuilt": True,
-                    "simulator": "agent-tmp-test"},
+            "app": app,
             "actions": actions,
         }))
         return path, folder / "artifacts"
@@ -390,6 +456,7 @@ class RunFlowRegressionTests(unittest.TestCase):
         with mock.patch.object(fast_carplay, "resolve_simulator", return_value=simulator), \
              mock.patch.object(fast_carplay, "preflight_simulator", return_value="/baguette"), \
              mock.patch.object(fast_carplay, "sim_carplay_window_exists", side_effect=[False, True]), \
+             mock.patch.object(fast_carplay, "armed_display", return_value=(True, "1920x720@2")), \
              mock.patch.object(fast_carplay, "arm_simulator"), \
              mock.patch.object(fast_carplay, "ensure_simulator_ready"), \
              mock.patch.object(fast_carplay, "ensure_sim_carplay_window",
@@ -402,11 +469,54 @@ class RunFlowRegressionTests(unittest.TestCase):
         self.assertIn(mock.call(["xcrun", "simctl", "shutdown", "U"], check=False, timeout=30),
                       command.call_args_list)
 
+    def test_failed_rearm_restores_previous_display_and_app_state(self):
+        flow, artifacts = self.flow()
+        simulator = {"udid": "U", "name": "agent-tmp-test", "state": "Booted"}
+        snapshot = {"extended_display": b"old", "defaults": {}, "simulator_app_running": True}
+        with mock.patch.object(fast_carplay, "resolve_simulator", return_value=simulator), \
+             mock.patch.object(fast_carplay, "preflight_simulator", return_value="/baguette"), \
+             mock.patch.object(fast_carplay, "sim_carplay_window_exists", return_value=False), \
+             mock.patch.object(fast_carplay, "armed_display", return_value=(True, "800x480@2")), \
+             mock.patch.object(fast_carplay, "snapshot_carplay_arm_state", return_value=snapshot), \
+             mock.patch.object(fast_carplay, "arm_simulator",
+                               side_effect=fast_carplay.CarPlayError("arm script failed")), \
+             mock.patch.object(fast_carplay, "restore_carplay_arm_state") as restore:
+            result = fast_carplay.run_flow(flow, "sim", "U", None, False, artifacts, None)
+        self.assertEqual(result, 1)
+        restore.assert_called_once_with(snapshot, "U", True)
+
+    def test_hardware_install_relaunches_before_waiting_for_window(self):
+        flow, artifacts = self.flow(install_path="/tmp/Test.app")
+        device = {"udid": "D", "name": "Phone", "connected": True}
+        order = []
+        with mock.patch.object(fast_carplay, "preflight_hardware", return_value=device), \
+             mock.patch.object(fast_carplay.fast_device, "install_app",
+                               side_effect=lambda *_: order.append("install")), \
+             mock.patch.object(fast_carplay, "relaunch_hardware_app",
+                               side_effect=lambda: order.append("relaunch")), \
+             mock.patch.object(fast_carplay, "wait_for_hardware_window",
+                               side_effect=lambda: (order.append("window"),
+                                                    (_ for _ in ()).throw(fast_carplay.CarPlayError("window failed")))[1]), \
+             mock.patch.object(fast_carplay.fast_device, "start_server") as server:
+            result = fast_carplay.run_flow(flow, "hardware", None, "D", False, artifacts, None)
+        self.assertEqual(result, 1)
+        self.assertEqual(order, ["install", "relaunch", "window"])
+        server.assert_not_called()
+
+    def test_hardware_preflight_does_not_require_an_open_window(self):
+        device = {"udid": "D", "name": "Phone", "connected": True}
+        with mock.patch.object(fast_carplay, "hardware_app", return_value=Path("/Applications/CarPlay Simulator.app")), \
+             mock.patch.object(fast_carplay.fast_device, "resolve_device", return_value=device), \
+             mock.patch.object(fast_carplay, "hardware_window") as window:
+            self.assertIs(fast_carplay.preflight_hardware({}, "D"), device)
+        window.assert_not_called()
+
     def test_hardware_final_phone_screenshot_failure_prevents_pass(self):
         flow, artifacts = self.flow(phone=True)
         device = {"udid": "D", "name": "Phone", "connected": True}
         response = {"status": "fail", "error": "iPhone is locked"}
         with mock.patch.object(fast_carplay, "preflight_hardware", return_value=device), \
+             mock.patch.object(fast_carplay, "wait_for_hardware_window"), \
              mock.patch.object(fast_carplay.fast_device, "start_server"), \
              mock.patch.object(fast_carplay, "run_phone_hardware"), \
              mock.patch.object(fast_carplay.fast_device, "request", return_value=response), \

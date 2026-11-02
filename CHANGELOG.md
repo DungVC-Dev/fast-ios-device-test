@@ -26,7 +26,9 @@
 - CarPlay results include optional case IDs for `fastUIReport` and always retain phone + car stills.
 - Harden CarPlay preflight and cleanup: preserve existing `fastSimulatorTest` session pointers,
   restore simulator/window lifecycle after setup failures, reject unsupported Simulator recording,
-  propagate failed hardware phone captures, and fully reap stuck `baguette` input processes.
+  transactionally restore prior CarPlay display/defaults after failed re-arming, install before
+  relaunching and waiting for the hardware window, propagate failed hardware phone captures, and
+  fully reap stuck `baguette` input processes.
 
 ## 2.0.4 — 2026-11-03
 

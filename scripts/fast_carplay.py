@@ -49,6 +49,7 @@ HARDWARE_APPS = (
     Path("/Applications/CarPlay Simulator.app"),
 )
 BAGUETTE_INSTALL_HINT = "run ./install.sh --install-baguette"
+SIMULATOR_DEFAULTS_DOMAIN = "com.apple.iphonesimulator"
 
 
 class CarPlayError(RuntimeError):
@@ -178,6 +179,65 @@ def armed_display(udid: str) -> tuple[bool, str]:
         return False, "extended display has an invalid scale"
     size = f"{data.get('width')}x{data.get('height')}@{scale}"
     return True, size
+
+
+def simulator_defaults() -> dict[str, Any]:
+    result = run(["defaults", "export", SIMULATOR_DEFAULTS_DOMAIN, "-"], check=False)
+    if result.returncode or not result.stdout.strip():
+        return {}
+    try:
+        value = plistlib.loads(result.stdout.encode("utf-8"))
+    except (plistlib.InvalidFileException, ValueError) as error:
+        raise CarPlayError(f"cannot read Simulator.app defaults: {error}") from error
+    return value if isinstance(value, dict) else {}
+
+
+def simulator_app_running() -> bool:
+    return run(["pgrep", "-x", "Simulator"], check=False).returncode == 0
+
+
+def snapshot_carplay_arm_state(udid: str) -> dict[str, Any]:
+    path = display_plist(udid)
+    domain = simulator_defaults()
+    keys = (
+        "CarPlayConfig",
+        "CarPlayExtraOptions",
+        f"DevicePreferences.{udid}.SimulatorExternalDisplay",
+    )
+    return {
+        "extended_display": path.read_bytes() if path.exists() else None,
+        "defaults": {key: (key in domain, domain.get(key)) for key in keys},
+        "simulator_app_running": simulator_app_running(),
+    }
+
+
+def restore_carplay_arm_state(snapshot: dict[str, Any], udid: str, was_booted: bool) -> None:
+    # CoreSimulator can overwrite this plist while either process is live, so stop both first.
+    quit_simulator_app_for_rearm()
+    run(["xcrun", "simctl", "shutdown", udid], check=False, timeout=30)
+    path = display_plist(udid)
+    previous_display = snapshot.get("extended_display")
+    if previous_display is None:
+        path.unlink(missing_ok=True)
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(previous_display)
+
+    domain = simulator_defaults()
+    for key, (present, value) in snapshot.get("defaults", {}).items():
+        if present:
+            domain[key] = value
+        else:
+            domain.pop(key, None)
+    payload = plistlib.dumps(domain, fmt=plistlib.FMT_XML).decode("utf-8")
+    run(["defaults", "import", SIMULATOR_DEFAULTS_DOMAIN, "-"], input_text=payload)
+
+    if was_booted:
+        run(["xcrun", "simctl", "boot", udid], check=False, timeout=30)
+        run(["xcrun", "simctl", "bootstatus", udid, "-b"], timeout=120)
+    if snapshot.get("simulator_app_running"):
+        simulator_app = Path("/Applications/Xcode.app/Contents/Developer/Applications/Simulator.app")
+        run(["open", "-a", str(simulator_app), "--args", "-CurrentDeviceUDID", udid], timeout=30)
 
 
 def baguette_path() -> str:
@@ -557,7 +617,7 @@ if not (exists process "Simulator") then return "not-running"
 tell process "Simulator"
 repeat with w in windows
 set windowName to name of w as text
-if windowName does not contain "agent-tmp-" then return "unsafe:" & windowName
+if windowName does not contain "agent-tmp-" and windowName is not "TV Out Extended Setup" then return "unsafe:" & windowName
 end repeat
 click menu item "Quit Simulator" of menu "Simulator" of menu bar 1
 end tell
@@ -612,7 +672,6 @@ def preflight_hardware(app: dict[str, Any], device_name: str | None) -> dict[str
     device = fast_device.resolve_device(device_name or app.get("device"))
     if not device.get("connected"):
         raise CarPlayError(f"{device.get('name')} is not connected")
-    hardware_window()
     return device
 
 
@@ -747,6 +806,19 @@ def relaunch_hardware_app() -> None:
     time.sleep(5)
 
 
+def wait_for_hardware_window(timeout: float = 15) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout
+    last_error = "CarPlay Simulator window not found"
+    while True:
+        try:
+            return hardware_window()
+        except CarPlayError as error:
+            last_error = str(error)
+        if time.monotonic() >= deadline:
+            raise CarPlayError(last_error)
+        time.sleep(0.5)
+
+
 def phone_flow_file(spec: dict[str, Any], simulator: str, folder: Path) -> Path:
     phone = {key: value for key, value in spec.items() if key not in ("actions", "case")}
     phone["actions"] = []
@@ -868,6 +940,7 @@ def run_flow(flow_path: Path, target: str, udid_arg: str | None, device_arg: str
     sim_was_booted = True
     sim_window_was_open = False
     sim_mutated = False
+    sim_arm_snapshot: dict[str, Any] | None = None
     session_snapshot: dict[Path, bytes | None] = {}
     result_target: dict[str, Any] = {}
     has_phone_steps = any(action.get("surface", "phone") == "phone" for action in spec["actions"])
@@ -883,6 +956,10 @@ def run_flow(flow_path: Path, target: str, udid_arg: str | None, device_arg: str
             sim_was_booted = sim.get("state") == "Booted"
             sim_window_was_open = sim_carplay_window_exists(sim_name)
             sim_mutated = True
+            armed, current_display = armed_display(sim_udid)
+            wanted_display = f"{display[1]}x{display[2]}@{display[3]:g}"
+            if not armed or current_display != wanted_display:
+                sim_arm_snapshot = snapshot_carplay_arm_state(sim_udid)
             arm_simulator(spec, sim_udid, display)
             ensure_simulator_ready(sim_udid)
             ensure_sim_carplay_window()
@@ -917,7 +994,7 @@ def run_flow(flow_path: Path, target: str, udid_arg: str | None, device_arg: str
             if app.get("install_path"):
                 fast_device.install_app(device["udid"], str(Path(app["install_path"]).expanduser()))
                 relaunch_hardware_app()
-                hardware_window()
+            wait_for_hardware_window()
             fast_device.start_server(device, False)
         if record:
             info = hardware_window()
@@ -996,6 +1073,11 @@ def run_flow(flow_path: Path, target: str, udid_arg: str | None, device_arg: str
         finally:
             restore_session_pointers(session_snapshot)
             if status == "fail" and sim_mutated:
+                if sim_arm_snapshot is not None:
+                    try:
+                        restore_carplay_arm_state(sim_arm_snapshot, sim_udid, sim_was_booted)
+                    except Exception as restore_error:  # cleanup must write metrics instead of raising
+                        error = f"{error}; failed to restore CarPlay display: {restore_error}"
                 if not sim_window_was_open and sim_carplay_window_exists(sim_name):
                     close_sim_carplay_window(sim_name)
                 if not sim_was_booted:
