@@ -48,6 +48,7 @@ HARDWARE_APPS = (
     Path("/Volumes/Additional Tools/Hardware/CarPlay Simulator.app"),
     Path("/Applications/CarPlay Simulator.app"),
 )
+BAGUETTE_INSTALL_HINT = "run ./install.sh --install-baguette"
 
 
 class CarPlayError(RuntimeError):
@@ -184,7 +185,14 @@ def baguette_path() -> str:
     if explicit:
         path = Path(explicit).expanduser()
         return str(path.resolve()) if path.is_file() and os.access(path, os.X_OK) else ""
-    for path in (Path.home() / ".local/share/baguette/baguette", Path.home() / ".local/bin/baguette"):
+    candidates = []
+    if os.environ.get("FAST_IOS_BAGUETTE_DIR"):
+        candidates.append(Path(os.environ["FAST_IOS_BAGUETTE_DIR"]).expanduser() / "baguette")
+    candidates.append(Path.home() / ".local/share/baguette/baguette")
+    if os.environ.get("FAST_IOS_BIN_DIR"):
+        candidates.append(Path(os.environ["FAST_IOS_BIN_DIR"]).expanduser() / "baguette")
+    candidates.append(Path.home() / ".local/bin/baguette")
+    for path in candidates:
         if path.is_file() and os.access(path, os.X_OK):
             return str(path.resolve())
     return shutil.which("baguette") or ""
@@ -269,10 +277,20 @@ class BaguetteInput:
             except OSError:
                 pass
         try:
-            self.process.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            self.process.terminate()
-            self.process.wait(timeout=3)
+            try:
+                self.process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+                    try:
+                        self.process.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        pass
+        except (OSError, ProcessLookupError):
+            pass
         finally:
             self.process = None
 
@@ -303,7 +321,7 @@ def baguette_screenshot(udid: str, output: Path, expected_size: tuple[int, int] 
     output.parent.mkdir(parents=True, exist_ok=True)
     binary = baguette_path()
     if not binary:
-        raise CarPlayError("baguette is missing; run the fast-ios-device-test installer")
+        raise CarPlayError(f"baguette is missing; {BAGUETTE_INSTALL_HINT}")
     command = [binary, "screenshot", "--udid", udid, "--display", "carplay", "-o", str(output)]
     result = run(command, check=False, timeout=30)
     if result.returncode and "no CarPlay framebuffer is attached" in (result.stderr + result.stdout):
@@ -508,7 +526,7 @@ def doctor(target: str, udid: str | None, device: str | None, display: str) -> i
         version = baguette_version(binary)
         checks.append(check_line("OK" if binary else "FAIL", "baguette",
                                  f"{version or 'unknown'} ({binary})" if binary else "missing",
-                                 "run the fast-ios-device-test installer; doctor never installs tools"))
+                                 f"{BAGUETTE_INSTALL_HINT}; doctor never installs tools"))
     else:
         app = hardware_app()
         checks.append(check_line("OK" if app else "FAIL", "carplay-simulator-app", str(app) if app else "not found",
@@ -572,6 +590,42 @@ end tell'''
     raise CarPlayError("Simulator.app did not quit before CarPlay re-arm")
 
 
+def preflight_simulator(spec: dict[str, Any], udid: str,
+                        display: tuple[str, int, int, float], record: bool) -> str:
+    if record:
+        raise CarPlayError(
+            "--record is not supported for --target sim; use car_screenshot steps or run hardware recording"
+        )
+    simulator_app = Path("/Applications/Xcode.app/Contents/Developer/Applications/Simulator.app")
+    if not simulator_app.is_dir():
+        raise CarPlayError("Xcode 26.6 Simulator.app is missing; run doctor --target sim")
+    binary = baguette_path()
+    if not binary:
+        raise CarPlayError(f"baguette is missing; {BAGUETTE_INSTALL_HINT}")
+    baguette_version(binary)
+    _, width, height, scale = display
+    wanted = f"{width}x{height}@{scale:g}"
+    armed, current = armed_display(udid)
+    if not armed or current != wanted:
+        script = spec.get("setup", {}).get("carplay_arm_script")
+        if not script or not Path(str(script)).expanduser().resolve().is_file():
+            raise CarPlayError(
+                f"CarPlay display is {current if armed else 'not armed'}; requested {wanted}; "
+                "set setup.carplay_arm_script to an existing file"
+            )
+    return binary
+
+
+def preflight_hardware(app: dict[str, Any], device_name: str | None) -> dict[str, Any]:
+    if not hardware_app():
+        raise CarPlayError("Apple CarPlay Simulator.app not found; run doctor --target hardware")
+    device = fast_device.resolve_device(device_name or app.get("device"))
+    if not device.get("connected"):
+        raise CarPlayError(f"{device.get('name')} is not connected")
+    hardware_window()
+    return device
+
+
 def arm_simulator(spec: dict[str, Any], udid: str, display: tuple[str, int, int, float]) -> None:
     setup = spec.get("setup", {})
     _, width, height, scale = display
@@ -631,6 +685,40 @@ end tell'''
         )
 
 
+def sim_carplay_window_exists(simulator_name: str) -> bool:
+    script = r'''on run argv
+set simulatorName to item 1 of argv
+tell application "System Events"
+if not (exists process "Simulator") then return "false"
+tell process "Simulator"
+repeat with w in windows
+set windowName to name of w as text
+if windowName contains simulatorName and windowName contains "CarPlay" then return "true"
+end repeat
+end tell
+end tell
+return "false"
+end run'''
+    result = run(["osascript", "-e", script, simulator_name], check=False, timeout=20)
+    return result.returncode == 0 and result.stdout.strip() == "true"
+
+
+def close_sim_carplay_window(simulator_name: str) -> None:
+    script = r'''on run argv
+set simulatorName to item 1 of argv
+tell application "System Events"
+if not (exists process "Simulator") then return
+tell process "Simulator"
+repeat with w in windows
+set windowName to name of w as text
+if windowName contains simulatorName and windowName contains "CarPlay" then perform action "AXClose" of w
+end repeat
+end tell
+end tell
+end run'''
+    run(["osascript", "-e", script, simulator_name], check=False, timeout=20)
+
+
 def ensure_simulator_ready(udid: str) -> None:
     """Boot without re-arming, then select the device in Xcode 26.6 Simulator.app."""
     fast_ui.ensure_booted(udid)
@@ -674,6 +762,19 @@ def phone_flow_file(spec: dict[str, Any], simulator: str, folder: Path) -> Path:
     return path
 
 
+def snapshot_session_pointers(udid: str) -> dict[Path, bytes | None]:
+    pointers = (fast_ui.session_pointer(None), fast_ui.session_pointer(udid))
+    return {path: path.read_bytes() if path.exists() else None for path in pointers}
+
+
+def restore_session_pointers(snapshot: dict[Path, bytes | None]) -> None:
+    for path, contents in snapshot.items():
+        if contents is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_bytes(contents)
+
+
 def run_phone_sim(action: dict[str, Any], session: dict[str, Any], index: int, artifacts: Path) -> None:
     clean = {key: value for key, value in action.items() if key != "surface"}
     fast_ui.execute_action(clean, session["udid"], artifacts, index,
@@ -687,6 +788,11 @@ def run_phone_hardware(action: dict[str, Any], device: dict[str, Any], artifacts
     fast_device.save_screenshots(response, artifacts)
     if response.get("status") != "pass":
         raise CarPlayError(str(response.get("error", "phone action failed")))
+
+
+def require_phone_response(response: dict[str, Any], fallback: str) -> None:
+    if response.get("status") != "pass":
+        raise CarPlayError(str(response.get("error") or fallback))
 
 
 def car_action_sim(action: dict[str, Any], baguette: BaguetteInput, udid: str,
@@ -764,6 +870,11 @@ def run_flow(flow_path: Path, target: str, udid_arg: str | None, device_arg: str
     input_session: BaguetteInput | None = None
     sim_lease: fast_ui.SimulatorLease | None = None
     sim_udid = ""
+    sim_name = ""
+    sim_was_booted = True
+    sim_window_was_open = False
+    sim_mutated = False
+    session_snapshot: dict[Path, bytes | None] = {}
     result_target: dict[str, Any] = {}
     has_phone_steps = any(action.get("surface", "phone") == "phone" for action in spec["actions"])
     fresh_install = bool(spec.get("setup", {}).get("fresh_install", not app.get("prebuilt")))
@@ -772,18 +883,30 @@ def run_flow(flow_path: Path, target: str, udid_arg: str | None, device_arg: str
         if target == "sim":
             sim = resolve_simulator(udid_arg or app.get("simulator"))
             sim_udid = str(sim["udid"])
+            sim_name = str(sim["name"])
             result_target = {"simulator": sim_udid}
+            preflight_simulator(spec, sim_udid, display, record)
+            sim_was_booted = sim.get("state") == "Booted"
+            sim_window_was_open = sim_carplay_window_exists(sim_name)
+            sim_mutated = True
             arm_simulator(spec, sim_udid, display)
             ensure_simulator_ready(sim_udid)
             ensure_sim_carplay_window()
             require_armed_display(sim_udid, display)
             _, width, height, _ = display
-            if not baguette_version():
-                raise CarPlayError("baguette is missing; run doctor --target sim for the fix")
             if has_phone_steps:
                 phone_path = phone_flow_file(spec, sim_udid, temp)
-                fast_ui.session_main(["start", str(phone_path)])
-                _, sim_session = fast_ui.load_session(None)
+                session_snapshot = snapshot_session_pointers(sim_udid)
+                previous_root = os.environ.get("FAST_UI_ROOT")
+                os.environ["FAST_UI_ROOT"] = str(temp / "fast-ui")
+                try:
+                    fast_ui.session_main(["start", str(phone_path)])
+                finally:
+                    if previous_root is None:
+                        os.environ.pop("FAST_UI_ROOT", None)
+                    else:
+                        os.environ["FAST_UI_ROOT"] = previous_root
+                _, sim_session = fast_ui.load_session(sim_udid)
                 sim_lease = fast_ui.SimulatorLease(sim_udid, flow_path)
                 sim_lease.acquire(float(os.environ.get("FAST_UI_LOCK_WAIT", "0")))
                 sim_lease.touch("bundle_id", sim_session["bundle_id"])
@@ -795,25 +918,18 @@ def run_flow(flow_path: Path, target: str, udid_arg: str | None, device_arg: str
             input_session = BaguetteInput(sim_udid, int(width), int(height))
             input_session.__enter__()
         else:
-            device = fast_device.resolve_device(device_arg or app.get("device"))
+            device = preflight_hardware(app, device_arg)
             result_target = {"device": device.get("name"), "udid": device.get("udid")}
-            if not device.get("connected"):
-                raise CarPlayError(f"{device.get('name')} is not connected")
             if app.get("install_path"):
                 fast_device.install_app(device["udid"], str(Path(app["install_path"]).expanduser()))
                 relaunch_hardware_app()
+                hardware_window()
             fast_device.start_server(device, False)
-            if not hardware_app():
-                raise CarPlayError("Apple CarPlay Simulator.app not found")
-            hardware_window()
         if record:
-            try:
-                info = hardware_window()
-                video = artifacts / "carplay.mov"
-                recorder = subprocess.Popen(["screencapture", "-v", "-l", str(info["id"]), str(video)],
-                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except CarPlayError:
-                print("WARN record: CarPlay window not found; screenshots still run", file=sys.stderr)
+            info = hardware_window()
+            video = artifacts / "carplay.mov"
+            recorder = subprocess.Popen(["screencapture", "-v", "-l", str(info["id"]), str(video)],
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         for index, action in enumerate(spec["actions"], 1):
             failed_step = index
             if action.get("surface", "phone") == "phone":
@@ -850,6 +966,7 @@ def run_flow(flow_path: Path, target: str, udid_arg: str | None, device_arg: str
             response = fast_device.request(device["udid"], {"op": "action", "action": {
                 "type": "screenshot", "name": "phone-final.png"}, "wait_for_idle": False}, timeout=30)
             fast_device.save_screenshots(response, artifacts)
+            require_phone_response(response, "final phone screenshot failed")
             car_final = artifacts / "car-final.png"
             hardware_capture(car_final)
         screenshots.append(str(car_final))
@@ -859,29 +976,37 @@ def run_flow(flow_path: Path, target: str, udid_arg: str | None, device_arg: str
             subprocess.TimeoutExpired) as exc:
         status, error = "fail", str(exc)
     finally:
-        if recorder:
-            recorder.terminate()
-            try:
-                recorder.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                recorder.kill()
-        if input_session:
-            input_session.__exit__(None, None, None)
-        if sim_session and sim_lease:
-            clean = False
-            try:
-                fast_ui.teardown(
-                    sim_session["udid"], sim_session["bundle_id"], sim_lease.journal,
-                    fast_ui.PREVIOUS_UI, sim_session.get("setup", {}).get("preferences", {}),
-                    fresh_install, False,
-                )
-                clean = True
-            finally:
-                sim_lease.release(clean=clean)
-                fast_ui.LEASE = None
-        elif sim_session:
-            run(["xcrun", "simctl", "terminate", sim_session["udid"], sim_session["bundle_id"]], check=False)
-        shutil.rmtree(temp, ignore_errors=True)
+        try:
+            if recorder:
+                recorder.terminate()
+                try:
+                    recorder.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    recorder.kill()
+            if input_session:
+                input_session.__exit__(None, None, None)
+            if sim_session and sim_lease:
+                clean = False
+                try:
+                    fast_ui.teardown(
+                        sim_session["udid"], sim_session["bundle_id"], sim_lease.journal,
+                        fast_ui.PREVIOUS_UI, sim_session.get("setup", {}).get("preferences", {}),
+                        fresh_install, False,
+                    )
+                    clean = True
+                finally:
+                    sim_lease.release(clean=clean)
+                    fast_ui.LEASE = None
+            elif sim_session:
+                run(["xcrun", "simctl", "terminate", sim_session["udid"], sim_session["bundle_id"]], check=False)
+        finally:
+            restore_session_pointers(session_snapshot)
+            if status == "fail" and sim_mutated:
+                if not sim_window_was_open and sim_carplay_window_exists(sim_name):
+                    close_sim_carplay_window(sim_name)
+                if not sim_was_booted:
+                    run(["xcrun", "simctl", "shutdown", sim_udid], check=False, timeout=30)
+            shutil.rmtree(temp, ignore_errors=True)
     payload = {"status": status, "task": name, "case": case, "target": target,
                "display": display_tag,
                "total_seconds": round(time.monotonic() - started, 1), "artifacts": str(artifacts),
@@ -913,7 +1038,8 @@ def parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--target", required=True, choices=("sim", "hardware"))
     run_parser.add_argument("--udid")
     run_parser.add_argument("--device")
-    run_parser.add_argument("--record", action="store_true")
+    run_parser.add_argument("--record", action="store_true",
+                            help="Record the standalone hardware CarPlay window; unsupported for sim")
     run_parser.add_argument("--display",
                             help="One display: widescreen, standard, hd, or WxH@S")
     run_parser.add_argument("--artifacts-root", type=Path)

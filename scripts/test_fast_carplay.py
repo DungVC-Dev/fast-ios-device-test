@@ -86,6 +86,27 @@ class InputTests(unittest.TestCase):
              mock.patch.object(fast_carplay.shutil, "which", return_value="/path/baguette"):
             self.assertEqual(fast_carplay.baguette_path(), str(pinned.resolve()))
 
+    def test_baguette_resolution_honours_installer_directories(self):
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(folder))
+        baguette = folder / "tools/baguette/baguette"
+        wrapper = folder / "bin/baguette"
+        for path in (baguette, wrapper):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("")
+            path.chmod(0o755)
+        env = {"FAST_IOS_BAGUETTE_DIR": str(baguette.parent), "FAST_IOS_BIN_DIR": str(wrapper.parent)}
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(Path, "home", return_value=folder), \
+             mock.patch.object(fast_carplay.shutil, "which", return_value="/path/baguette"):
+            self.assertEqual(fast_carplay.baguette_path(), str(baguette.resolve()))
+            baguette.unlink()
+            self.assertEqual(fast_carplay.baguette_path(), str(wrapper.resolve()))
+
+    def test_missing_baguette_names_the_exact_installer_command(self):
+        with mock.patch.object(fast_carplay, "baguette_path", return_value=""):
+            with self.assertRaisesRegex(fast_carplay.CarPlayError, r"\./install\.sh --install-baguette"):
+                fast_carplay.baguette_screenshot("U", Path("/tmp/unused.png"))
+
     def test_connected_iphones_reuses_physical_device_engine(self):
         devices = [{"name": "A", "connected": True}, {"name": "B", "connected": False}]
         with mock.patch.object(fast_carplay.fast_device, "physical_devices", return_value=devices):
@@ -128,6 +149,21 @@ class InputTests(unittest.TestCase):
         stop.assert_called_once()
         start.assert_called_once()
 
+    def test_input_cleanup_kills_a_process_that_ignores_terminate(self):
+        session = fast_carplay.BaguetteInput("U", 800, 480)
+        process = mock.Mock()
+        process.stdin = mock.Mock()
+        process.wait.side_effect = [
+            __import__("subprocess").TimeoutExpired("baguette", 3),
+            __import__("subprocess").TimeoutExpired("baguette", 3),
+            None,
+        ]
+        session.process = process
+        session._stop()
+        process.terminate.assert_called_once()
+        process.kill.assert_called_once()
+        self.assertIsNone(session.process)
+
     def test_sim_tap_includes_display_pixels(self):
         baguette = mock.Mock()
         fast_carplay.car_action_sim(
@@ -161,6 +197,10 @@ class InputTests(unittest.TestCase):
     def test_hardware_window_helper_excludes_xcode_simulator_carplay(self):
         self.assertIn('owner == "CarPlay Simulator"', fast_carplay.WINDOW_HELPER)
         self.assertNotIn('owner == "Simulator"', fast_carplay.WINDOW_HELPER)
+
+    def test_failed_final_phone_screenshot_is_a_flow_error(self):
+        with self.assertRaisesRegex(fast_carplay.CarPlayError, "locked"):
+            fast_carplay.require_phone_response({"status": "fail", "error": "iPhone is locked"}, "fallback")
 
     def test_wait_stable_requires_two_identical_captures(self):
         folder = Path(tempfile.mkdtemp())
@@ -269,6 +309,103 @@ class ArmingTests(unittest.TestCase):
         with mock.patch.object(fast_carplay, "armed_display", return_value=(False, "missing")):
             with self.assertRaisesRegex(fast_carplay.CarPlayError, "not armed"):
                 fast_carplay.arm_simulator({"setup": {}}, "UDID", ("widescreen", 1920, 720, 2.0))
+
+
+class SessionIsolationTests(unittest.TestCase):
+    def test_carplay_restores_current_and_per_udid_session_pointers(self):
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(folder))
+        current, per_udid = folder / "current", folder / "U"
+        current.write_bytes(b"previous-current")
+
+        def pointer(udid):
+            return per_udid if udid else current
+
+        with mock.patch.object(fast_carplay.fast_ui, "session_pointer", side_effect=pointer):
+            snapshot = fast_carplay.snapshot_session_pointers("U")
+            current.write_bytes(b"carplay-current")
+            per_udid.write_bytes(b"carplay-U")
+            fast_carplay.restore_session_pointers(snapshot)
+        self.assertEqual(current.read_bytes(), b"previous-current")
+        self.assertFalse(per_udid.exists())
+
+
+class RunFlowRegressionTests(unittest.TestCase):
+    def flow(self, *, phone=False):
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(folder))
+        actions = [{"type": "launch"}] if phone else [
+            {"surface": "car", "type": "car_screenshot", "name": "car"}
+        ]
+        path = folder / "flow.json"
+        path.write_text(json.dumps({
+            "version": 1, "name": "regression",
+            "app": {"project_root": str(folder), "bundle_id": "com.example", "prebuilt": True,
+                    "simulator": "agent-tmp-test"},
+            "actions": actions,
+        }))
+        return path, folder / "artifacts"
+
+    def test_sim_record_is_rejected_before_arm_or_boot(self):
+        flow, artifacts = self.flow()
+        simulator = {"udid": "U", "name": "agent-tmp-test", "state": "Shutdown"}
+        with mock.patch.object(fast_carplay, "resolve_simulator", return_value=simulator), \
+             mock.patch.object(fast_carplay, "arm_simulator") as arm, \
+             mock.patch.object(fast_carplay, "ensure_simulator_ready") as boot:
+            result = fast_carplay.run_flow(flow, "sim", "U", None, True, artifacts, None)
+        self.assertEqual(result, 1)
+        arm.assert_not_called()
+        boot.assert_not_called()
+        metrics = json.loads(next(artifacts.rglob("metrics.json")).read_text())
+        self.assertIn("--record is not supported for --target sim", metrics["error"])
+
+    def test_preflight_failure_does_not_arm_or_boot(self):
+        flow, artifacts = self.flow()
+        simulator = {"udid": "U", "name": "agent-tmp-test", "state": "Shutdown"}
+        with mock.patch.object(fast_carplay, "resolve_simulator", return_value=simulator), \
+             mock.patch.object(fast_carplay, "preflight_simulator",
+                               side_effect=fast_carplay.CarPlayError("baguette is missing")), \
+             mock.patch.object(fast_carplay, "arm_simulator") as arm, \
+             mock.patch.object(fast_carplay, "ensure_simulator_ready") as boot:
+            result = fast_carplay.run_flow(flow, "sim", "U", None, False, artifacts, None)
+        self.assertEqual(result, 1)
+        arm.assert_not_called()
+        boot.assert_not_called()
+
+    def test_failure_closes_new_car_window_and_shuts_down_sim_booted_by_run(self):
+        flow, artifacts = self.flow()
+        simulator = {"udid": "U", "name": "agent-tmp-test", "state": "Shutdown"}
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch.object(fast_carplay, "resolve_simulator", return_value=simulator), \
+             mock.patch.object(fast_carplay, "preflight_simulator", return_value="/baguette"), \
+             mock.patch.object(fast_carplay, "sim_carplay_window_exists", side_effect=[False, True]), \
+             mock.patch.object(fast_carplay, "arm_simulator"), \
+             mock.patch.object(fast_carplay, "ensure_simulator_ready"), \
+             mock.patch.object(fast_carplay, "ensure_sim_carplay_window",
+                               side_effect=fast_carplay.CarPlayError("window failed")), \
+             mock.patch.object(fast_carplay, "close_sim_carplay_window") as close, \
+             mock.patch.object(fast_carplay, "run", return_value=completed) as command:
+            result = fast_carplay.run_flow(flow, "sim", "U", None, False, artifacts, None)
+        self.assertEqual(result, 1)
+        close.assert_called_once_with("agent-tmp-test")
+        self.assertIn(mock.call(["xcrun", "simctl", "shutdown", "U"], check=False, timeout=30),
+                      command.call_args_list)
+
+    def test_hardware_final_phone_screenshot_failure_prevents_pass(self):
+        flow, artifacts = self.flow(phone=True)
+        device = {"udid": "D", "name": "Phone", "connected": True}
+        response = {"status": "fail", "error": "iPhone is locked"}
+        with mock.patch.object(fast_carplay, "preflight_hardware", return_value=device), \
+             mock.patch.object(fast_carplay.fast_device, "start_server"), \
+             mock.patch.object(fast_carplay, "run_phone_hardware"), \
+             mock.patch.object(fast_carplay.fast_device, "request", return_value=response), \
+             mock.patch.object(fast_carplay.fast_device, "save_screenshots"), \
+             mock.patch.object(fast_carplay, "hardware_capture") as car_capture:
+            result = fast_carplay.run_flow(flow, "hardware", None, "D", False, artifacts, None)
+        self.assertEqual(result, 1)
+        car_capture.assert_not_called()
+        metrics = json.loads(next(artifacts.rglob("metrics.json")).read_text())
+        self.assertEqual(metrics["error"], "iPhone is locked")
 
 
 class ReportTests(unittest.TestCase):

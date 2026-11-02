@@ -122,12 +122,15 @@ Agent tự chọn giữa viết flow (để chạy lại, chạy nhiều máy, q
   để đổi màn hình/tư thế; `screenshot` có thể ghi `"display":"outer"` hoặc `"inner"`.
   Chạy matrix bằng `--duo-pose`; mỗi dòng có hậu tố `@duo-<pose>` và video quay đúng framebuffer.
 - CarPlay Simulator.app cần Xcode 26.6, mặc định iOS 26.5 và simulator riêng tên `agent-tmp-*`.
+  Nếu thiếu `baguette`, chạy `./install.sh --install-baguette`.
   Dùng `--display widescreen` hoặc `--display standard` cho 1920×720@2 hoặc 800×480@2. Mỗi lệnh
   chỉ chạy một cỡ vì đổi cỡ phải reboot simulator; chỉ chạy cỡ thứ hai khi người dùng yêu cầu.
   Khi đổi cỡ, tool thoát Simulator.app để xoá mode CarPlay đang cache rồi chỉ reboot máy
   `agent-tmp-*`; nếu còn cửa sổ Simulator không thuộc agent thì tool dừng để không đụng máy người dùng.
   Không bao giờ dùng
   `simctl io screenshot --display external` vì trên iOS 27 lệnh đó làm restart CarPlay.
+  `--record` chỉ dùng với Apple CarPlay Simulator + iPhone thật; target `sim` dùng các bước
+  `car_screenshot` vì tool chủ động từ chối quay nhầm cửa sổ.
 - Bàn phím tiếng Việt (Telex) trên máy sẽ biến chữ agent gõ; số và phím thì không sao.
 
 Có gì mới: xem [CHANGELOG.md](CHANGELOG.md).

@@ -14,8 +14,10 @@ fastCarPlayTest doctor --target hardware [--device <name-or-udid>]
 Doctor is read-only and prints `OK`, `WARN`, or `FAIL` with a fix. Simulator runs require Xcode
 26.6's `Simulator.app`, an iOS 26.5 runtime by default, a disposable simulator named
 `agent-tmp-*`, an armed CarPlay display, and `baguette`. The launcher resolves
-`FAST_IOS_BAGUETTE`, then the installer's pinned copy under `~/.local/share` / `~/.local/bin`, then
-`PATH`. Xcode 27 Device Hub has no CarPlay.
+`FAST_IOS_BAGUETTE`, `$FAST_IOS_BAGUETTE_DIR/baguette`, the pinned copy under
+`~/.local/share/baguette`, `$FAST_IOS_BIN_DIR/baguette`, `~/.local/bin`, then `PATH`. Install a
+missing pin with `./install.sh --install-baguette`; doctor never installs it. Xcode 27 Device Hub
+has no CarPlay.
 For an iOS 27 runtime, point `setup.carplay_arm_script` at the project's iOS-27 arming script.
 Only one Simulator.app and one CarPlay window may run at once. The launcher refuses every simulator
 whose name does not start with `agent-tmp-`; do not reuse a person's simulator. It opens menus only
@@ -92,8 +94,9 @@ capture is black for protected video; that is not proof that the car got no pict
 case, fetch `live.m3u8`, `init.mp4`, and the newest segment from the iPhone's 169.254 address,
 concatenate init + segment, and extract one frame with ffmpeg as the product runbook describes.
 
-Every successful run automatically saves final phone and car screenshots. `--record` records the car
-window when macOS exposes one. An optional top-level `"case":"CPR-01"` is printed and written to
+Every successful run automatically saves final phone and car screenshots. `--record` is hardware-only
+and records Apple's standalone CarPlay Simulator window. Simulator.app runs reject it clearly; use
+`car_screenshot` / `car_wait_stable` instead. An optional top-level `"case":"CPR-01"` is printed and written to
 `metrics.json`; `fastUIReport` uses it as the row key.
 
 For widgets, verify the actual car render (background removal/mirror, margins, current lyric line)
