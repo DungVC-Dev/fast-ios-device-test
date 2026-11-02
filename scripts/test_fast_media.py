@@ -236,6 +236,7 @@ class LauncherCopyTests(unittest.TestCase):
                     ran = subprocess.run(
                         [sys.executable, str(root / "bin" / launcher), "--help"],
                         capture_output=True, text=True, timeout=60, cwd=raw,
+                        env=dict(os.environ, FAST_IOS_NO_UPDATE_CHECK="1"),
                     )
                     self.assertEqual(ran.returncode, 0, ran.stderr[-300:])
 

@@ -31,7 +31,8 @@ Expected: a path inside an `Xcode.app` and `Xcode 26.x` or `27.x`. If it prints
 npx fast-ios-device-test
 ```
 
-Expected: `link: …` lines, `engine self-test: OK` and `done.` Running it again upgrades. No
+Expected: `link: …` lines, `engine self-test: OK` and `done.` To upgrade later:
+`npx fast-ios-device-test update` (also updates the Codex and Claude Code plugins). No
 Node.js (`npx: command not found`), or the user wants to edit the tool: clone instead:
 
 ```bash

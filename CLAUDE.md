@@ -46,7 +46,8 @@ User-facing docs: `README.md` (English), `GUIDE.md` (Vietnamese, for testers), `
 | `commands/` | Slash commands `fastSimulatorTest`, `fastDeviceTest`, `fastUIReview` |
 | `agents/ui-explorer.md` | Haiku subagent for long step-by-step searches (experimental) |
 | `install.sh` | Installer: no flag = copy to `~/.local/share/fast-ios-device-test` and link; `--link` (link this clone), `--check [--device <name>]`, `--uninstall` |
-| `npm/install.js` | `npx` entry: passes flags to `install.sh`, adds the `clean` subcommand (runs `scripts/fast_ui_clean.py`), refuses `--link` |
+| `npm/install.js` | `npx` entry: passes flags to `install.sh`, adds the `clean` subcommand (runs `scripts/fast_ui_clean.py`) and `update` (latest npm version, a `--link` clone gets `git pull` advice, then each agent's plugin), refuses `--link` |
+| `scripts/fast_update.py` | Installed vs latest npm version (`install.sh --check`), the once-a-day "update available" line both engines print (`FAST_IOS_NO_UPDATE_CHECK=1` turns it off) |
 | `.claude-plugin/` | Plugin + marketplace manifests |
 | `plugin.json`, `.agents/plugins/` | Portable Codex plugin manifest + repo marketplace catalog |
 | `.antigravity-plugin/`, `gemini-extension.json` | Antigravity plugin manifest + Gemini CLI extension manifest |
@@ -61,7 +62,7 @@ Run each in a subshell so the working directory does not change between commands
 
 ```bash
 # Tests — must pass before any commit (same set release.sh runs)
-(cd scripts && python3 -m unittest test_fast_ui test_fast_media test_fast_ui_map test_fast_guard test_fast_ui_clean test_install)
+(cd scripts && python3 -m unittest test_fast_ui test_fast_media test_fast_ui_map test_fast_guard test_fast_ui_clean test_install test_fast_update)
 
 # Extra tests that need Pillow (python3 -m pip install --user pillow)
 (cd scripts && python3 -m unittest test_fast_evidence test_fast_evidence_sheet test_fast_ui_review)

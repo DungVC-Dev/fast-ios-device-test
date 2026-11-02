@@ -138,7 +138,7 @@ launchers on your Mac. Pick one installation method:
 
 | Way | Commands | Tool folder (`$TOOL` below) |
 |---|---|---|
-| **npx** (recommended) | `npx fast-ios-device-test` (run again to upgrade) | `~/.local/share/fast-ios-device-test` |
+| **npx** (recommended) | `npx fast-ios-device-test` (upgrade: `npx fast-ios-device-test update`) | `~/.local/share/fast-ios-device-test` |
 | **git clone** (to edit the tool) | `git clone https://github.com/DungVC-Dev/fast-ios-device-test.git ~/fast-ios-device-test`<br>`~/fast-ios-device-test/install.sh --link` | the clone, e.g. `~/fast-ios-device-test` (keep it; upgrade with `git -C ~/fast-ios-device-test pull`) |
 | **Release zip** (no Node.js, no git) | Download `fast-ios-device-test-<version>.zip` from [Releases](https://github.com/DungVC-Dev/fast-ios-device-test/releases), unzip, run its `install.sh` | `~/.local/share/fast-ios-device-test` (the unzipped folder can be deleted) |
 
@@ -164,6 +164,19 @@ npx fast-ios-device-test --check --device "<iPhone name>"  # also checks that iP
 
 From a clone or the zip, run `install.sh --check` instead. The last line is `CHECK OK`, or
 `CHECK missing: …` with the fix for each item.
+
+### Update
+
+```bash
+npx fast-ios-device-test update
+```
+
+Installs the latest npm version (an older cached npx package hands over to it), then updates each
+agent's plugin it finds: Codex and Claude Code directly, Antigravity and Gemini CLI by printing
+the command. A `--link` clone is left alone: it prints the `git pull` + `install.sh --link` to run.
+Restart the agents afterwards. Once a day, `fastSimulatorTest` and `fastDeviceTest` print
+`update available: <installed> -> <latest>` when npm has a newer version; they never install it
+themselves. `FAST_IOS_NO_UPDATE_CHECK=1` turns that line off.
 
 <details>
 <summary><strong>Development install: link a local clone into Codex or Antigravity</strong></summary>

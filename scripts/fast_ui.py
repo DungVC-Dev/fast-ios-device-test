@@ -28,6 +28,7 @@ from fast_media import prune_artifacts, publish_video, shrink_video  # noqa: E40
 import fast_evidence  # noqa: E402
 from fast_guard import check_actions, parse_prompt_labels, risky_step  # noqa: E402
 from fast_ui_map import NOISE_LABEL, SCROLL_BAR_LABEL, Trail, record  # noqa: E402
+from fast_update import print_notice  # noqa: E402
 
 
 BUILD_SUFFIXES = {
@@ -3026,4 +3027,7 @@ def teardown(
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    finally:
+        print_notice()

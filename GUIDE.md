@@ -13,7 +13,10 @@ Chỉ cần có sẵn Xcode 26 hoặc 27. Không cần Homebrew hay xcodegen: AX
 Cài hai phần:
 
 1. **Bộ chạy trên Mac** (engine, AXe, các lệnh `fast…`), dùng chung cho mọi agent:
-   `npx fast-ios-device-test` (chạy lại để cập nhật). Với Claude Code, lệnh này đã cài luôn
+   `npx fast-ios-device-test`. Cập nhật: `npx fast-ios-device-test update` (cập nhật luôn plugin
+   Codex và Claude Code; Antigravity và Gemini thì in ra lệnh cần chạy). Khi có bản mới,
+   `fastSimulatorTest`/`fastDeviceTest` in một dòng `update available: …` (tối đa một lần mỗi ngày,
+   không tự cài; tắt bằng `FAST_IOS_NO_UPDATE_CHECK=1`). Với Claude Code, lệnh này đã cài luôn
    skill, các lệnh `/fastSimulatorTest`, `/fastDeviceTest`, `/fastUIReview` và subagent.
 2. **Skill cho agent khác** (bộ chạy ở bước 1 không cài phần này):
    - Codex: `codex plugin marketplace add DungVC-Dev/fast-ios-device-test` rồi

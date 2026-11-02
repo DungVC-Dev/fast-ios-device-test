@@ -33,6 +33,8 @@ class InstallCheckTests(unittest.TestCase):
                         CODEX_HOME=str(self.home / "codex-home"),
                         CODEX_SKILLS_DIR=str(self.dirs["codex"]),
                         ANTIGRAVITY_SKILLS_DIR=str(self.dirs["antigravity"]),
+                        FAST_IOS_NO_UPDATE_CHECK="1", FAST_IOS_LATEST_VERSION="0.0.1",
+                        FAST_IOS_UPDATE_CACHE=str(self.home / "update.json"),
                         ANTIGRAVITY_PLUGIN_DIR=str(self.home / "agy-plugins" / "fast-ios-device-test"))
 
     def link_everything(self):

@@ -143,6 +143,10 @@ if [[ "$MODE" == "check" ]]; then
         echo "axe=missing"; missing+=(axe)
     fi
     echo "python=$(python3 --version 2>&1 | sed 's/Python //') ($(command -v python3))"
+    # The version the launchers run (a --link clone or the copy), and the latest on npm.
+    installed_root=""
+    [[ -e "$BIN_DIR/fastSimulatorTest" ]] && installed_root="$(cd "$(dirname "$(link_target "$BIN_DIR/fastSimulatorTest")")/.." 2>/dev/null && pwd -P || true)"
+    python3 "$SOURCE/scripts/fast_update.py" --status "${installed_root:-$SOURCE}" || true
     python3 -c "import PIL" 2>/dev/null && echo "pillow=yes" || echo "pillow=no (only fastUIReview, fastEvidenceSheet and the motion action need it)"
     command -v xcodegen >/dev/null && echo "xcodegen=yes (optional)" || echo "xcodegen=no (optional: device-runner ships its xcodeproj)"
     echo "profiles=$(profile_count) development profiles (fastDeviceTest needs one that lists the iPhone)"

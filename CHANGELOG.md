@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `npx fast-ios-device-test update`: installs the latest npm version (an older cached npx package
+  hands over to it), then updates the Codex and Claude Code plugins and prints the Antigravity and
+  Gemini CLI commands. A `--link` clone is not overwritten; it prints the `git pull` to run.
+- `fastSimulatorTest` and `fastDeviceTest` print `update available: <installed> -> <latest>` at most
+  once a day when npm has a newer version (checked in the background, never blocks a run, never
+  installs; `FAST_IOS_NO_UPDATE_CHECK=1` or `CI` turns it off). `install.sh --check` prints the
+  installed and the latest version.
+
 - `install.sh --check` fails on a broken link (a launcher, the skill or the subagent pointing at
   a moved or deleted clone) instead of passing it, and reports the Codex and Antigravity skill:
   a dangling `~/.codex/skills` or `~/.gemini/config/skills` link, or a Codex or Antigravity plugin
