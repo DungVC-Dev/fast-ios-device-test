@@ -148,6 +148,17 @@ class InstallCheckTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertFalse(codex.is_symlink())
 
+    def test_uninstall_removes_a_link_to_the_copy_itself(self):
+        share = self.home / "share"
+        share.mkdir()
+        (share / "install.sh").write_text("")
+        (share / "SKILL.md").write_text("x")
+        codex = self.dirs["codex"] / "fast-ios-device-test"
+        codex.symlink_to(share)
+        code, out = self.run_install("--uninstall")
+        self.assertEqual(code, 0, out)
+        self.assertFalse(codex.is_symlink())
+
     def test_uninstall_removes_a_dangling_codex_link_and_keeps_a_working_clone_link(self):
         codex = self.dirs["codex"] / "fast-ios-device-test"
         codex.symlink_to(self.home / "share" / "skills" / "fast-ios-device-test")

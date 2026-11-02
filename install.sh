@@ -76,7 +76,8 @@ if [[ "$MODE" == "uninstall" ]]; then
         [[ -L "$path" ]] || continue
         target="$(link_target "$path")"
         target_real="$(cd "$(dirname "$target")" 2>/dev/null && echo "$(pwd -P)/$(basename "$target")" || echo "$target")"
-        if [[ ! -e "$path" || "$target_real" == "$install_real/"* || "$target" == "$INSTALL_DIR/"* ]]; then
+        if [[ ! -e "$path" || "$target_real" == "$install_real" || "$target_real" == "$install_real/"* \
+              || "$target" == "$INSTALL_DIR" || "$target" == "$INSTALL_DIR/"* ]]; then
             rm "$path"; echo "removed: $path"
         fi
     done
