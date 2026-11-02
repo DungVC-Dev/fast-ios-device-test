@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "name": "carplay-route-loss",
+  "case": "CPR-01",
+  "app": {
+    "project_root": "/absolute/path/to/app",
+    "device": "My iPhone"
+  },
+  "actions": [
+    {"surface": "car", "type": "carplay_connect", "name": "Connect CarPlay route"},
+    {"type": "launch", "app": "com.example.app.stg"},
+    {"surface": "car", "type": "car_screenshot", "name": "Connected car home"},
+    {"surface": "car", "type": "carplay_disconnect", "name": "Drop CarPlay route"},
+    {"type": "screenshot", "name": "phone-after-disconnect.png"}
+  ]
+}

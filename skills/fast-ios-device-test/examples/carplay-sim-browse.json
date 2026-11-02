@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "name": "carplay-browse",
+  "case": "CAR-11",
+  "app": {
+    "project_root": "/absolute/path/to/app",
+    "bundle_id": "com.example.app.dev",
+    "simulator": "agent-tmp-carplay",
+    "prebuilt": true
+  },
+  "setup": {
+    "carplay_display": "widescreen",
+    "carplay_arm_script": "/absolute/path/to/app/tools/carplay_sim_display.sh"
+  },
+  "actions": [
+    {"type": "launch"},
+    {"surface": "car", "type": "car_wait_stable", "name": "CarPlay home loaded"},
+    {"surface": "car", "type": "car_tap", "name": "Open app icon", "x": 0.55, "y": 0.5},
+    {"surface": "car", "type": "car_screenshot", "name": "TV shelves"}
+  ]
+}

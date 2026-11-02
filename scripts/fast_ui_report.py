@@ -39,10 +39,15 @@ def target(run: dict[str, Any]) -> str:
     return str(run.get("simulator") or run.get("udid") or "?")[:8]
 
 
+def report_task(run: dict[str, Any]) -> str:
+    """CarPlay flows can carry a stable regression-case ID while their descriptive name changes."""
+    return str(run.get("case") or run.get("task") or "?")
+
+
 def latest_per_cell(runs: list[dict[str, Any]]) -> dict[tuple[str, str], dict[str, Any]]:
     cells: dict[tuple[str, str], dict[str, Any]] = {}
     for run in sorted(runs, key=lambda item: item["_stamp"]):
-        cells[(run.get("task", "?"), target(run))] = run
+        cells[(report_task(run), target(run))] = run
     return cells
 
 
@@ -100,7 +105,7 @@ def main() -> int:
     cells = latest_per_cell(runs)
     attempts: dict[tuple[str, str], int] = {}
     for run in runs:
-        key = (run.get("task", "?"), target(run))
+        key = (report_task(run), target(run))
         attempts[key] = attempts.get(key, 0) + 1
     if args.json:
         print(json.dumps({f"{task}@{sim}": run for (task, sim), run in cells.items()}, indent=2))

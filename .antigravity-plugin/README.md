@@ -1,7 +1,7 @@
 # Fast iOS Device Test
 
 Run focused iOS UI-flow verification from Antigravity on a local Mac. The bundled skill writes
-guarded JSON flows, drives Simulator or a connected iPhone, records runs, reviews video, and
+guarded JSON flows, drives Simulator, a connected iPhone, or a mixed phone + CarPlay rig, records runs, reviews video, and
 prepares captioned PR evidence.
 
 It also drives the Xcode 27.1 iPhone Duo through the installed `fastSimulatorTest` launcher:
@@ -24,6 +24,7 @@ iOS project.
 - “Verify the login-to-home flow on Simulator and record it.”
 - “Verify Home on iPhone Duo closed, open, book and tabletop, with screenshots and video.”
 - “Run this regression flow on my connected iPhone.”
+- “Run this mixed phone and CarPlay flow on the simulator.”
 - “Review the last recorded session and prepare its evidence sheet.”
 
 For Duo, put `"simulator":"iPhone Duo"` in the flow. Use
