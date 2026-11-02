@@ -18,6 +18,8 @@ Antigravity, a Gemini CLI extension, and a release zip. macOS only; needs Xcode 
 
 - `/fastSimulatorTest` drives an app on Simulator through a JSON flow (AXe, bundled in `vendor/`),
   including iPhone Duo outer/inner displays and Device Hub poses on Xcode 27.1.
+  Claude uses the `duo` action for in-flow display changes and `--duo-pose` rows for
+  one-framebuffer-per-pose recordings; it never drives Device Hub directly.
 - `/fastDeviceTest` runs the same flows on a physical iPhone through a cached, auto-signed
   XCUITest runner (`device-runner/`), including Settings, Shortcuts and SpringBoard.
 - `/fastUIReview` builds contact sheets from recorded runs. Other launchers: `fastUIMap`,

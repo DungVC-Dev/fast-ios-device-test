@@ -16,5 +16,9 @@ loaded twice.
 - `skills/fast-ios-device-test/SKILL.md` is a standard Agent Skill. Antigravity loads it from the
   plugin, or globally when it is linked into `~/.gemini/config/skills/`; Gemini CLI loads
   it from the extension declared by `gemini-extension.json`.
+- For iPhone Duo, run the installed `fastSimulatorTest` launcher; use `duo` flow actions for
+  outer/inner display changes and `--duo-pose closed|open|book|tabletop` for fixed-framebuffer
+  recording rows. Do not automate Device Hub outside the launcher. The Antigravity marketplace
+  README and Gemini extension context repeat this provider-facing workflow.
 - `install.sh` only installs into `~/.claude`. Never run it to probe flags: any unknown
   argument triggers a real install (details in `AGENTS.md`).

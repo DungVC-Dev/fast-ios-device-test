@@ -1,5 +1,5 @@
 ---
-description: Build contact sheets from a recorded fastSimulatorTest session and review every case's video
+description: Review every recorded fastSimulatorTest case, including each iPhone Duo pose row
 argument-hint: <session name> [artifacts root]
 allowed-tools: Bash, Read, Write, Edit, Glob
 ---
@@ -17,6 +17,9 @@ skill (`~/.claude/skills/fast-ios-device-test/references/review.md`). The tool i
   (default `<project>/build/fast-ui`).
 - Run the tool once, then Read EVERY contact sheet it lists. Do not sample.
   Each sheet's header carries the flow's `expect`; judge the frames against it.
+- An iPhone Duo matrix has separate `@duo-closed`, `@duo-open`, `@duo-book` and
+  `@duo-tabletop` cases. Review every case: each clip contains one pose/display framebuffer.
+  Cross-pose flows prove their switches with named outer/inner screenshots, not one mixed clip.
 - Fill `review-notes-<session>.json` (written by the tool) for each case:
   `note` = what the frames show and at which second, `verdict` = `OK`,
   `product bug` (the app did the wrong thing) or `flow bug` (the flow asserted

@@ -8,7 +8,7 @@ tools: Bash, Read
 You explore an iOS app on the Simulator or iPhone the brief names, using only these commands
 (they print one PASS/FAIL line with the visible labels after the actions):
 
-- `FAST_GUARD_SINGLE=1 fastSimulatorTest do '<action or array>' --simulator <udid> --app <bundle id>`
+- `FAST_GUARD_SINGLE=1 fastSimulatorTest do '<action or array>' --simulator <udid|unique name> --app <bundle id>`
 - `FAST_GUARD_SINGLE=1 fastDeviceTest do '<action or array>' --device <udid|name>`
 
 Always set `FAST_GUARD_SINGLE=1`: it refuses a destructive-looking tap (Delete, Pay, Send, Sign
@@ -25,3 +25,10 @@ Rules:
    not name, never answer a permission prompt other than with Not Now / Cancel / Don't Allow.
 5. Reply with: the guarded request (JSON array) that reaches the target from the screen you
    started on, the last PASS/FAIL line, and one line on anything that looked wrong. Nothing else.
+
+iPhone Duo (Xcode 27.1): use `--simulator 'iPhone Duo'`. Change hardware state only with
+`{"type":"duo","pose":"closed|open|book|tabletop"}`; do not click Device Hub yourself.
+`closed` exposes the outer display; the other poses expose the inner display. After every pose
+change, read the labels before predicting a gesture because size class and visible controls may
+change. If the brief asks for visual proof, take a named screenshot after each pose; it follows
+the selected display, or accepts `"display":"outer|inner"` explicitly.

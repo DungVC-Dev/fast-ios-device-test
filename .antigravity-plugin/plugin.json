@@ -3,11 +3,11 @@
   "name": "fast-ios-device-test",
   "displayName": "Fast iOS Device Test",
   "version": "2.0.4",
-  "description": "Run fast iOS UI-flow verification on Simulator and physical iPhone from a local Mac.",
+  "description": "Run fast iOS UI flows on Simulator, iPhone Duo outer/inner poses, and physical iPhone from a local Mac.",
   "logo": "assets/fast-ios-device-test.png",
   "suggestedPrompts": [
     "Set up Fast iOS Device Test on this Mac",
-    "Verify this iOS flow on Simulator and record it",
+    "Verify this screen across iPhone Duo closed, open, book and tabletop poses",
     "Run this UI flow on my connected iPhone"
   ],
   "author": {
