@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.0.1 — 2026-11-02
 
 - Add installable packages for the Codex plugin directory, Antigravity Marketplace, and Gemini
   CLI extension gallery, with provider manifests, marketplace metadata, a generated icon, guided
