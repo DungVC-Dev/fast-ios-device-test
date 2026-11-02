@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Put Codex and Antigravity marketplace installs first in the README and replace the long bullet
+  table of contents with a compact icon navigation bar.
+
 - Give the README a branded icon header, release/platform badges, agent support badges, and a
   one-command install callout.
 
