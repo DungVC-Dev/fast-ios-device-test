@@ -28,7 +28,7 @@ Expected: a path inside an `Xcode.app` and `Xcode 26.x` or `27.x`. If it prints
 ## 2. Install
 
 ```bash
-git clone https://github.com/kiluss2/fast-ios-device-test.git ~/fast-ios-device-test
+git clone https://github.com/DungVC-Dev/fast-ios-device-test.git ~/fast-ios-device-test
 ~/fast-ios-device-test/install.sh --link
 ```
 

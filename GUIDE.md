@@ -7,14 +7,14 @@ PASS/FAIL kèm ảnh chụp.
 
 Chỉ cần có sẵn Xcode 26 hoặc 27. Không cần Homebrew hay xcodegen: AXe đã đóng kèm trong gói.
 
-**Cách nhanh nhất:** nhờ AI cài: "làm theo SETUP.md trong https://github.com/kiluss2/fast-ios-device-test".
+**Cách nhanh nhất:** nhờ AI cài: "làm theo SETUP.md trong https://github.com/DungVC-Dev/fast-ios-device-test".
 [SETUP.md](SETUP.md) có từng bước, lệnh kiểm tra, kết quả mong đợi và cách sửa từng lỗi.
 
 **Tự cài:**
 
 1. Mở Terminal, chạy:
    ```bash
-   git clone https://github.com/kiluss2/fast-ios-device-test.git ~/fast-ios-device-test
+   git clone https://github.com/DungVC-Dev/fast-ios-device-test.git ~/fast-ios-device-test
    ~/fast-ios-device-test/install.sh --link
    ~/fast-ios-device-test/install.sh --check          # dòng cuối phải là CHECK OK
    ```
@@ -22,7 +22,7 @@ Chỉ cần có sẵn Xcode 26 hoặc 27. Không cần Homebrew hay xcodegen: AX
 
 Cập nhật bản mới: `git -C ~/fast-ios-device-test pull && ~/fast-ios-device-test/install.sh --link`.
 Giữ nguyên thư mục `~/fast-ios-device-test` vì skill và lệnh trỏ vào đó. Không dùng git thì tải
-zip ở trang [Releases](https://github.com/kiluss2/fast-ios-device-test/releases), giải nén và chạy
+zip ở trang [Releases](https://github.com/DungVC-Dev/fast-ios-device-test/releases), giải nén và chạy
 `install.sh` trong đó (không thêm cờ).
 
 ## iPhone thật

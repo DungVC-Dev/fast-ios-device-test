@@ -27,7 +27,7 @@ whole setup from [SETUP.md](SETUP.md): every step has a command, the expected ou
 for each failure, including the checks for an iPhone (`fastDeviceTest check --device <name>`).
 
 ```bash
-git clone https://github.com/kiluss2/fast-ios-device-test.git ~/fast-ios-device-test
+git clone https://github.com/DungVC-Dev/fast-ios-device-test.git ~/fast-ios-device-test
 ~/fast-ios-device-test/install.sh --link
 ```
 
@@ -35,7 +35,7 @@ Restart Claude Code. To upgrade later: `git -C ~/fast-ios-device-test pull`. Wit
 `--link` the skill, commands and launchers point into the clone, so keep that folder.
 
 Without git: download `fast-ios-device-test-<version>.zip` from the
-[Releases](https://github.com/kiluss2/fast-ios-device-test/releases) page, unzip it
+[Releases](https://github.com/DungVC-Dev/fast-ios-device-test/releases) page, unzip it
 anywhere and run its `install.sh` (no flag). That copies the tool to
 `~/.local/share/fast-ios-device-test`, so the unzipped folder can be deleted.
 

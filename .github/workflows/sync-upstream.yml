@@ -1,0 +1,55 @@
+name: Sync upstream
+
+# Merges kiluss2/fast-ios-device-test main into this repo's main, then points
+# any new install links at this repo. A conflict fails the run and opens an issue.
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Merge upstream main
+        id: merge
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/kiluss2/fast-ios-device-test.git
+          git fetch upstream main --tags
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "Already up to date."
+            exit 0
+          fi
+          if ! git merge --no-edit upstream/main; then
+            git merge --abort
+            echo "conflict=true" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          grep -rlI --exclude-dir=.git --exclude-dir=.github "github.com/kiluss2/fast-ios-device-test" . \
+            | xargs -r sed -i 's#github.com/kiluss2/fast-ios-device-test#github.com/DungVC-Dev/fast-ios-device-test#g'
+          if ! git diff --quiet; then
+            git commit -am "Point install links at DungVC-Dev/fast-ios-device-test"
+          fi
+          git push origin main
+          git push origin --tags
+
+      - name: Report conflict
+        if: failure() && steps.merge.outputs.conflict == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Upstream sync conflict"
+          if [ -z "$(gh issue list --state open --search "in:title \"$title\"" --json number -q '.[].number')" ]; then
+            gh issue create --title "$title" --body "Merging kiluss2/fast-ios-device-test main into main conflicts. Merge it by hand: \`git fetch upstream && git merge upstream/main\`. Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          fi
