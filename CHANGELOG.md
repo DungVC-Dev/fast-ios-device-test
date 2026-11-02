@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.11.1 — 2026-11-02
+
+- First release on npm (`npx fast-ios-device-test`); the same code as 1.11.0.
+
 ## 1.11.0 — 2026-11-02
 
 ### Faster to prepare, safer to reuse a simulator
