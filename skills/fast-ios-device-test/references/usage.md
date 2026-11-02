@@ -1,5 +1,9 @@
 # Usage reference
 
+For mixed phone + CarPlay flows and display presets, see [carplay.md](carplay.md). Those flows use
+`fastCarPlayTest run`, add `surface: "car"` only to car-display steps, and may carry a top-level
+`case` such as `CPR-01` for reporting.
+
 ## Prerequisites
 
 - The iPhone is trusted and available through Xcode/CoreDevice.

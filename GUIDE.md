@@ -1,4 +1,4 @@
-# fastSimulatorTest & fastDeviceTest
+# fastSimulatorTest, fastDeviceTest & fastCarPlayTest
 
 Bạn chỉ cần gõ lệnh và mô tả bằng lời. Agent tự viết flow hoặc bấm từng bước, chạy, rồi báo
 PASS/FAIL kèm ảnh chụp.
@@ -19,7 +19,7 @@ Cài hai phần:
    Codex và Claude Code; Antigravity và Gemini thì in ra lệnh cần chạy). Khi có bản mới,
    `fastSimulatorTest`/`fastDeviceTest` in một dòng `update available: …` (tối đa một lần mỗi ngày,
    không tự cài; tắt bằng `FAST_IOS_NO_UPDATE_CHECK=1`). Với Claude Code, lệnh này đã cài luôn
-   skill, các lệnh `/fastSimulatorTest`, `/fastDeviceTest`, `/fastUIReview` và subagent.
+   skill, các lệnh `/fastSimulatorTest`, `/fastDeviceTest`, `/fastCarPlayTest`, `/fastUIReview` và subagent.
    Cập nhật các tool như dependency đã khóa: `npx fast-ios-device-test update-tools` (hoặc
    `update-axe` / `update-baguette`); lệnh này tải release mới nhất, kiểm checksum + version,
    cập nhật pin rồi cài lại local.
@@ -76,12 +76,14 @@ giữa chừng thì tool báo ngay sau vài giây: mở khoá bằng tay rồi c
 | --- | --- |
 | `/fastSimulatorTest <mô tả>` | Test trên Simulator (mặc định, nhanh) |
 | `/fastDeviceTest <mô tả>` | Test trên iPhone thật, kể cả Settings / Shortcuts / màn hình chính |
+| `/fastCarPlayTest <flow>` | Test tuần tự cả màn hình điện thoại và CarPlay; sim hoặc iPhone thật + Apple CarPlay Simulator |
 | `/fastUIReview <session>` | Xem lại video đã quay |
 | (tự động) | Mỗi lần chạy flow PASS, và lần `--before` fail đúng bước kiểm tra, được chép ra `~/Desktop/<project> <ticket>/`: ảnh ghép có chú thích, video nén, ảnh lẻ trong `source/`. Merge PR xong thì tự xoá folder đó |
 | `fastEvidenceSheet <spec.json>` | Dựng lại ảnh ghép sau khi sửa `source/sheet.json` (đổi thứ tự, chú thích, ảnh) |
 | `fastUIClean [--project <root>] [--maps] [--yes]` | Liệt kê rồi (với `--yes`) xoá cache fast UI để lại: runner iPhone, helper, lock, session, `build/fast-ui` của project; bản đồ màn hình chỉ khi có `--maps`. Không đụng evidence trên Desktop, bỏ qua thứ đang chạy |
 | `fastUIMap <bundle id> [--find <chữ> \| --path-to <màn>]` | Bản đồ màn hình các lần chạy trước đã ghi: selector, đường đi; `--path-to` in sẵn một lệnh đi thẳng tới màn đó |
 | `fastDeviceTest check --device <tên>` | Kiểm tra một iPhone trước khi chạy |
+| `fastCarPlayTest doctor --target sim\|hardware` | Kiểm tra bộ CarPlay, chỉ đọc và báo cách sửa |
 
 Agent tự chọn giữa viết flow (để chạy lại, chạy nhiều máy, quay video) và bấm từng bước bằng
 `do` (để dò màn mới). Việc dò dài có thể giao cho subagent `ui-explorer` (Haiku, đang thử nghiệm).
@@ -95,6 +97,7 @@ Agent tự chọn giữa viết flow (để chạy lại, chạy nhiều máy, q
 /fastDeviceTest trên iPhone của tôi: mở Home, kiểm tra không hiện paywall
 /fastDeviceTest trên iPhone, có quay video: mở paywall rồi đóng
 /fastDeviceTest bấm giữ widget ngoài màn hình chính, mở Edit Widget
+/fastCarPlayTest chạy flow CPR-01 trên Apple CarPlay Simulator và iPhone của tôi
 ```
 
 ## Cần biết
@@ -118,6 +121,11 @@ Agent tự chọn giữa viết flow (để chạy lại, chạy nhiều máy, q
 - iPhone Duo cần Xcode 27.1. Flow dùng `{"type":"duo","pose":"closed|open|book|tabletop"}`
   để đổi màn hình/tư thế; `screenshot` có thể ghi `"display":"outer"` hoặc `"inner"`.
   Chạy matrix bằng `--duo-pose`; mỗi dòng có hậu tố `@duo-<pose>` và video quay đúng framebuffer.
+- CarPlay Simulator.app cần Xcode 26.6, mặc định iOS 26.5 và simulator riêng tên `agent-tmp-*`.
+  Dùng `--display widescreen` hoặc `--display standard` cho 1920×720@2 hoặc 800×480@2. Mỗi lệnh
+  chỉ chạy một cỡ vì đổi cỡ phải reboot simulator; chỉ chạy cỡ thứ hai khi người dùng yêu cầu.
+  Không bao giờ dùng
+  `simctl io screenshot --display external` vì trên iOS 27 lệnh đó làm restart CarPlay.
 - Bàn phím tiếng Việt (Telex) trên máy sẽ biến chữ agent gõ; số và phím thì không sao.
 
 Có gì mới: xem [CHANGELOG.md](CHANGELOG.md).

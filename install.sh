@@ -41,9 +41,9 @@ esac
 
 LINKS=(
     "$SKILLS_DIR/fast-ios-device-test"
-    "$COMMANDS_DIR/fastSimulatorTest.md" "$COMMANDS_DIR/fastDeviceTest.md" "$COMMANDS_DIR/fastUIReview.md"
+    "$COMMANDS_DIR/fastSimulatorTest.md" "$COMMANDS_DIR/fastDeviceTest.md" "$COMMANDS_DIR/fastCarPlayTest.md" "$COMMANDS_DIR/fastUIReview.md"
     "$AGENTS_DIR/ui-explorer.md"
-    "$BIN_DIR/fastSimulatorTest" "$BIN_DIR/fastUITest" "$BIN_DIR/fastDeviceTest" "$BIN_DIR/fastUIReport"
+    "$BIN_DIR/fastSimulatorTest" "$BIN_DIR/fastUITest" "$BIN_DIR/fastDeviceTest" "$BIN_DIR/fastCarPlayTest" "$BIN_DIR/fastUIReport"
     "$BIN_DIR/fastUIReview" "$BIN_DIR/fastEvidenceSheet" "$BIN_DIR/fastUIMap" "$BIN_DIR/fastUIClean"
 )
 
@@ -159,7 +159,7 @@ if [[ "$MODE" == "check" ]]; then
         elif [[ ! -e "$1" ]]; then echo "  broken link: $1 -> $(readlink "$1")"; missing+=("$2 (broken link)")
         fi
     }
-    for name in fastSimulatorTest fastDeviceTest fastUIReview fastUIReport fastEvidenceSheet fastUIMap fastUIClean; do
+    for name in fastSimulatorTest fastDeviceTest fastCarPlayTest fastUIReview fastUIReport fastEvidenceSheet fastUIMap fastUIClean; do
         need_link "$BIN_DIR/$name" "$name launcher"
     done
     need_link "$SKILLS_DIR/fast-ios-device-test" skill
@@ -235,11 +235,13 @@ python3 -c "import PIL" 2>/dev/null || python3 -m pip install --user pillow >/de
 link "$HERE/skills/fast-ios-device-test" "$SKILLS_DIR/fast-ios-device-test"
 link "$HERE/commands/fastSimulatorTest.md" "$COMMANDS_DIR/fastSimulatorTest.md"
 link "$HERE/commands/fastDeviceTest.md" "$COMMANDS_DIR/fastDeviceTest.md"
+link "$HERE/commands/fastCarPlayTest.md" "$COMMANDS_DIR/fastCarPlayTest.md"
 link "$HERE/commands/fastUIReview.md" "$COMMANDS_DIR/fastUIReview.md"
 link "$HERE/agents/ui-explorer.md" "$AGENTS_DIR/ui-explorer.md"
 link "$HERE/scripts/fast_ui.py" "$BIN_DIR/fastSimulatorTest"
 link "$HERE/scripts/fast_ui.py" "$BIN_DIR/fastUITest"
 link "$HERE/scripts/fast_device.py" "$BIN_DIR/fastDeviceTest"
+link "$HERE/scripts/fast_carplay.py" "$BIN_DIR/fastCarPlayTest"
 link "$HERE/scripts/fast_ui_report.py" "$BIN_DIR/fastUIReport"
 link "$HERE/scripts/fast_ui_review.py" "$BIN_DIR/fastUIReview"
 link "$HERE/scripts/fast_evidence_sheet.py" "$BIN_DIR/fastEvidenceSheet"
@@ -252,7 +254,7 @@ for entry in "${OTHER_SKILL_LINKS[@]}"; do
     [[ -L "$path" && ! -e "$path" ]] || continue
     link "$HERE/skills/fast-ios-device-test" "$path"
 done
-chmod +x "$HERE/scripts/fast_ui.py" "$HERE/scripts/fast_ui_report.py" "$HERE/scripts/fast_ui_review.py" "$HERE/scripts/fast_device.py" \
+chmod +x "$HERE/scripts/fast_ui.py" "$HERE/scripts/fast_ui_report.py" "$HERE/scripts/fast_ui_review.py" "$HERE/scripts/fast_device.py" "$HERE/scripts/fast_carplay.py" \
     "$HERE/scripts/fast_evidence_sheet.py" "$HERE/scripts/fast_ui_map.py" "$HERE/scripts/fast_ui_clean.py" \
     "$HERE/scripts/fast_device_test.sh" "$HERE/scripts/shims/swiftlint"
 
@@ -261,6 +263,6 @@ case ":$PATH:" in
 *) echo "note: add '$BIN_DIR' to PATH, e.g. echo 'export PATH=\"$BIN_DIR:\$PATH\"' >> ~/.zshrc" ;;
 esac
 
-(cd "$HERE/scripts" && python3 -m unittest test_fast_ui test_fast_media test_fast_ui_map test_fast_guard >/dev/null 2>&1) && echo "engine self-test: OK" \
-    || echo "engine self-test: FAILED (cd scripts && python3 -m unittest test_fast_ui test_fast_media test_fast_ui_map test_fast_guard)"
-echo "done. In Claude Code: /fastSimulatorTest <flow>, /fastDeviceTest <flow>, /fastUIReview <session>"
+(cd "$HERE/scripts" && python3 -m unittest test_fast_ui test_fast_carplay test_fast_media test_fast_ui_map test_fast_guard >/dev/null 2>&1) && echo "engine self-test: OK" \
+    || echo "engine self-test: FAILED (cd scripts && python3 -m unittest test_fast_ui test_fast_carplay test_fast_media test_fast_ui_map test_fast_guard)"
+echo "done. In Claude Code: /fastSimulatorTest <flow>, /fastDeviceTest <flow>, /fastCarPlayTest <flow>, /fastUIReview <session>"

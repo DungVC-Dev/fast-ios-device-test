@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "fast-ios-device-test",
   "version": "2.0.4",
-  "description": "Fast iOS UI-flow verification on Simulator and physical iPhone from a local macOS agent.",
+  "description": "Fast iOS UI-flow verification on Simulator, physical iPhone and CarPlay from a local macOS agent.",
   "author": {
     "name": "DungVC",
     "url": "https://github.com/DungVC-Dev"
@@ -23,12 +23,13 @@
       "interface": {
         "displayName": "Fast iOS Device Test",
         "shortDescription": "Fast iOS UI flow tests",
-        "longDescription": "Verify focused iOS UI flows quickly on Simulator or a connected physical iPhone. The plugin writes guarded JSON flows, drives real UI interactions, records video when requested, reviews runs, and prepares captioned PR evidence. It runs only on a local Mac and requires Xcode 26 or 27; physical-device runs also require a development profile for the connected iPhone.",
+        "longDescription": "Verify focused iOS UI flows quickly on Simulator, a connected physical iPhone, or a mixed phone and CarPlay rig. The plugin writes guarded JSON flows, drives real UI interactions, records video when requested, reviews runs, and prepares captioned PR evidence. It runs only on a local Mac and requires Xcode 26 or 27; physical-device runs also require a development profile for the connected iPhone.",
         "developerName": "DungVC",
         "category": "Developer Tools",
         "capabilities": [
           "Run iOS Simulator UI flows",
           "Run physical iPhone UI flows",
+          "Run mixed phone and CarPlay flows",
           "Record and review UI test sessions",
           "Prepare captioned PR evidence"
         ],
@@ -37,7 +38,8 @@
         "defaultPrompt": [
           "Set up Fast iOS Device Test on this Mac.",
           "Verify this iOS flow on Simulator and record it.",
-          "Run this UI flow on my connected iPhone."
+          "Run this UI flow on my connected iPhone.",
+          "Run this mixed phone and CarPlay flow."
         ],
         "brandColor": "#006BCE",
         "logo": "./assets/fast-ios-device-test.png",

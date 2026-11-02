@@ -19,7 +19,7 @@
   </p>
 </div>
 
-> ⚡ **Simulator** · 📱 **Physical iPhone** · 🎥 **Video review** · 🧾 **PR evidence** · 🛡️ **Guarded destructive actions**
+> ⚡ **Simulator** · 📱 **Physical iPhone** · 🚘 **CarPlay** · 🎥 **Video review** · 🧾 **PR evidence** · 🛡️ **Guarded destructive actions**
 
 ```bash
 npx fast-ios-device-test
@@ -40,6 +40,7 @@ npx fast-ios-device-test
 |---|---|
 | `fastSimulatorTest` | Drives the app on Simulator through a JSON flow (fresh install, injected UserDefaults, PASS/FAIL line), including iPhone Duo outer/inner displays and poses. Fans out one agent per simulator for a matrix. |
 | `fastDeviceTest` | Runs the same JSON flow on a physical iPhone through a cached, auto-signed XCUITest runner; can also drive Settings, Shortcuts and SpringBoard. |
+| `fastCarPlayTest` | Runs mixed phone + car flows on Xcode 26.6 Simulator.app (`baguette`) or Apple's standalone CarPlay Simulator with a USB iPhone; supports display presets and PASS/FAIL/VOID. |
 | `fastUIReview` | Builds contact sheets from a recorded session so every case's video is reviewed, not just its PASS line. |
 | `fastUIMap` | Prints what earlier runs saw of an app; `--path-to <screen>` gives the way there as one request. |
 | `fastEvidenceSheet` | Renders the captioned PR evidence sheet again after an edit. |
@@ -70,6 +71,8 @@ bundle id, simulator, build folder); the skill shows the smallest complete flow.
 - Pillow is installed when possible; only video review (`fastUIReview`, `fastEvidenceSheet`, the
   `motion` action) needs it.
 - For a physical iPhone: see [GUIDE.md](GUIDE.md) (Vietnamese) or [SETUP.md](SETUP.md).
+- CarPlay simulator runs additionally need Xcode 26.6's Simulator.app, an iOS 26.5 runtime by
+  default, and `baguette`; `fastCarPlayTest doctor` reports each missing item and its fix.
 
 ## Install
 
@@ -152,11 +155,11 @@ What the installer puts where:
 | What | Where |
 |---|---|
 | The tool | `~/.local/share/fast-ios-device-test` (or your clone with `--link`) |
-| Launchers `fastSimulatorTest`, `fastDeviceTest`, `fastUIReport`, `fastUIReview`, `fastEvidenceSheet`, `fastUIMap`, `fastUIClean` | `~/.local/bin` (add it to `PATH` if the installer says so) |
+| Launchers `fastSimulatorTest`, `fastDeviceTest`, `fastCarPlayTest`, `fastUIReport`, `fastUIReview`, `fastEvidenceSheet`, `fastUIMap`, `fastUIClean` | `~/.local/bin` (add it to `PATH` if the installer says so) |
 | The exact AXe version pinned by this project, plus its `~/.local/bin/axe` wrapper | `~/.local/share/axe` |
-| Optional exact baguette pin for upcoming CarPlay support, resource bundle, LICENSE/NOTICE and wrapper | `~/.local/share/baguette` |
+| Optional exact baguette pin, resource bundle, LICENSE/NOTICE and wrapper | `~/.local/share/baguette` |
 | Claude Code skill | `~/.claude/skills/fast-ios-device-test` |
-| Claude Code slash commands `/fastSimulatorTest`, `/fastDeviceTest`, `/fastUIReview` | `~/.claude/commands` |
+| Claude Code slash commands `/fastSimulatorTest`, `/fastDeviceTest`, `/fastCarPlayTest`, `/fastUIReview` | `~/.claude/commands` |
 | Claude Code `ui-explorer` subagent | `~/.claude/agents` |
 
 ### 3. Check
@@ -336,7 +339,7 @@ Each coding agent loads its own guidance file from the repo root:
 Run the tests before a commit:
 
 ```bash
-(cd scripts && python3 -m unittest test_fast_ui test_fast_media test_fast_ui_map test_fast_guard test_fast_ui_clean)
+(cd scripts && python3 -m unittest test_fast_ui test_fast_carplay test_fast_media test_fast_ui_map test_fast_guard test_fast_ui_clean)
 ```
 
 Releases: write what changed under `## Unreleased` in CHANGELOG.md, then `./release.sh patch` (or
@@ -354,13 +357,15 @@ Actions then publishes to npm and creates the GitHub release with the zip.
 - `install.sh`: installer (`--link`, `--check`, `--uninstall`)
 - `skills/fast-ios-device-test/SKILL.md`: agent instructions (flow file, single flow, several flows or simulators)
   - `references/device.md`: fastDeviceTest on a physical iPhone
+  - `references/carplay.md`: fastCarPlayTest rigs, display presets and car actions
   - `references/review.md`: reviewing recorded runs with fastUIReview
   - `references/usage.md`: flow action reference, matrix, cache model, troubleshooting
-- `commands/`: the three Claude Code slash commands
+- `commands/`: the four Claude Code slash commands
 - `agents/ui-explorer.md`: Claude Code Haiku subagent for long step-by-step searches (experimental)
 - `bin/`: launcher symlinks for the plugin install
 - `scripts/fast_ui.py`: Simulator flow engine (`scripts/test_fast_ui.py` tests it); `--record`, `--session`
 - `scripts/fast_device.py` + `device-runner/`: physical-iPhone flow runner (XCUITest, auto-signed; the `.xcodeproj` is committed, regenerate with `cd device-runner && xcodegen generate` after editing `project.yml`)
+- `scripts/fast_carplay.py`: mixed phone + CarPlay runner (`scripts/test_fast_carplay.py`)
 - `scripts/fast_ui_report.py`: collates a fan-out session into a flow × simulator table (`fastUIReport`)
 - `scripts/fast_ui_review.py`: contact sheets and review notes for recorded runs (`fastUIReview`)
 - `scripts/fast_evidence.py`: files each qualifying flow run into the ticket's evidence folder, shared by both engines (`scripts/test_fast_evidence.py`)

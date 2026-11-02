@@ -151,6 +151,21 @@ later requests take about 2 s. Always `stop` when done: the runner holds the iPh
 of the work, `fastDeviceTest lock --device "<name or udid>"` stops it and locks the screen too,
 and `fastSimulatorTest shutdown` shuts down the booted simulators.
 
+## 6b. CarPlay (optional)
+
+Run the read-only checks before a CarPlay flow:
+
+```bash
+fastCarPlayTest doctor --target sim
+fastCarPlayTest doctor --target hardware
+```
+
+Simulator CarPlay needs Xcode 26.6's Simulator.app, an iOS 26.5 runtime by default, the installed
+`baguette` binary, and a disposable simulator named `agent-tmp-*`. Hardware needs Apple's CarPlay
+Simulator from Additional Tools and an unlocked USB iPhone. Doctor prints `OK/WARN/FAIL` plus the
+specific fix; it never installs, launches, or changes either rig. Full setup and display presets are
+in `skills/fast-ios-device-test/references/carplay.md`.
+
 ## 7. Optional
 
 - Defaults so commands need fewer flags: `FAST_DEVICE=<udid or full name>`,

@@ -25,13 +25,18 @@ PATH copies. A missing baguette is expected unless CarPlay support is needed and
 | PR evidence (sheet + clips) | nothing to run: every PASS flow run, and every `--before` run that failed at its outcome step, is filed in `~/Desktop/<project> <ticket>/` — "Evidence folder" in [references/usage.md](references/usage.md) |
 | Change that sheet (order, captions, a shot) | edit `source/sheet.json` there, then `fastEvidenceSheet <it>` — "Evidence sheet" in [references/usage.md](references/usage.md) |
 | Physical iPhone | read [references/device.md](references/device.md) first |
-| CarPlay Simulator | not yet exposed as a launcher; project-managed baguette is staged for the upcoming `fastCarPlayTest`. Do not invent a flow command yet |
-| A Mac app, Apple Watch | out of reach of both engines: say so at once. Do not drive it with `osascript`, `cliclick`, `screencapture` or a hand-written XCUITest unless the user asks for that |
+| CarPlay (Simulator.app or Apple CarPlay Simulator + iPhone) | `fastCarPlayTest`; read [references/carplay.md](references/carplay.md) first. It reuses the phone engines and safely drives/captures the separate car surface |
+| Another Mac app, Apple Watch | out of reach of the engines: say so at once. Do not drive it with `osascript`, `cliclick`, `screencapture` or a hand-written XCUITest unless the user asks for that |
 
 Never point both tools at one simulator: Xcode reinstalls the app over the fresh install.
 The engine is feature-agnostic: screen names, labels and assertions live only in flow
 JSON. Never edit the engine for one screen. Every action, `setup` key and CLI flag is in
 [references/usage.md](references/usage.md).
+
+CarPlay is the exception to the accessibility-only path: AXe/XCUITest cannot reach the car display,
+and `simctl io --display external` is destructive on iOS 27. `fastCarPlayTest` uses `baguette` on a
+disposable `agent-tmp-*` simulator or the standalone CarPlay Simulator window on hardware. Project-
+specific display arming stays in the flow's `setup.carplay_arm_script`.
 
 ## Flow file
 

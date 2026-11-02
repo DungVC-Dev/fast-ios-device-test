@@ -26,6 +26,8 @@ Antigravity, a Gemini CLI extension, and a release zip. macOS only; needs Xcode 
   one-framebuffer-per-pose recordings; they never drive Device Hub directly.
 - `/fastDeviceTest` runs the same flows on a physical iPhone through a cached, auto-signed
   XCUITest runner (`device-runner/`), including Settings, Shortcuts and SpringBoard.
+- `fastCarPlayTest` runs mixed phone + CarPlay flows on Simulator.app through `baguette`, or on
+  Apple's standalone CarPlay Simulator with a USB iPhone.
 - `/fastUIReview` builds contact sheets from recorded runs. Other launchers: `fastUIMap`,
   `fastEvidenceSheet`, `fastUIClean`, `fastUIReport`, and `fastUITest` (legacy alias of
   `fastSimulatorTest`).
@@ -40,6 +42,7 @@ User-facing docs: `README.md` (English), `GUIDE.md` (Vietnamese, for testers), `
 | `scripts/fast_ui.py` | Simulator flow engine (`--record`, `--session`) |
 | `scripts/tool_manager.py` | Installs/updates required AXe and optional baguette; skips healthy pins; stdlib only |
 | `scripts/fast_device.py` | Physical-iPhone engine |
+| `scripts/fast_carplay.py` | Mixed phone + CarPlay engine (`doctor`, display presets, sim/hardware) |
 | `device-runner/` | XCUITest runner app. The `.xcodeproj` is committed; after editing `project.yml` run `cd device-runner && xcodegen generate` |
 | `scripts/fast_guard.py` | Checks `do` requests (destructive steps, shapes) for both engines |
 | `scripts/fast_media.py` | Video re-encode, one-final-clip rule |
@@ -51,7 +54,7 @@ User-facing docs: `README.md` (English), `GUIDE.md` (Vietnamese, for testers), `
 | `scripts/fastUnitTest`, `scripts/fast_device_test.sh`, `scripts/fastUnitTest.command.md.disabled` | Experimental on-device XCTest runner; not installed as a command |
 | `bin/` | Repo-local symlinks to `scripts/` for the plugin install. `install.sh` does not use them: it links `scripts/*.py` into `~/.local/bin` itself |
 | `skills/fast-ios-device-test/` | The skill (`SKILL.md` + `references/device.md`, `review.md`, `usage.md`): how an agent *uses* the tool |
-| `commands/` | Slash commands `fastSimulatorTest`, `fastDeviceTest`, `fastUIReview` |
+| `commands/` | Slash commands `fastSimulatorTest`, `fastDeviceTest`, `fastCarPlayTest`, `fastUIReview` |
 | `agents/ui-explorer.md` | Haiku subagent for long step-by-step searches (experimental) |
 | `install.sh` | Installer: copy/link/check/uninstall plus pinned-tool install/update flags |
 | `npm/install.js` | `npx` entry: install, clean, package update and managed-tool updates; refuses `--link` |
@@ -70,7 +73,7 @@ Run each in a subshell so the working directory does not change between commands
 
 ```bash
 # Tests — must pass before any commit (same set release.sh runs)
-(cd scripts && python3 -m unittest test_fast_ui test_fast_media test_fast_ui_map test_fast_guard test_fast_ui_clean test_install test_fast_update)
+(cd scripts && python3 -m unittest test_fast_ui test_fast_carplay test_fast_media test_fast_ui_map test_fast_guard test_fast_ui_clean test_install test_fast_update)
 
 # Extra tests that need Pillow (python3 -m pip install --user pillow)
 (cd scripts && python3 -m unittest test_fast_evidence test_fast_evidence_sheet test_fast_ui_review)

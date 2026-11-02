@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "name": "carplay-widget",
+  "case": "WID-01",
+  "app": {
+    "project_root": "/absolute/path/to/app",
+    "device": "My iPhone"
+  },
+  "actions": [
+    {"surface": "car", "type": "carplay_connect", "name": "Connect widget rig"},
+    {"surface": "car", "type": "car_wait_stable", "name": "Widget line and buildMarker settled", "timeout": 10},
+    {"surface": "car", "type": "car_screenshot", "name": "CarPlay widget render"}
+  ]
+}

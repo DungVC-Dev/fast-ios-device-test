@@ -13,6 +13,13 @@
   workflow refresh both pins and only open (never merge) dependency PRs.
 - Healthy matching tool pins are reused. AXe remains required, while optional baguette no longer
   blocks install or `CHECK OK` on offline, proxy-restricted or Intel Macs; `--force` reinstalls a pin.
+- Add `fastCarPlayTest doctor|run` for mixed phone + CarPlay flows. Simulator runs use a persistent
+  project-pinned `baguette` session and safe screenshots; hardware runs capture/tap Apple's CarPlay
+  Simulator window, control its Connected/Disconnected state, and report Automaker UI as `VOID`.
+- Add one selectable display per run: `widescreen` (1920×720@2), `standard` (800×480@2), `hd`
+  (1280×720@2), or custom `WxH@S`. Matching armed displays skip the reboot; project-specific
+  arming remains in `setup.carplay_arm_script`.
+- CarPlay results include optional case IDs for `fastUIReport` and always retain phone + car stills.
 
 ## 2.0.4 — 2026-11-03
 

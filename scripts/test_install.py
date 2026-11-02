@@ -17,7 +17,7 @@ from unittest import mock
 import tool_manager
 
 REPO = Path(__file__).resolve().parent.parent
-LAUNCHERS = ["fastSimulatorTest", "fastDeviceTest", "fastUIReview", "fastUIReport",
+LAUNCHERS = ["fastSimulatorTest", "fastDeviceTest", "fastCarPlayTest", "fastUIReview", "fastUIReport",
              "fastEvidenceSheet", "fastUIMap", "fastUIClean"]
 
 
