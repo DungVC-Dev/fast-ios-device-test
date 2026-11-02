@@ -2,7 +2,7 @@
   "$schema": "https://antigravity.google/schemas/v1/plugin.json",
   "name": "fast-ios-device-test",
   "displayName": "Fast iOS Device Test",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "Run fast iOS UI-flow verification on Simulator and physical iPhone from a local Mac.",
   "logo": "assets/fast-ios-device-test.png",
   "suggestedPrompts": [

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.0.3 — 2026-11-02
 
 - `npx fast-ios-device-test update`: installs the latest npm version (an older cached npx package
   hands over to it), then updates the Codex and Claude Code plugins and prints the Antigravity and
