@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Give the README a branded icon header, release/platform badges, agent support badges, and a
+  one-command install callout.
+
 ## 2.0.1 — 2026-11-02
 
 - Add installable packages for the Codex plugin directory, Antigravity Marketplace, and Gemini
