@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- `install.sh --check` fails on a broken link (a launcher, the skill or the subagent pointing at
+  a moved or deleted clone) instead of passing it, and reports the Codex and Antigravity skill:
+  a dangling `~/.codex/skills` or `~/.gemini/antigravity-cli/skills` link, or a Codex plugin cache
+  with no skill, hid the skill from that agent while `CHECK OK` still printed.
+- An install (`--link` or the default copy) re-points a dangling Codex or Antigravity skill link
+  at the installed skill; a working link to another clone stays. `--uninstall` removes such a link
+  when it points into the removed copy or at nothing.
+- Skill: one flow per requested behavior by default (cases, variants or a matrix only when the
+  user lists them); after two fix-and-rerun rounds on a product bug, stop and report; a failing
+  flow is no reason to switch to `osascript`, `cliclick` or a hand-written XCUITest; CarPlay
+  Simulator, Mac apps and Apple Watch are out of reach and reported at once.
+
 ## 2.0.2 — 2026-11-02
 
 - Put Codex and Antigravity marketplace installs first in the README and replace the long bullet

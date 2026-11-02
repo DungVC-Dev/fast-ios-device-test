@@ -14,7 +14,8 @@ This is a local macOS tool. Never attempt setup in a cloud or Linux sandbox.
 3. Ensure `~/.local/bin` is on `PATH` for the current shell. Do not edit a shell profile without
    the user's approval; export it for the current command when needed.
 4. Run `npx fast-ios-device-test --check`. Setup is complete only when the last line is
-   `CHECK OK`.
+   `CHECK OK`. It also fails on a broken link (a moved or deleted clone) and on a Codex or
+   Antigravity skill that will not load; follow the fix printed on that line.
 5. When the user wants physical-iPhone runs, also run
    `npx fast-ios-device-test --check --device "<iPhone name or UDID>"` and follow the reported
    signing, trust, Developer Mode, or profile fix. Do not guess a device when several are present.

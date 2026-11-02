@@ -20,6 +20,7 @@ and require its final `CHECK OK` before continuing.
 | PR evidence (sheet + clips) | nothing to run: every PASS flow run, and every `--before` run that failed at its outcome step, is filed in `~/Desktop/<project> <ticket>/` — "Evidence folder" in [references/usage.md](references/usage.md) |
 | Change that sheet (order, captions, a shot) | edit `source/sheet.json` there, then `fastEvidenceSheet <it>` — "Evidence sheet" in [references/usage.md](references/usage.md) |
 | Physical iPhone | read [references/device.md](references/device.md) first |
+| CarPlay Simulator, a Mac app, Apple Watch | out of reach of both engines: say so at once. Do not drive it with `osascript`, `cliclick`, `screencapture` or a hand-written XCUITest unless the user asks for that |
 
 Never point both tools at one simulator: Xcode reinstalls the app over the fresh install.
 The engine is feature-agnostic: screen names, labels and assertions live only in flow
@@ -88,8 +89,11 @@ Everything the engine needs is in the flow; there is no per-project config.
 
 ## One flow
 
-1. Write the smallest version-1 flow for the requested behavior in a temporary directory
-   (delete it afterwards, one `rm <file>` per file).
+1. One flow by default: the state the behavior needs, the shortest way to it, and an assertion
+   of the requested outcome. A flow the user gave runs unchanged. Add cases, variants
+   (appearance, text size, other devices) or a matrix only when the user lists or asks for them;
+   when the outcome to assert is unclear, ask one question. Write it as a version-1 flow in a
+   temporary directory (delete it afterwards, one `rm <file>` per file).
 2. App driven before → `fastUIMap <bundle id> --find <label>` first: selectors and the steps that
    reach them, from what earlier runs saw; `--path-to <screen>` prints them as one guarded `do`
    request. A hint that may be stale; the flow still verifies.
@@ -106,7 +110,9 @@ Everything the engine needs is in the flow; there is no per-project config.
    build inputs are unchanged, fresh-installs, seeds `setup.preferences`, prints one PASS/FAIL line.
 5. On FAIL the line lists `visible labels: [Add Widget (StaticText), …]` with types, says when
    the label exists under another type, and suggests close labels. Fix one selector, rerun
-   with `--reuse-app`. After two reruns stop and report with the artifact link.
+   with `--reuse-app`. After two reruns stop and report with the artifact link. A failing flow
+   is never a reason to switch to another driver (`osascript`, `cliclick`, a hand-written
+   XCUITest): report instead.
 
 ## Step by step (exploring, or one quick check)
 
@@ -164,7 +170,8 @@ URL: relay it as a markdown link.
 A flow is evidence only when its last actions assert the product outcome. A FAIL whose labels
 show the expected screen under another label is a selector bug (fix the flow); labels showing
 the wrong state (popup still there, gate not applied) are a product bug: fix the code, rebuild
-(`--build-only`, or drop `--reuse-app`), rerun the same flow. Record (`--record`) when the user
+(`--build-only`, or drop `--reuse-app`), rerun the same flow; after two fix-and-rerun rounds that
+still fail, stop and report what the labels show. Record (`--record`) when the user
 asks for video or a flow proves a fix: a PASS keeps one `final[-<session>].mp4` per task, a
 FAIL keeps `run.mp4` beside `failure.png`. Both engines record — the iPhone through XCTest's own
 screen recording, one-shot runs only ([references/device.md](references/device.md)) — and both

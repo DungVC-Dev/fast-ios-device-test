@@ -60,6 +60,9 @@ Expected last line: `CHECK OK`. `CHECK missing: …` names what to fix:
 | `xcode` | step 1 |
 | `axe` or `axe-1.8.0` (the check line reads `axe=<version>`) | rerun `install.sh --link` (it unpacks the bundled AXe) |
 | a launcher, `skill`, `ui-explorer agent` | rerun `install.sh --link` |
+| `… (broken link)`: a link whose clone was moved or deleted (a `broken link:` line names it) | rerun `install.sh --link` from the clone you keep |
+| `codex skill (broken link)` | rerun `install.sh --link` (it re-points a dangling Codex or Antigravity link), or relink by hand (README, "Development install") |
+| `codex skill (empty plugin cache)` | `codex plugin add fast-ios-device-test@fast-ios-device-test`, then restart Codex |
 | `~/.local/bin` not on PATH (a `note:` line) | add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc`, open a new shell |
 
 `pillow=no` and `xcodegen=no` are fine: only video review needs Pillow; the runner project ships

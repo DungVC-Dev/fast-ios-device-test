@@ -260,7 +260,8 @@ at this tool), the copied tool in `~/.local/share/fast-ios-device-test` and the 
 Homebrew `axe` stays). A clone used with `--link` stays where it is. Caches, screen maps and each
 project's `build/` output stay: run `clean` first to remove them too.
 
-The Codex and Antigravity links are yours to remove:
+It also removes a Codex or Antigravity skill link that points into that copy or at nothing. A
+link to a clone that still exists is yours to remove:
 
 ```bash
 rm -f ~/.codex/skills/fast-ios-device-test ~/.gemini/antigravity-cli/skills/fast-ios-device-test

@@ -64,7 +64,7 @@ Run each in a subshell so the working directory does not change between commands
 
 ```bash
 # Tests — must pass before any commit (same set release.sh runs)
-(cd scripts && python3 -m unittest test_fast_ui test_fast_media test_fast_ui_map test_fast_guard test_fast_ui_clean)
+(cd scripts && python3 -m unittest test_fast_ui test_fast_media test_fast_ui_map test_fast_guard test_fast_ui_clean test_install)
 
 # Extra tests that need Pillow (python3 -m pip install --user pillow)
 (cd scripts && python3 -m unittest test_fast_evidence test_fast_evidence_sheet test_fast_ui_review)
@@ -88,7 +88,10 @@ agy plugin validate --strict build/plugin-packages/stage/antigravity
 the user's `~/.claude` and `~/.local/bin` links away from a `--link` clone. Read its source
 instead of probing it. Only run it with `--link` or `--check`. To test the installer without
 touching the user's setup, point it elsewhere with `FAST_IOS_INSTALL_DIR`, `FAST_IOS_BIN_DIR`,
-`FAST_IOS_AXE_DIR`, `CLAUDE_SKILLS_DIR`, `CLAUDE_COMMANDS_DIR` and `CLAUDE_AGENTS_DIR`.
+`FAST_IOS_AXE_DIR`, `CLAUDE_SKILLS_DIR`, `CLAUDE_COMMANDS_DIR`, `CLAUDE_AGENTS_DIR`, `CODEX_HOME`,
+`CODEX_SKILLS_DIR`, `CODEX_PLUGIN_CACHE` and `ANTIGRAVITY_SKILLS_DIR` (`scripts/test_install.py`
+does this). The installer never creates a Codex or Antigravity skill link; it re-points one left
+dangling, removes one into the copy it uninstalls, and `--check` fails on a broken one.
 
 After `./install.sh --link`, edits to `scripts/`, `skills/`, `commands/` and `agents/` take effect at once.
 
