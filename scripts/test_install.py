@@ -32,7 +32,8 @@ class InstallCheckTests(unittest.TestCase):
                         CLAUDE_AGENTS_DIR=str(self.dirs["agents"]),
                         CODEX_HOME=str(self.home / "codex-home"),
                         CODEX_SKILLS_DIR=str(self.dirs["codex"]),
-                        ANTIGRAVITY_SKILLS_DIR=str(self.dirs["antigravity"]))
+                        ANTIGRAVITY_SKILLS_DIR=str(self.dirs["antigravity"]),
+                        ANTIGRAVITY_PLUGIN_DIR=str(self.home / "agy-plugins" / "fast-ios-device-test"))
 
     def link_everything(self):
         for name in LAUNCHERS:
@@ -78,13 +79,39 @@ class InstallCheckTests(unittest.TestCase):
         cache = self.home / "codex-home" / "plugins" / "cache" / "fast-ios-device-test"
         cache.mkdir(parents=True)
         _, out = self.run_install("--check")
-        self.assertIn("codex skill (empty plugin cache)", self.missing_line(out))
+        self.assertIn("codex skill (empty plugin)", self.missing_line(out))
         skill = cache / "fast-ios-device-test" / "2.0.2" / "skills" / "fast-ios-device-test"
         skill.mkdir(parents=True)
         (skill / "SKILL.md").write_text("---\nname: fast-ios-device-test\n---\n")
         _, out = self.run_install("--check")
         self.assertIn("codex=plugin", out)
         self.assertNotIn("codex skill", self.missing_line(out))
+
+    def test_check_rejects_a_plugin_cache_holding_only_the_setup_skill(self):
+        self.link_everything()
+        cache = self.home / "codex-home" / "plugins" / "cache" / "fast-ios-device-test"
+        setup = cache / "fast-ios-device-test" / "2.0.2" / "skills" / "fast-ios-device-test-setup"
+        setup.mkdir(parents=True)
+        (setup / "SKILL.md").write_text("---\nname: fast-ios-device-test-setup\n---\n")
+        _, out = self.run_install("--check")
+        self.assertIn("codex skill (empty plugin)", self.missing_line(out))
+
+    def test_check_reports_the_antigravity_plugin(self):
+        self.link_everything()
+        plugin = self.home / "agy-plugins" / "fast-ios-device-test"
+        plugin.mkdir(parents=True)
+        _, out = self.run_install("--check")
+        self.assertIn("antigravity skill (empty plugin)", self.missing_line(out))
+        (plugin / "skills" / "fast-ios-device-test").mkdir(parents=True)
+        (plugin / "skills" / "fast-ios-device-test" / "SKILL.md").write_text("x")
+        _, out = self.run_install("--check")
+        self.assertIn("antigravity=plugin", out)
+        self.assertNotIn("antigravity", self.missing_line(out))
+
+    def test_default_antigravity_dir_is_the_one_agy_reads(self):
+        source = (REPO / "install.sh").read_text()
+        self.assertIn('$HOME/.gemini/config/skills', source)
+        self.assertNotIn("antigravity-cli/skills", source)
 
     def test_check_accepts_a_working_codex_link_and_no_codex(self):
         self.link_everything()
@@ -98,7 +125,7 @@ class InstallCheckTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("xcodebuild"), "install needs Xcode")
     def test_link_install_repairs_only_a_dangling_other_agent_link(self):
         codex = self.dirs["codex"] / "fast-ios-device-test"
-        codex.symlink_to(self.home / "deleted" / "fast-ios-device-test")
+        codex.symlink_to(self.home / "deleted" / "custom-skill-dir")
         elsewhere = self.home / "my-clone" / "skills" / "fast-ios-device-test"
         elsewhere.mkdir(parents=True)
         antigravity = self.dirs["antigravity"] / "fast-ios-device-test"
@@ -108,6 +135,18 @@ class InstallCheckTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(Path(os.readlink(codex)), REPO / "skills" / "fast-ios-device-test")
         self.assertEqual(Path(os.readlink(antigravity)), elsewhere)
+
+    def test_uninstall_removes_a_relative_link_into_the_copy(self):
+        skill = self.home / "share" / "skills" / "fast-ios-device-test"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text("x")
+        (self.home / "share" / "install.sh").write_text("")
+        codex = self.dirs["codex"] / "fast-ios-device-test"
+        codex.symlink_to(Path("..") / "share" / "skills" / "fast-ios-device-test")
+        self.assertTrue(codex.exists())
+        code, out = self.run_install("--uninstall")
+        self.assertEqual(code, 0, out)
+        self.assertFalse(codex.is_symlink())
 
     def test_uninstall_removes_a_dangling_codex_link_and_keeps_a_working_clone_link(self):
         codex = self.dirs["codex"] / "fast-ios-device-test"

@@ -4,8 +4,11 @@
 
 - `install.sh --check` fails on a broken link (a launcher, the skill or the subagent pointing at
   a moved or deleted clone) instead of passing it, and reports the Codex and Antigravity skill:
-  a dangling `~/.codex/skills` or `~/.gemini/antigravity-cli/skills` link, or a Codex plugin cache
-  with no skill, hid the skill from that agent while `CHECK OK` still printed.
+  a dangling `~/.codex/skills` or `~/.gemini/config/skills` link, or a Codex or Antigravity plugin
+  folder without the skill, hid the skill from that agent while `CHECK OK` still printed.
+- README and GEMINI.md: Antigravity loads global skills from `~/.gemini/config/skills`, not
+  `~/.gemini/antigravity-cli/skills`; Claude Code needs no plugin on top of the runtime install.
+- GUIDE.md (Vietnamese): install covers Codex, Antigravity and Gemini CLI, not only Claude Code.
 - An install (`--link` or the default copy) re-points a dangling Codex or Antigravity skill link
   at the installed skill; a working link to another clone stays. `--uninstall` removes such a link
   when it points into the removed copy or at nothing.

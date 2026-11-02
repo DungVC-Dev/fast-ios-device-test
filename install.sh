@@ -22,7 +22,8 @@ AXE_HOME="${FAST_IOS_AXE_DIR:-$HOME/.local/share/axe}"
 CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
 CODEX_SKILLS_DIR="${CODEX_SKILLS_DIR:-$CODEX_HOME_DIR/skills}"
 CODEX_PLUGIN_CACHE="${CODEX_PLUGIN_CACHE:-$CODEX_HOME_DIR/plugins/cache/fast-ios-device-test}"
-ANTIGRAVITY_SKILLS_DIR="${ANTIGRAVITY_SKILLS_DIR:-$HOME/.gemini/antigravity-cli/skills}"
+ANTIGRAVITY_SKILLS_DIR="${ANTIGRAVITY_SKILLS_DIR:-$HOME/.gemini/config/skills}"
+ANTIGRAVITY_PLUGIN_DIR="${ANTIGRAVITY_PLUGIN_DIR:-$HOME/.gemini/config/plugins/fast-ios-device-test}"
 MODE="copy"
 CHECK_DEVICE=""
 case "${1:-}" in
@@ -42,10 +43,17 @@ LINKS=(
 # Other agents' links to this skill: the user makes them, install.sh only keeps them working.
 OTHER_SKILL_LINKS=("codex:$CODEX_SKILLS_DIR/fast-ios-device-test" "antigravity:$ANTIGRAVITY_SKILLS_DIR/fast-ios-device-test")
 
-# A link this tool may own: its target is this skill (or the old repo root that held SKILL.md).
-names_this_skill() {
-    case "$1" in */skills/fast-ios-device-test | */fast-ios-device-test) return 0 ;; esac
-    return 1
+# A link's target as an absolute path (`readlink` returns a relative target as written).
+link_target() {
+    local target
+    target="$(readlink "$1")"
+    [[ "$target" == /* ]] || target="$(dirname "$1")/$target"
+    printf '%s\n' "$target"
+}
+
+# True when a plugin folder holds the main skill (not only the setup skill).
+plugin_has_skill() {
+    [[ -n "$(find "$1" -path '*/skills/fast-ios-device-test/SKILL.md' 2>/dev/null | head -1)" ]]
 }
 
 if [[ "$MODE" == "uninstall" ]]; then
@@ -60,12 +68,15 @@ if [[ "$MODE" == "uninstall" ]]; then
         *) echo "kept: $path (points at $target)" ;;
         esac
     done
-    # A Codex/Antigravity link into the copy deleted below would be left dangling.
+    # A Codex/Antigravity link into the copy deleted below would be left dangling; one already
+    # dangling serves nothing. A link to a clone that still exists stays.
+    install_real="$(cd "$INSTALL_DIR" 2>/dev/null && pwd -P || echo "$INSTALL_DIR")"
     for entry in "${OTHER_SKILL_LINKS[@]}"; do
         path="${entry#*:}"
         [[ -L "$path" ]] || continue
-        target="$(readlink "$path")"
-        if [[ "$target" == "$INSTALL_DIR/"* || ! -e "$path" ]] && names_this_skill "$target"; then
+        target="$(link_target "$path")"
+        target_real="$(cd "$(dirname "$target")" 2>/dev/null && echo "$(pwd -P)/$(basename "$target")" || echo "$target")"
+        if [[ ! -e "$path" || "$target_real" == "$install_real/"* || "$target" == "$INSTALL_DIR/"* ]]; then
             rm "$path"; echo "removed: $path"
         fi
     done
@@ -153,13 +164,22 @@ if [[ "$MODE" == "check" ]]; then
             missing+=("$agent skill (broken link)")
         elif [[ -e "$path/SKILL.md" ]]; then
             echo "$agent=skill link ($(readlink "$path" 2>/dev/null || echo "$path"))"
-        elif [[ "$agent" == codex && -n "$(find "$CODEX_PLUGIN_CACHE" -name SKILL.md -path '*fast-ios-device-test*' 2>/dev/null | head -1)" ]]; then
-            echo "codex=plugin ($CODEX_PLUGIN_CACHE)"
-        elif [[ "$agent" == codex && -d "$CODEX_PLUGIN_CACHE" ]]; then
-            echo "codex=plugin cache has no skill: $CODEX_PLUGIN_CACHE (codex plugin add fast-ios-device-test@fast-ios-device-test, then restart Codex)"
-            missing+=("codex skill (empty plugin cache)")
-        elif [[ "$agent" == codex && -d "$CODEX_HOME_DIR" ]]; then
-            echo "codex=no skill (optional: README \"Codex Plugin Marketplace\")"
+        else
+            if [[ "$agent" == codex ]]; then
+                plugin="$CODEX_PLUGIN_CACHE"; home="$CODEX_HOME_DIR"
+                fix="codex plugin add fast-ios-device-test@fast-ios-device-test, then restart Codex"
+            else
+                plugin="$ANTIGRAVITY_PLUGIN_DIR"; home="$(dirname "$ANTIGRAVITY_SKILLS_DIR")"
+                fix="agy plugin install https://github.com/DungVC-Dev/fast-ios-device-test, then restart Antigravity"
+            fi
+            if plugin_has_skill "$plugin"; then
+                echo "$agent=plugin ($plugin)"
+            elif [[ -d "$plugin" ]]; then
+                echo "$agent=plugin folder without the fast-ios-device-test skill: $plugin ($fix)"
+                missing+=("$agent skill (empty plugin)")
+            elif [[ -d "$home" ]]; then
+                echo "$agent=no skill (optional: $fix)"
+            fi
         fi
     done
     if [[ -n "$CHECK_DEVICE" ]]; then
@@ -214,8 +234,9 @@ link "$HERE/scripts/fast_ui_map.py" "$BIN_DIR/fastUIMap"
 link "$HERE/scripts/fast_ui_clean.py" "$BIN_DIR/fastUIClean"
 for entry in "${OTHER_SKILL_LINKS[@]}"; do
     path="${entry#*:}"
-    # Only a dangling link: a working one may be a clone the user links on purpose.
-    [[ -L "$path" && ! -e "$path" ]] && names_this_skill "$(readlink "$path")" || continue
+    # Only a dangling link (its name says it is this skill): a working one may be a clone the
+    # user links on purpose.
+    [[ -L "$path" && ! -e "$path" ]] || continue
     link "$HERE/skills/fast-ios-device-test" "$path"
 done
 chmod +x "$HERE/scripts/fast_ui.py" "$HERE/scripts/fast_ui_report.py" "$HERE/scripts/fast_ui_review.py" "$HERE/scripts/fast_device.py" \

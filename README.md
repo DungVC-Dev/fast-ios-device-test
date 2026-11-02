@@ -118,6 +118,10 @@ gemini extensions install https://github.com/DungVC-Dev/fast-ios-device-test
 
 #### Claude Code Plugin Marketplace
 
+Claude Code needs no plugin: step 2 already links the skill, the slash commands and the subagent
+into `~/.claude`. Add the plugin only to manage it with `/plugin`; with both, Claude Code lists the
+skill and the commands twice.
+
 ```text
 /plugin marketplace add DungVC-Dev/fast-ios-device-test
 /plugin install fast-ios-device-test@fast-ios-device-test
@@ -172,8 +176,8 @@ mkdir -p ~/.codex/skills
 ln -sfn "$TOOL/skills/fast-ios-device-test" ~/.codex/skills/fast-ios-device-test
 
 # Antigravity
-mkdir -p ~/.gemini/antigravity-cli/skills
-ln -sfn "$TOOL/skills/fast-ios-device-test" ~/.gemini/antigravity-cli/skills/fast-ios-device-test
+mkdir -p ~/.gemini/config/skills
+ln -sfn "$TOOL/skills/fast-ios-device-test" ~/.gemini/config/skills/fast-ios-device-test
 ```
 
 Restart the agent after linking. Codex loads the skill when a request matches it or when you name
@@ -264,7 +268,7 @@ It also removes a Codex or Antigravity skill link that points into that copy or 
 link to a clone that still exists is yours to remove:
 
 ```bash
-rm -f ~/.codex/skills/fast-ios-device-test ~/.gemini/antigravity-cli/skills/fast-ios-device-test
+rm -f ~/.codex/skills/fast-ios-device-test ~/.gemini/config/skills/fast-ios-device-test
 ```
 
 ## What's new
