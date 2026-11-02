@@ -660,6 +660,10 @@ repeat with w in windows
 if (name of w as text) contains "CarPlay" then set hasCarPlay to true
 end repeat
 if not hasCarPlay then
+click menu "I/O" of menu bar 1
+delay 0.5
+click menu item "External Displays" of menu "I/O" of menu bar 1
+delay 0.5
 click menu item "CarPlay…" of menu 1 of menu item "External Displays" of menu "I/O" of menu bar 1
 delay 3
 if exists window "TV Out Extended Setup" then click button "Run" of window "TV Out Extended Setup"

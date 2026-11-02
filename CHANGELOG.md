@@ -19,7 +19,8 @@
 - Add one selectable display per run: `widescreen` (1920×720@2), `standard` (800×480@2), `hd`
   (1280×720@2), or custom `WxH@S`. Matching armed displays skip the reboot; project-specific
   arming remains in `setup.carplay_arm_script`. Size changes safely clear Simulator.app's cached
-  mode and verify both the armed plist and captured PNG dimensions before reporting `PASS`.
+  mode, traverse the I/O submenu reliably, and verify both the armed plist and captured PNG
+  dimensions before reporting `PASS`.
 - Hardware capture matches only Apple's standalone CarPlay Simulator window, never the similarly
   named CarPlay window in Xcode Simulator.app.
 - CarPlay results include optional case IDs for `fastUIReport` and always retain phone + car stills.

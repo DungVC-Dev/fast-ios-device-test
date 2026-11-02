@@ -216,6 +216,17 @@ class InputTests(unittest.TestCase):
 
 
 class ArmingTests(unittest.TestCase):
+    def test_open_carplay_traverses_io_submenu_before_clicking_item(self):
+        completed = mock.Mock(returncode=0, stdout="false\n", stderr="")
+        with mock.patch.object(fast_carplay, "run", return_value=completed) as command:
+            fast_carplay.ensure_sim_carplay_window()
+        script = command.call_args.args[0][-1]
+        io_menu = script.index('click menu "I/O"')
+        external_menu = script.index('click menu item "External Displays"')
+        carplay_item = script.index('click menu item "CarPlay…"')
+        self.assertLess(io_menu, external_menu)
+        self.assertLess(external_menu, carplay_item)
+
     def test_simulator_menu_is_not_clicked_when_carplay_window_exists(self):
         completed = mock.Mock(returncode=0, stdout="true\n", stderr="")
         with mock.patch.object(fast_carplay, "run", return_value=completed) as command:
