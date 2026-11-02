@@ -1,8 +1,29 @@
-# fast-ios-device-test
+<div align="center">
+  <img src="assets/fast-ios-device-test.png" width="180" alt="Fast iOS Device Test icon">
+  <h1>fast-ios-device-test</h1>
+  <p><strong>Fast, repeatable iOS UI-flow verification for AI coding agents.</strong></p>
+  <p>One JSON flow → Simulator or iPhone → PASS/FAIL, video, screenshots and PR evidence.</p>
 
-Fast iOS UI verification for AI coding agents: drive an app on Simulator or a physical iPhone
-from a JSON flow, get a PASS/FAIL line with screenshots and video, and file the result as PR
-evidence. Works with **Claude Code**, **Codex** and **Antigravity CLI**.
+  <p>
+    <a href="https://www.npmjs.com/package/fast-ios-device-test"><img alt="npm version" src="https://img.shields.io/npm/v/fast-ios-device-test?style=for-the-badge&color=CB3837&logo=npm"></a>
+    <a href="https://github.com/DungVC-Dev/fast-ios-device-test/releases"><img alt="GitHub release" src="https://img.shields.io/github/v/release/DungVC-Dev/fast-ios-device-test?style=for-the-badge&color=2EA44F&logo=github"></a>
+    <img alt="macOS only" src="https://img.shields.io/badge/macOS-only-111111?style=for-the-badge&logo=apple">
+    <img alt="Xcode 26 or 27" src="https://img.shields.io/badge/Xcode-26%20%7C%2027-147EFB?style=for-the-badge&logo=xcode&logoColor=white">
+  </p>
+
+  <p>
+    <img alt="Claude Code" src="https://img.shields.io/badge/Claude_Code-plugin-D97757?style=flat-square&logo=anthropic&logoColor=white">
+    <img alt="Codex" src="https://img.shields.io/badge/Codex-plugin-000000?style=flat-square&logo=openai&logoColor=white">
+    <img alt="Antigravity" src="https://img.shields.io/badge/Antigravity-plugin-4285F4?style=flat-square&logo=google&logoColor=white">
+    <img alt="Gemini CLI" src="https://img.shields.io/badge/Gemini_CLI-extension-8E75B2?style=flat-square&logo=googlegemini&logoColor=white">
+  </p>
+</div>
+
+> ⚡ **Simulator** · 📱 **Physical iPhone** · 🎥 **Video review** · 🧾 **PR evidence** · 🛡️ **Guarded destructive actions**
+
+```bash
+npx fast-ios-device-test
+```
 
 - [What it does](#what-it-does)
 - [Requirements](#requirements)
