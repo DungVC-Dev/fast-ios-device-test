@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.11.4 — 2026-11-02
 
 - `clean --scope current|others` deletes only the current task's runs, or every other task's
   (keeping the test builds and caches the current task uses); the current task is the latest
