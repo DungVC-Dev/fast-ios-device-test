@@ -14,6 +14,7 @@
 
 ### Physical iPhone
 
+- `fastDeviceTest` saved a screenshot named `general.png` as `general.png.png`; it now keeps a single `.png` like the Simulator engine.
 - Run a fast, briefly cached one-`devicectl` readiness gate before every physical-iPhone flow and
   live request, while keeping `fastDeviceTest check` as the complete pairing/Xcode/signing report.
 - Turn UI Automation, developer trust, device preparation/shared-cache, Xcode/iOS, passcode,

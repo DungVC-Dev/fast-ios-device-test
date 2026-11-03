@@ -2078,6 +2078,19 @@ class DeviceLauncherTests(unittest.TestCase):
                              "developerModeStatus": "enabled", "ddiServicesAvailable": True},
     }
 
+    def test_device_screenshot_names_keep_a_single_png_extension(self) -> None:
+        import base64
+        import fast_device
+        png = base64.b64encode(b"\x89PNG fake").decode()
+        response = {"screenshots": [{"name": "general.png", "png": png}, {"name": "step-02", "png": png},
+                                    {"name": "Upper.PNG", "png": png}]}
+        with tempfile.TemporaryDirectory() as raw:
+            saved = fast_device.save_screenshots(response, Path(raw))
+            self.assertEqual(sorted(Path(path).name for path in saved),
+                             ["Upper.PNG", "general.png", "step-02.png"])
+            self.assertEqual(sorted(item.name for item in Path(raw).iterdir()),
+                             ["Upper.PNG", "general.png", "step-02.png"])
+
     def test_device_list_details_make_preflight_one_devicectl_call(self) -> None:
         import fast_device
         payload = {"result": {"devices": [{
