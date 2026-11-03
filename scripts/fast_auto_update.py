@@ -14,6 +14,9 @@ from pathlib import Path
 
 import fast_update
 
+# A stuck npm download must not keep the daily job alive until the next day.
+UPDATE_TIMEOUT = 15 * 60
+
 PACKAGE = fast_update.PACKAGE
 LABEL = "com.dungvc.fast-ios-device-test.update"
 MAX_LOG_BYTES = 1_000_000
@@ -83,9 +86,12 @@ def append_log(message: str) -> None:
 
 def plist(root: Path) -> dict:
     python = shutil.which("python3") or "/usr/bin/python3"
-    environment = {
-        "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
-    }
+    # launchd starts with a bare PATH: keep the folder that holds this shell's npx (nvm, fnm,
+    # volta, Homebrew) in front of the defaults, or the daily job cannot find npx.
+    defaults = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+    npx = shutil.which("npx")
+    folders = ([str(Path(npx).parent)] if npx else []) + defaults
+    environment = {"PATH": ":".join(dict.fromkeys(folders))}
     if os.environ.get("FAST_IOS_NO_UPDATE_CHECK"):
         environment["FAST_IOS_NO_UPDATE_CHECK"] = "1"
     return {
@@ -178,6 +184,10 @@ def run_daily(root: Path | None = None) -> int:
             write_status("failed", "npm registry unavailable")
             return 1
         old, new = fast_update.parse_version(current), fast_update.parse_version(latest)
+        if old and new and new <= old:
+            append_log(f"up to date: {current}")
+            write_status("ok", f"up to date {current}")
+            return 0
         if old and new and new[0] > old[0]:
             detail = f"major update available {current} -> {latest}; run npx {PACKAGE} update manually"
             append_log(detail)
@@ -190,10 +200,15 @@ def run_daily(root: Path | None = None) -> int:
             return 1
         append_log(f"updating {current or 'unknown'} -> {latest} and installed agent plugins")
         env = {**os.environ, "FAST_IOS_LATEST_VERSION": latest, "FAST_IOS_AUTO_UPDATE_RUNNING": "1"}
-        result = subprocess.run(
-            [npx, "--yes", f"{PACKAGE}@{latest}", "update"],
-            capture_output=True, text=True, env=env, check=False,
-        )
+        try:
+            result = subprocess.run(
+                [npx, "--yes", f"{PACKAGE}@{latest}", "update"],
+                capture_output=True, text=True, env=env, check=False, timeout=UPDATE_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            append_log(f"failed: the update did not finish within {UPDATE_TIMEOUT}s")
+            write_status("failed", "update timed out")
+            return 1
         output = "\n".join(part.strip() for part in (result.stdout, result.stderr) if part.strip())
         if output:
             append_log(output)
