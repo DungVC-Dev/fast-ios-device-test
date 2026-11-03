@@ -7,7 +7,7 @@ include_admins=false
 maintainer=""
 
 usage() {
-  echo "usage: $0 [--dry-run|--apply] [--include-admins] [--maintainer LOGIN]"
+  echo "usage: $0 [--dry-run|--apply] [--include-admins] [--maintainer LOGIN] [--repo OWNER/NAME]"
 }
 
 while (($#)); do
@@ -20,6 +20,11 @@ while (($#)); do
       [[ $# -gt 0 ]] || { usage; exit 2; }
       maintainer="$1"
       ;;
+    --repo)
+      shift
+      [[ $# -gt 0 ]] || { usage; exit 2; }
+      repo="$1"
+      ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -27,7 +32,14 @@ while (($#)); do
 done
 
 command -v gh >/dev/null || { echo "error: gh is required" >&2; exit 1; }
-repo="${GH_REPO:-$(gh repo view --json nameWithOwner --jq .nameWithOwner)}"
+# `gh repo view` prefers a remote named "upstream", which in a fork is not the repo to protect:
+# use --repo / GH_REPO, else the origin remote.
+origin_repo() {
+  git remote get-url origin 2>/dev/null \
+    | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##'
+}
+repo="${repo:-${GH_REPO:-$(origin_repo)}}"
+[[ "$repo" == */* ]] || { echo "error: cannot tell the repository; pass --repo OWNER/NAME" >&2; exit 1; }
 maintainer="${maintainer:-$(gh api user --jq .login)}"
 maintainer_id="$(gh api "users/$maintainer" --jq .id)"
 

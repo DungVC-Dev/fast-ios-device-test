@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import os
+import tempfile
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -73,6 +75,30 @@ class WorkflowTests(unittest.TestCase):
             "branches/main/protection", "environments/npm", '"type": "User"',
         ):
             self.assertIn(token, script)
+
+    def test_repo_rules_script_targets_origin_not_upstream(self) -> None:
+        """A fork has an "upstream" remote; `gh repo view` would pick it and protect the wrong repo."""
+        script = (ROOT / "scripts/setup_repo_rules.sh").read_text(encoding="utf-8")
+        self.assertNotIn("$(gh repo view", script)
+        self.assertIn("git remote get-url origin", script)
+        self.assertIn("--repo)", script)
+        with tempfile.TemporaryDirectory() as raw:
+            subprocess.run(["git", "init", "-q", raw], check=True)
+            subprocess.run(["git", "-C", raw, "remote", "add", "origin",
+                            "git@github.com:owner/fork.git"], check=True)
+            subprocess.run(["git", "-C", raw, "remote", "add", "upstream",
+                            "https://github.com/other/original"], check=True)
+            fake_bin = Path(raw) / "bin"
+            fake_bin.mkdir()
+            gh = fake_bin / "gh"
+            gh.write_text("#!/bin/sh\ncase \"$*\" in *user*) echo me ;; *users/*) echo 1 ;; esac\n")
+            gh.chmod(0o755)
+            env = {**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"}
+            env.pop("GH_REPO", None)
+            result = subprocess.run(["bash", str(ROOT / "scripts/setup_repo_rules.sh")], cwd=raw,
+                                    capture_output=True, text=True, env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("repository=owner/fork ", result.stdout)
 
     def test_agent_facts_remain_identical(self) -> None:
         def facts(name: str) -> str:

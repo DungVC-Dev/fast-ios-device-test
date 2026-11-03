@@ -25,9 +25,13 @@
 - `do --labels changed|none` shortens the report. `do` no longer writes screenshots and
   `step-NN-ui.json` into the current directory: they go to a cache folder unless `--out` says
   otherwise. `serve --install <app>` installs before starting the runner.
-- Document heat through Xcode 27's Debug › Induce Device Conditions › Thermal State, driven with
-  computer use (clicks only, checked on screenshots, switched off after the run), and Spotify Free
-  skip limits.
+- Document heat through Xcode 27's Debug › Induce Device Conditions › Thermal State: driven with
+  computer use, or by process id through the Accessibility API when two Xcodes run (checked on an
+  iPhone 15 Plus). Also document Spotify Free skip limits.
+
+### Repository
+
+- `scripts/setup_repo_rules.sh` protects the `origin` repository (or `--repo OWNER/NAME`) instead of a fork's `upstream`, which `gh repo view` picked.
 
 ## 2.2.0 — 2026-11-03
 
