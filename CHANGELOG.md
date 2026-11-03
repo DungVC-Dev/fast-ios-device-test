@@ -30,6 +30,12 @@
 - Make the Pillow-dependent evidence and review test modules skip cleanly when Pillow is absent,
   so full unittest discovery remains usable with only Python's standard library.
 
+### Fixed
+
+- Preserve skill, command, agent and launcher symlinks managed by another checkout or company
+  skill repository during install and uninstall; only verified links into this tool are replaced
+  or removed, while dangling links are still repaired.
+
 ### Gemini CLI & Antigravity
 
 - Update `GEMINI.md`, `GEMINI_EXTENSION.md`, and `.antigravity-plugin/README.md` to comprehensively guide Gemini CLI and Antigravity agents on launcher usage (`fastSimulatorTest`, `fastDeviceTest`, `fastCarPlayTest`, `fastUIReview`), iPhone Duo, CarPlay, Liquid Glass verification, and local Xcode skill exports (`apple-app-resizability`, `apple-liquid-glass`).

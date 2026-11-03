@@ -79,14 +79,9 @@ User-facing docs: `README.md` (English), `GUIDE.md` (Vietnamese, for testers), `
 Run each in a subshell so the working directory does not change between commands.
 
 ```bash
-# Tests — must pass before any commit (same set release.sh runs)
-(cd scripts && python3 -m unittest test_fast_ui test_fast_carplay test_fast_media test_fast_ui_map test_fast_guard test_fast_ui_clean test_install test_fast_update test_xcode_skills)
-
-# Extra tests that need Pillow (python3 -m pip install --user pillow)
-(cd scripts && python3 -m unittest test_fast_evidence test_fast_evidence_sheet test_fast_ui_review)
-
-# Provider package inventory and version checks
-(cd scripts && python3 -m unittest test_package_marketplaces)
+# All tests — must pass before any commit (same discovery release.sh runs).
+# Pillow-dependent modules skip cleanly when Pillow is not installed.
+(cd scripts && python3 -m unittest discover -p 'test_*.py')
 
 # Build clean provider ZIPs; validate the Antigravity staging folder with agy
 python3 scripts/package_marketplaces.py
@@ -101,14 +96,15 @@ agy plugin validate --strict build/plugin-packages/stage/antigravity
 
 `install.sh` treats any unknown argument as a plain install: `./install.sh clean` or
 `./install.sh --help` **copies** the clone over `~/.local/share/fast-ios-device-test` and re-points
-the user's `~/.claude` and `~/.local/bin` links away from a `--link` clone. Read its source
+only links already owned by this tool; foreign `~/.claude` and `~/.local/bin` links stay. Read its source
 instead of probing it. Only run it with a documented flag (`--link`, `--check`, `--install-tools`,
 per-tool install/update flags, `--xcode-skills`, `--uninstall`) or no flag. To test the installer without
 touching the user's setup, point it elsewhere with `FAST_IOS_INSTALL_DIR`, `FAST_IOS_BIN_DIR`,
 `FAST_IOS_AXE_DIR`, `FAST_IOS_BAGUETTE_DIR`, `CLAUDE_SKILLS_DIR`, `CLAUDE_COMMANDS_DIR`, `CLAUDE_AGENTS_DIR`, `CODEX_HOME`,
 `CODEX_SKILLS_DIR`, `CODEX_PLUGIN_CACHE` and `ANTIGRAVITY_SKILLS_DIR` (`scripts/test_install.py`
-does this). The installer never creates a Codex or Antigravity skill link; it re-points one left
-dangling, removes one into the copy it uninstalls, and `--check` fails on a broken one.
+does this). The installer never creates a Codex or Antigravity skill link. It repairs a dangling
+link or re-points one into another verified copy of this tool, preserves links managed elsewhere,
+removes only verified tool links on uninstall, and `--check` fails on a broken one.
 
 After `./install.sh --link`, edits to `scripts/`, `skills/`, `commands/` and `agents/` take effect at once.
 

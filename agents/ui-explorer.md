@@ -32,3 +32,5 @@ iPhone Duo (Xcode 27.1): use `--simulator 'iPhone Duo'`. Change hardware state o
 change, read the labels before predicting a gesture because size class and visible controls may
 change. If the brief asks for visual proof, take a named screenshot after each pose; it follows
 the selected display, or accepts `"display":"outer|inner"` explicitly.
+Add `"orientation":"portrait|landscape"` to the `duo` action only when the case needs it.
+`book` with portrait and `tabletop` with landscape are refused because they describe the other pose.
