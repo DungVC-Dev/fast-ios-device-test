@@ -119,6 +119,12 @@ nothing to open by hand. Allow a minute. Shut it down afterwards if the user
 does not need it: `xcrun simctl shutdown <udid>`. Save the UDID for later as
 `FAST_SIMULATOR=<udid>` if the user wants a default.
 
+App builds use one DerivedData per git repository under
+`~/Library/Caches/fast-ios-device-test/dd/<repo-key>/`, shared by all worktrees. Normal flows omit
+`derived_data` and `app_path`; `FAST_IOS_DERIVED_DATA_ROOT` moves the shared root and
+`app.derived_data` is an explicit override. `fastUIClean --max-dd-gb N` dry-runs LRU trimming;
+add `--yes` only after reviewing the reported paths and sizes.
+
 For iPhone Duo, install Xcode as `/Applications/Xcode 27.1.app` and use
 `--simulator 'iPhone Duo'`; the engine selects that toolchain automatically. For another path,
 set `DUO_XCODE` (or `DEVELOPER_DIR`). Device Hub must have Accessibility permission to change pose.

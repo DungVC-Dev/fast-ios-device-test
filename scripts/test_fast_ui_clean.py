@@ -33,7 +33,7 @@ class CleanTests(unittest.TestCase):
         for patch in patches:
             patch.start()
             self.addCleanup(patch.stop)
-        for key in ("FAST_UI_LOCK_DIR", "FAST_UI_MAP_DIR", "FAST_DEVICE_CACHE"):
+        for key in ("FAST_UI_LOCK_DIR", "FAST_UI_MAP_DIR", "FAST_DEVICE_CACHE", "FAST_IOS_DERIVED_DATA_ROOT"):
             fast_ui_clean.os.environ.pop(key, None)
 
     def make(self, relative: str, text: str = "x") -> Path:
@@ -142,6 +142,40 @@ class CleanTests(unittest.TestCase):
         run = self.make_run(project, "build/fast-device", "login", "r1", 10)
         self.run_clean("--project", str(project), "--yes")
         self.assertFalse(run.exists())
+
+    def make_dd(self, name: str, common: Path, size: int, stamp: float) -> Path:
+        cache = self.caches / "fast-ios-device-test/dd" / name
+        cache.mkdir(parents=True)
+        (cache / "payload").write_bytes(b"x" * size)
+        metadata = cache / fast_ui_clean.DD_METADATA
+        metadata.write_text(json.dumps({"common_dir": str(common), "repo_key": name}))
+        fast_ui_clean.os.utime(metadata, (stamp, stamp))
+        return cache
+
+    def test_vanished_repo_derived_data_is_dry_run_then_removed(self) -> None:
+        missing = self.root / "gone/.git"
+        stale = self.make_dd("gone-123", missing, 400, 10)
+        out = self.run_clean()
+        self.assertIn("DD-CACHE repos=1", out)
+        self.assertIn(str(stale), out)
+        self.assertTrue(stale.exists())
+        self.run_clean("--yes")
+        self.assertFalse(stale.exists())
+
+    def test_max_dd_gb_trims_the_least_recently_used_repo(self) -> None:
+        common = self.root / "repo/.git"
+        common.mkdir(parents=True)
+        old = self.make_dd("repo-old", common, 800, 10)
+        recent = self.make_dd("repo-recent", common, 800, 20)
+        out = self.run_clean("--max-dd-gb", "0.000001")
+        self.assertIn(f"WOULD-DELETE", out)
+        self.assertIn(str(old), out)
+        self.assertFalse(any(line.startswith("WOULD-DELETE") and str(recent) in line for line in out.splitlines()))
+        self.assertTrue(old.exists())
+        self.assertTrue(recent.exists())
+        self.run_clean("--max-dd-gb", "0.000001", "--yes")
+        self.assertFalse(old.exists())
+        self.assertTrue(recent.exists())
 
 
 if __name__ == "__main__":

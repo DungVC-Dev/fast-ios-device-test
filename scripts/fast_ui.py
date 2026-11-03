@@ -42,6 +42,7 @@ BUILD_SUFFIXES = {
     ".plist", ".png", ".strings", ".swift", ".ttf", ".wav", ".xcconfig",
     ".xcprivacy", ".xcstrings", ".xib",
 }
+DERIVED_DATA_METADATA = ".fastui-repo.json"
 
 
 class FastUIError(RuntimeError):
@@ -95,6 +96,94 @@ def required(mapping: dict[str, Any], key: str, context: str) -> Any:
 def resolved_path(value: str, base: Path) -> Path:
     path = Path(value).expanduser()
     return (base / path).resolve() if not path.is_absolute() else path.resolve()
+
+
+def derived_data_root() -> Path:
+    return Path(
+        os.environ.get("FAST_IOS_DERIVED_DATA_ROOT")
+        or Path.home() / "Library/Caches/fast-ios-device-test/dd"
+    ).expanduser().resolve()
+
+
+def git_common_dir(project_root: Path) -> Path:
+    result = command(
+        ["git", "-C", str(project_root), "rev-parse", "--git-common-dir"],
+        check=False,
+        timeout=10,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        # Xcode projects do not have to use git. They still get a stable cache,
+        # scoped to the project root, and the cleaner can retire it when that root goes.
+        return project_root.resolve()
+    common = Path(result.stdout.strip()).expanduser()
+    return (project_root / common).resolve() if not common.is_absolute() else common.resolve()
+
+
+def repo_cache_key(project_root: Path, common_dir: Path | None = None) -> str:
+    common = (common_dir or git_common_dir(project_root)).resolve()
+    name = common.parent.name if common.name == ".git" else project_root.resolve().name
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-._") or "repo"
+    digest = hashlib.sha256(str(common).encode("utf-8")).hexdigest()[:10]
+    return f"{safe_name}-{digest}"
+
+
+def shared_derived_data(project_root: Path, common_dir: Path | None = None) -> tuple[Path, Path]:
+    common = (common_dir or git_common_dir(project_root)).resolve()
+    return derived_data_root() / repo_cache_key(project_root, common), common
+
+
+def is_within(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def find_built_app(derived_data: Path, bundle_id: str, configuration: str | None = None) -> Path | None:
+    products = derived_data / "Build/Products"
+    if not products.is_dir():
+        return None
+    roots = [products / f"{configuration}-iphonesimulator"] if configuration else []
+    roots += [path for path in products.glob("*-iphonesimulator") if path not in roots]
+    matches: list[Path] = []
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for candidate in root.rglob("*.app"):
+            info = candidate / "Info.plist"
+            try:
+                with info.open("rb") as stream:
+                    if plistlib.load(stream).get("CFBundleIdentifier") == bundle_id:
+                        matches.append(candidate)
+            except (OSError, plistlib.InvalidFileException, ValueError):
+                continue
+    return max(matches, key=lambda path: path.stat().st_mtime, default=None)
+
+
+def build_locations(app: dict[str, Any], base: Path) -> tuple[Path, Path | None, Path | None]:
+    """Resolve DerivedData/app paths and the git common dir recorded for shared caches."""
+    project_root = resolved_path(app.get("project_root", "."), base)
+    legacy = (project_root / "build/fast-ui-dd").resolve()
+    configured_dd = resolved_path(app["derived_data"], base) if app.get("derived_data") else None
+    configured_app = resolved_path(app["app_path"], base) if app.get("app_path") else None
+    legacy_requested = configured_dd == legacy or (
+        configured_dd is None and configured_app is not None and is_within(configured_app, legacy)
+    )
+    can_migrate = legacy_requested and (configured_app is None or is_within(configured_app, legacy))
+    if configured_dd is not None and not can_migrate:
+        return configured_dd, configured_app, None
+    shared, common = shared_derived_data(project_root)
+    if can_migrate:
+        print(
+            "NOTE app.derived_data uses legacy build/fast-ui-dd; remove derived_data/app_path "
+            "to use the shared DerivedData cache by default",
+            file=sys.stderr,
+        )
+        derived_data = shared
+        app_path = shared / configured_app.relative_to(legacy) if configured_app else None
+        return derived_data, app_path, common
+    return shared, configured_app, common
 
 
 # AXe links SimulatorKit from the selected Xcode; AXe older than 1.8.0 cannot
@@ -1405,13 +1494,27 @@ def duo_display_for_pose(pose: str | None) -> str | None:
     return None if not pose else ("outer" if pose == "closed" else "inner")
 
 
+def write_repo_metadata(derived_data: Path, common_dir: Path) -> None:
+    payload = {
+        "common_dir": str(common_dir),
+        "repo_key": derived_data.name,
+        "last_used": datetime.now().isoformat(),
+    }
+    target = derived_data / DERIVED_DATA_METADATA
+    temporary = target.with_name(f"{target.name}.tmp-{os.getpid()}")
+    temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(target)
+
+
 @contextmanager
-def build_lock(derived_data: Path) -> Iterator[None]:
+def build_lock(derived_data: Path, common_dir: Path | None = None) -> Iterator[None]:
     # Parallel flows share one DerivedData; only one xcodebuild may run in it.
     derived_data.mkdir(parents=True, exist_ok=True)
     with (derived_data / ".fastui-build.lock").open("w") as handle:
         fcntl.flock(handle, fcntl.LOCK_EX)
         try:
+            if common_dir is not None:
+                write_repo_metadata(derived_data, common_dir)
             yield
         finally:
             fcntl.flock(handle, fcntl.LOCK_UN)
@@ -1427,12 +1530,18 @@ def prepare_app(app: dict[str, Any], base: Path, udid: str, reuse_app: bool) -> 
             verify_app(app_path, required(app, "bundle_id", "app"))
             return app_path, False
         return None, False
-    app_path = resolved_path(required(app, "app_path", "app"), base)
-    derived_data = resolved_path(required(app, "derived_data", "app"), base)
+    derived_data, app_path, common_dir = build_locations(app, base)
+    app_path = app_path or find_built_app(
+        derived_data, required(app, "bundle_id", "app"), app.get("configuration")
+    )
     if reuse_app:
+        if app_path is None:
+            raise FastUIError(f"no cached app for {app['bundle_id']} under {derived_data}")
+        if common_dir is not None:
+            write_repo_metadata(derived_data, common_dir)
         verify_app(app_path, required(app, "bundle_id", "app"))
         return app_path, False
-    with build_lock(derived_data):
+    with build_lock(derived_data, common_dir):
         return build_if_needed(app, base, udid, app_path, derived_data)
 
 
@@ -1565,15 +1674,16 @@ def skip_lint_enabled(app: dict[str, Any]) -> bool:
 
 
 def build_if_needed(
-    app: dict[str, Any], base: Path, udid: str, app_path: Path, derived_data: Path
+    app: dict[str, Any], base: Path, udid: str, app_path: Path | None, derived_data: Path
 ) -> tuple[Path, bool]:
     state_path = derived_data / ".fastui-build-state.json"
     fingerprint_before = build_fingerprint(app, base)
     # Without build_inputs the fingerprint cannot see a source edit, so the cached
     # app would be reused forever; let xcodebuild's own incremental check decide.
     untracked = not build_input_files(app, base)
-    stale = untracked or not app_path.exists() or read_build_fingerprint(state_path) != fingerprint_before
+    stale = untracked or app_path is None or not app_path.exists() or read_build_fingerprint(state_path) != fingerprint_before
     if not stale:
+        assert app_path is not None
         verify_app(app_path, required(app, "bundle_id", "app"))
         return app_path, False
 
@@ -1605,6 +1715,13 @@ def build_if_needed(
         output = (result.stdout or "") + "\n" + (result.stderr or "")
         (derived_data / ".fastui-build.log").write_text(output)
         raise FastUIError(build_failure(output, lint_state, lint_names) + f" log={derived_data / '.fastui-build.log'}")
+    app_path = app_path or find_built_app(
+        derived_data, required(app, "bundle_id", "app"), app.get("configuration")
+    )
+    if app_path is None:
+        raise FastUIError(
+            f"build succeeded but no .app with bundle id {app['bundle_id']} was found under {derived_data / 'Build/Products'}"
+        )
     verify_app(app_path, required(app, "bundle_id", "app"))
     fingerprint_after = build_fingerprint(app, base)
     if fingerprint_after == fingerprint_before:
