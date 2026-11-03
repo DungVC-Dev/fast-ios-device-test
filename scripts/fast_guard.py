@@ -16,6 +16,27 @@ DESTRUCTIVE_WORDS = (
 )
 GESTURES = {"tap_label", "tap_first", "tap_nearest", "long_press", "double_tap", "two_finger_tap"}
 SELECTOR_TEXT = ("label", "label_contains", "id")
+DUO_POSES = ("closed", "open", "book", "tabletop")
+DUO_ORIENTATIONS = ("portrait", "landscape")
+DUO_DEFAULT_ORIENTATION = {
+    "closed": "portrait",
+    "open": "landscape",
+    "book": "landscape",
+    "tabletop": "portrait",
+}
+
+
+def duo_orientation(pose: Any, orientation: Any = None, context: str = "duo") -> str:
+    if pose not in DUO_POSES:
+        raise ValueError(f"{context} pose must be one of {', '.join(DUO_POSES)}")
+    value = orientation or DUO_DEFAULT_ORIENTATION[pose]
+    if value not in DUO_ORIENTATIONS:
+        raise ValueError(f"{context} orientation must be one of {', '.join(DUO_ORIENTATIONS)}")
+    if pose == "book" and value != "landscape":
+        raise ValueError(f"{context}: book is a vertical fold and requires landscape orientation")
+    if pose == "tabletop" and value != "portrait":
+        raise ValueError(f"{context}: tabletop is a horizontal fold and requires portrait orientation")
+    return value
 
 
 def destructive(text: str) -> bool:
@@ -34,10 +55,7 @@ def check_actions(actions: list[Any]) -> None:
         if "expect" in action and not isinstance(action["expect"], dict):
             raise ValueError(f"step {index}: expect must be a selector object, such as {{\"label\": \"About\"}}")
         if action.get("type") == "duo":
-            pose = action.get("pose")
-            allowed = ("closed", "open", "book", "tabletop")
-            if pose not in allowed:
-                raise ValueError(f"step {index}: duo pose must be one of {', '.join(allowed)}")
+            duo_orientation(action.get("pose"), action.get("orientation"), f"step {index}: duo")
         if "display" in action and action.get("type") not in ("screenshot", "motion"):
             raise ValueError(f"step {index}: display is supported only by screenshot and motion")
         if action.get("type") in ("screenshot", "motion") and action.get("display") not in (None, "outer", "inner"):

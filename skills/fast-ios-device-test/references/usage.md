@@ -265,7 +265,7 @@ engine cannot do an action it fails with a message naming the one that can. Colu
 | `status_bar` | `time`, `battery_level`, `battery_state`, `wifi_bars`, `cellular_bars`, `data_network`, `operator_name`, …, or `clear: true` | ✓ | – |
 | `set_clipboard` / `assert_clipboard` | `text` / `equals`, `contains`, … | ✓ | ✓ |
 | `open_url` | `url` | ✓ | ✓ (iOS 16.4+) |
-| `duo` | `pose`: `closed`, `open`, `book`, `tabletop` (Xcode 27.1 iPhone Duo) | ✓ | – |
+| `duo` | `pose`: `closed`, `open`, `book`, `tabletop`; optional `orientation`: `portrait`, `landscape` (Xcode 27.1 iPhone Duo) | ✓ | – |
 
 Selectors also take `enabled: false` to find a disabled control (`assert_count` with
 `"enabled": false, "max": 0` proves nothing on screen is disabled); `dump` marks disabled nodes.
@@ -419,14 +419,18 @@ terminal/agent under Privacy & Security › Accessibility.
 ]}
 ```
 
-`closed` selects the outer framebuffer in portrait. `open` is flat inner landscape, `book` folds that
-landscape display on its vertical hinge, and `tabletop` rotates then folds on the horizontal
-hinge. Screenshots and failure captures follow the selected display. To capture a particular
+Defaults: `closed` selects the outer framebuffer in portrait; `open` is flat inner landscape;
+`book` folds that landscape display on its vertical hinge; `tabletop` is inner portrait with a
+horizontal fold. `closed` and `open` accept either `orientation`; `book+portrait` and
+`tabletop+landscape` are rejected because rotating either produces the other fold meaning.
+Screenshots and failure captures follow the selected display. To capture a particular
 framebuffer without changing pose, add `"display":"outer"` or `"inner"` to `screenshot` or
 `motion`.
 
 For a reviewable pose matrix, run the same flow four times with `--duo-pose closed`, `open`,
-`book` and `tabletop`, plus one shared `--session`. Each task is named `@duo-<pose>`, and
+`book` and `tabletop`, plus one shared `--session`. Add `--duo-orientation portrait|landscape`
+(or `setup.duo_orientation`) only for a requested orientation variant. Default rows are named
+`@duo-<pose>`; non-default rows include it, such as `@duo-closed-landscape`. `--record`
 `--record` targets that pose's display. A recording has one framebuffer, so a flow that switches
 pose mid-run should use screenshots for those switches; use fixed-pose matrix rows for video.
 
@@ -627,8 +631,9 @@ An app that pins its own theme (e.g. an `appThemeMode` setting) or uses fixed po
 sizes ignores these; seed the theme via preferences, and treat text that does
 not grow at `accessibility-*` sizes as a product finding.
 
-The Simulator additionally takes `setup.duo_pose` / `--duo-pose closed|open|book|tabletop`.
-It suffixes the task `@duo-<pose>` and, with `--record`, records the
+The Simulator additionally takes `setup.duo_pose` / `--duo-pose closed|open|book|tabletop` and
+`setup.duo_orientation` / `--duo-orientation portrait|landscape`. It suffixes the task
+`@duo-<pose>` (or `@duo-<pose>-<orientation>` when non-default) and, with `--record`, records the
 outer framebuffer for `closed` or the inner framebuffer for the other poses.
 
 ## Step-by-step requests (`do`)

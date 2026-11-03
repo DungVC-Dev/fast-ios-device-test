@@ -116,7 +116,10 @@ does not need it: `xcrun simctl shutdown <udid>`. Save the UDID for later as
 For iPhone Duo, install Xcode as `/Applications/Xcode 27.1.app` and use
 `--simulator 'iPhone Duo'`; the engine selects that toolchain automatically. For another path,
 set `DUO_XCODE` (or `DEVELOPER_DIR`). Device Hub must have Accessibility permission to change pose.
-The engine can then use `--duo-pose closed|open|book|tabletop`, or the same `duo` action in a flow.
+The engine can then use `--duo-pose closed|open|book|tabletop` with optional
+`--duo-orientation portrait|landscape` (`setup.duo_orientation` in a flow), or put both values on
+the `duo` action. `book` is landscape-only and `tabletop` portrait-only because they name the
+vertical and horizontal fold respectively.
 
 ## 6. iPhone (optional)
 

@@ -28,7 +28,10 @@ from typing import Any, Callable, Iterator
 sys.path[:0] = [str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parent.parent / "scripts")]
 from fast_media import prune_artifacts, publish_video, shrink_video  # noqa: E402
 import fast_evidence  # noqa: E402
-from fast_guard import check_actions, parse_prompt_labels, risky_step  # noqa: E402
+from fast_guard import (  # noqa: E402
+    DUO_DEFAULT_ORIENTATION, DUO_ORIENTATIONS, DUO_POSES,
+    check_actions, duo_orientation, parse_prompt_labels, risky_step,
+)
 from fast_ui_map import NOISE_LABEL, SCROLL_BAR_LABEL, Trail, record  # noqa: E402
 from fast_update import print_notice  # noqa: E402
 
@@ -793,7 +796,6 @@ def drag(udid: str, start: list[float], end: list[float], hold: float, duration:
 
 
 DUO_DISPLAY_WIDTHS = {"outer": 1398, "inner": 2007}
-DUO_POSES = ("closed", "open", "book", "tabletop")
 # The display selected by the latest `duo` action, per simulator. A plain flow never enters it.
 ACTIVE_DUO_DISPLAY: dict[str, str] = {}
 
@@ -875,7 +877,8 @@ VARIANT_TAGS = {**UI_SETTINGS, "duo_pose": {pose: f"duo-{pose}" for pose in DUO_
 
 
 def ui_variant(
-    setup: dict[str, Any], appearance: str | None, content_size: str | None, duo_pose: str | None = None
+    setup: dict[str, Any], appearance: str | None, content_size: str | None,
+    duo_pose: str | None = None, duo_orientation_override: str | None = None,
 ) -> dict[str, str]:
     """Effective simulator UI settings: CLI overrides win over `setup`."""
     variant: dict[str, str] = {}
@@ -886,11 +889,28 @@ def ui_variant(
         if value not in VARIANT_TAGS[key]:
             raise FastUIError(f"unsupported {key} '{value}'; use one of {', '.join(VARIANT_TAGS[key])}")
         variant[key] = value
+    orientation = duo_orientation_override or setup.get("duo_orientation")
+    if orientation:
+        pose = variant.get("duo_pose")
+        if not pose:
+            raise FastUIError("duo_orientation requires setup.duo_pose or --duo-pose")
+        try:
+            variant["duo_orientation"] = duo_orientation(pose, orientation, "duo variant")
+        except ValueError as error:
+            raise FastUIError(str(error)) from error
     return variant
 
 
 def variant_name(name: str, variant: dict[str, str]) -> str:
-    return name + "".join(f"@{VARIANT_TAGS[key][variant[key]]}" for key in VARIANT_TAGS if key in variant)
+    suffixes = [VARIANT_TAGS[key][variant[key]] for key in UI_SETTINGS if key in variant]
+    if "duo_pose" in variant:
+        pose = variant["duo_pose"]
+        orientation = variant.get("duo_orientation")
+        duo_tag = f"duo-{pose}"
+        if orientation and orientation != DUO_DEFAULT_ORIENTATION[pose]:
+            duo_tag += f"-{orientation}"
+        suffixes.append(duo_tag)
+    return name + "".join(f"@{suffix}" for suffix in suffixes)
 
 
 def apply_ui_settings(udid: str, variant: dict[str, str], previous: dict[str, str]) -> None:
@@ -1343,28 +1363,39 @@ def duo_display_is_landscape(udid: str, display: str) -> bool:
         probe.unlink(missing_ok=True)
 
 
-def set_duo_pose(udid: str, pose: str) -> str:
+def set_duo_orientation(udid: str, display: str, orientation: str, pose: str) -> None:
+    want_landscape = orientation == "landscape"
+    for clicks in range(4):
+        if duo_display_is_landscape(udid, display) == want_landscape:
+            return
+        if clicks == 3:
+            break
+        click_duo_button(udid, "rotate")
+    raise FastUIError(
+        f"iPhone Duo {pose} did not reach {orientation} orientation after 3 Device Hub rotate clicks"
+    )
+
+
+def set_duo_pose(udid: str, pose: str, orientation: str | None = None) -> str:
     """Drive Device Hub into a deterministic pose and return the visible app display."""
-    if pose not in DUO_POSES:
-        raise FastUIError(f"Duo pose must be one of {', '.join(DUO_POSES)}, not {pose!r}")
+    try:
+        effective_orientation = duo_orientation(pose, orientation, "Duo")
+    except ValueError as error:
+        raise FastUIError(str(error)) from error
     name = simulator_name(udid)
     if name and "iPhone Duo" not in name:
         raise FastUIError(f"duo needs an iPhone Duo simulator, not {name!r}")
     if pose == "closed":
         click_duo_button(udid, "closed")
-        if duo_display_is_landscape(udid, "outer"):
-            click_duo_button(udid, "rotate")
         display = "outer"
     else:
-        # Flat first gives the inner framebuffer a stable orientation to inspect. Book is a
-        # vertical hinge; tabletop is the same fold after rotating the open device 90 degrees.
+        # Flat first gives the inner framebuffer a stable orientation to inspect. The fold
+        # button then produces book in landscape or tabletop in portrait.
         click_duo_button(udid, "open")
-        want_landscape = pose in ("open", "book")
-        if duo_display_is_landscape(udid, "inner") != want_landscape:
-            click_duo_button(udid, "rotate")
-        if pose in ("book", "tabletop"):
-            click_duo_button(udid, "book")
         display = "inner"
+    set_duo_orientation(udid, display, effective_orientation, pose)
+    if pose in ("book", "tabletop"):
+        click_duo_button(udid, "book")
     persist_duo_display(udid, display)
     invalidate_hierarchy(udid)
     return display
@@ -2044,8 +2075,13 @@ def run_action(
     if kind == "wait":
         wait_selector(udid, action, timeout, optional_prompt_labels)
     elif kind == "duo":
-        display = set_duo_pose(udid, str(required(action, "pose", f"action {index}")))
-        return {"pose": action["pose"], "display": display}
+        pose = str(required(action, "pose", f"action {index}"))
+        try:
+            orientation = duo_orientation(pose, action.get("orientation"), f"action {index}: duo")
+        except ValueError as error:
+            raise FastUIError(str(error)) from error
+        display = set_duo_pose(udid, pose, orientation)
+        return {"pose": pose, "orientation": orientation, "display": display}
     elif kind in IPHONE_ONLY:
         raise FastUIError(
             f"{kind} works on an iPhone only, not on the Simulator: {IPHONE_ONLY[kind]}; run it with fastDeviceTest"
@@ -2690,8 +2726,9 @@ def session_main(argv: list[str]) -> int:
         base = flow_path.parent
         app = required(spec, "app", "flow")
         setup = spec.get("setup", {})
+        variant = ui_variant(setup, None, None)
         simulator = str(required(app, "simulator", "app"))
-        select_duo_toolchain(simulator, bool(setup.get("duo_pose")))
+        select_duo_toolchain(simulator, bool(variant.get("duo_pose")))
         udid = resolve_simulator(simulator)
         bundle_id = required(app, "bundle_id", "app")
         ensure_not_busy(udid)
@@ -2706,8 +2743,8 @@ def session_main(argv: list[str]) -> int:
         else:
             command(["xcrun", "simctl", "terminate", udid, bundle_id], check=False)
         set_preferences(udid, bundle_id, setup.get("preferences", {}))
-        if setup.get("duo_pose"):
-            set_duo_pose(udid, str(setup["duo_pose"]))
+        if variant.get("duo_pose"):
+            set_duo_pose(udid, variant["duo_pose"], variant.get("duo_orientation"))
         command(["xcrun", "simctl", "launch", udid, bundle_id, *map(str, setup.get("launch_arguments", []))])
         phases["install_launch"] = round(time.perf_counter() - started - phases["prepare"], 2)
         root = session_root(spec, base)
@@ -2813,6 +2850,10 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--duo-pose", choices=DUO_POSES,
         help="Set an iPhone Duo pose before launch; task name gets @duo-<pose>",
+    )
+    parser.add_argument(
+        "--duo-orientation", choices=DUO_ORIENTATIONS,
+        help="Orientation for --duo-pose (default depends on pose); non-default joins its task suffix",
     )
     parser.add_argument(
         "--before", action="store_true",
@@ -2991,7 +3032,7 @@ def main() -> int:
     base = flow_path.parent
     app = required(spec, "app", "flow")
     setup = spec.get("setup", {})
-    variant = ui_variant(setup, args.appearance, args.content_size, args.duo_pose)
+    variant = ui_variant(setup, args.appearance, args.content_size, args.duo_pose, args.duo_orientation)
     name = variant_name(required(spec, "name", "flow"), variant)
     simulator = str(required(app, "simulator", "app"))
     select_duo_toolchain(simulator, bool(variant.get("duo_pose")))
@@ -3044,6 +3085,7 @@ def main() -> int:
     built = False
     current_step = "prepare"
     duo_pose = variant.get("duo_pose")
+    duo_orientation_value = variant.get("duo_orientation")
     recorder = Recorder(udid, artifacts / "run.mp4", duo_display_for_pose(duo_pose)) if args.record else None
     video: Path | None = None
     labels_per_step: list[dict[str, Any]] = []
@@ -3115,7 +3157,7 @@ def main() -> int:
                 journal("ui", dict(previous_ui))
             set_preferences(udid, bundle_id, setup.get("preferences", {}))
             if duo_pose:
-                set_duo_pose(udid, duo_pose)
+                set_duo_pose(udid, duo_pose, duo_orientation_value)
             if recorder:
                 recorder.start()
             launch = ["xcrun", "simctl", "launch", udid, bundle_id]

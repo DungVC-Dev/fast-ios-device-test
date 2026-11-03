@@ -9,11 +9,14 @@ For iPhone Duo, use Xcode 27.1 and the installed `fastSimulatorTest` launcher. P
 `"simulator":"iPhone Duo"` in the flow; the engine selects Xcode 27.1, boots it and opens
 Device Hub. Never click Device Hub directly.
 
-- In one flow, change state with `{"type":"duo","pose":"closed|open|book|tabletop"}`.
-  `closed` uses the outer portrait display; `open`, `book` and `tabletop` use the inner display.
+- In one flow, change state with
+  `{"type":"duo","pose":"closed|open|book|tabletop","orientation":"portrait|landscape"}`.
+  Orientation is optional: `closed`/`open` allow both; `book` is vertical-fold landscape and
+  `tabletop` horizontal-fold portrait.
 - A following `screenshot` targets the selected framebuffer. `screenshot` and `motion` may set
   `"display":"outer|inner"` explicitly.
-- For reviewable video, run one fixed-pose row per `--duo-pose closed|open|book|tabletop`, with
+- For reviewable video, run one fixed-pose row per `--duo-pose closed|open|book|tabletop`, optionally
+  with `--duo-orientation portrait|landscape`, and
   the same `--session` and `--record`. One recording contains one framebuffer; use screenshots
   when a single flow switches poses.
 - Review all four `@duo-<pose>` cases with `fastUIReview`, then collate them with `fastUIReport`.

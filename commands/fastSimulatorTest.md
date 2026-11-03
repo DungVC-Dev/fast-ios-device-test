@@ -12,7 +12,7 @@ in this plugin): flow format, selectors, timing rules, the two-rerun cap and whe
 The engine is:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-$HOME/.local}/bin/fastSimulatorTest" <flow.json> [--reuse-app|--build-only|--record|--session <name>|--duo-pose <pose>]
+"${CLAUDE_PLUGIN_ROOT:-$HOME/.local}/bin/fastSimulatorTest" <flow.json> [--reuse-app|--build-only|--record|--session <name>|--duo-pose <pose>|--duo-orientation portrait|landscape]
 "${CLAUDE_PLUGIN_ROOT:-$HOME/.local}/bin/fastSimulatorTest" start <draft.json> | do '<action json>' | labels | save <flow.json>
 ```
 
@@ -24,11 +24,15 @@ iPhone Duo requires Xcode 27.1. Use `"simulator":"iPhone Duo"`; the engine selec
 boots the device and opens Device Hub. In one flow, switch and capture displays with:
 
 ```json
-[{"type":"duo","pose":"closed"},{"type":"screenshot","name":"outer.png"},
+[{"type":"duo","pose":"closed","orientation":"landscape"},{"type":"screenshot","name":"outer.png"},
  {"type":"duo","pose":"open"},{"type":"screenshot","name":"inner.png"}]
 ```
 
-The poses are `closed` (outer portrait), `open` (flat inner landscape), `book` and `tabletop`.
+The defaults are `closed` outer portrait, `open` flat inner landscape, `book` inner landscape
+with a vertical fold, and `tabletop` inner portrait with a horizontal fold. `closed` and `open`
+also accept the other orientation; use the action's `orientation`, `setup.duo_orientation`, or
+`--duo-orientation`. `book+portrait` and `tabletop+landscape` are physically contradictory and
+are refused. A non-default matrix row is named such as `@duo-closed-landscape`.
 For a recorded pose matrix, run one row per `--duo-pose closed|open|book|tabletop`, all with the
 same `--session` and `--record`: a video records one framebuffer, while a flow that switches poses
 uses screenshots. An explicit screenshot/motion may set `"display":"outer|inner"`.

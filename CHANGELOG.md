@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### iPhone Duo
+
+- iPhone Duo flows can request `portrait` or `landscape` on a `duo` action, through
+  `setup.duo_orientation`, or with `--duo-orientation`. Device Hub rotates until the selected
+  framebuffer dimensions match, and non-default rows use names such as `@duo-closed-landscape`.
+
 ## 2.1.1 — 2026-11-03
 
 - README: restored the per-agent plugin install steps (Codex, Antigravity, Gemini CLI, Claude Code)
