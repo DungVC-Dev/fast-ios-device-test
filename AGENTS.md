@@ -61,6 +61,7 @@ User-facing docs: `README.md` (English), `GUIDE.md` (Vietnamese, for testers), `
 | `skills/fast-ios-device-test-setup/` | Setup and environment verification skill (`SKILL.md`) |
 | `skills/iphone-duo-swiftui/` | Bundled company skill and reusable SwiftUI components for iPhone Duo |
 | `scripts/xcode_skills.py` | Exports Apple agent skills from a local Xcode; Apple text never enters the repo/package |
+| `scripts/setup_repo_rules.sh` | Dry-run/apply GitHub rebase-only rules, required CI checks and npm environment |
 | `commands/` | Slash commands `fastSimulatorTest`, `fastDeviceTest`, `fastCarPlayTest`, `fastUIReview` |
 | `agents/ui-explorer.md` | Haiku subagent for long step-by-step searches (experimental) |
 | `install.sh` | Installer: copy/link/check/uninstall, pinned-tool flags and `--xcode-skills` export |
@@ -121,12 +122,22 @@ After `./install.sh --link`, edits to `scripts/`, `skills/`, `commands/` and `ag
 - Write every user-visible change under `## Unreleased` at the top of `CHANGELOG.md` (add that
   heading under `# Changelog` if it is missing; `release.sh` refuses to run without it).
 - Do not edit `.github/upstream-sha` by hand. When `UPSTREAM_REPO` is set, the sync-upstream
-  workflow commits straight to `main` every 6 hours, so rebase a branch on `main` before merging.
+  workflow runs every 6 hours, fast-forwards only and opens a PR when protected `main` rejects it.
+
+## Git workflow and CI
+
+- History is linear: branch from current `origin/main`, make focused commits, then run
+  `git fetch && git rebase origin/main` before opening or updating one PR for the complete batch.
+- CI must be green for `history`, `test` and `consistency`. Finish with GitHub's rebase merge;
+  merge commits and squash merges are not part of this repository's workflow.
+- Agents never push, merge, tag, release or publish without an explicit maintainer command.
+- Tag publishing reuses CI and requires the GitHub Environment `npm`. The maintainer must create
+  that environment with a required reviewer; `scripts/setup_repo_rules.sh` previews or applies it.
 
 ## Git and releases
 
-- Work on a branch and open a PR. Never push to `main`, tag, or publish unless the maintainer
-  explicitly asks.
+- Work on a branch and open one PR per batch. Never push to `main`, merge, tag, release or publish
+  unless the maintainer explicitly asks.
 - Releases: `./release.sh patch|minor|major|X.Y.Z` from a clean, up-to-date `main`. It turns
   `## Unreleased` into the version heading, bumps `package.json` and every provider plugin manifest,
   runs the tests, commits, tags `vX.Y.Z` and pushes. The tag triggers

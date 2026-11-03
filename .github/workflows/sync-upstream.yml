@@ -11,15 +11,17 @@ on:
 permissions:
   contents: write
   issues: write
+  pull-requests: write
 
 jobs:
   sync:
     if: vars.UPSTREAM_REPO != ''
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
+          fetch-depth: 0
 
       - name: Apply upstream changes
         id: apply
@@ -46,7 +48,30 @@ jobs:
           echo "$head" > .github/upstream-sha
           git add -A
           git commit -m "Sync upstream changes up to ${head:0:7}"
-          git push origin main
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git rebase origin/main; then
+            git rebase --abort
+            echo "pull_request=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git push origin HEAD:main; then
+            echo "pull_request=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open or update a linear sync pull request
+        if: steps.apply.outputs.pull_request == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch=automation/sync-upstream
+          git fetch --no-tags origin "+refs/heads/$branch:refs/remotes/origin/$branch" || true
+          git push --force-with-lease origin "HEAD:refs/heads/$branch"
+          if gh pr view "$branch" --json number >/dev/null 2>&1; then
+            echo "Updated existing $branch pull request."
+          else
+            gh pr create --base main --head "$branch" --title "Sync upstream" \
+              --body "Upstream changes were committed without a merge commit. Main did not accept a direct fast-forward, so review and rebase-merge this PR."
+          fi
 
       - name: Report conflict
         if: failure() && steps.apply.outputs.conflict == 'true'

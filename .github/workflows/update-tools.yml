@@ -13,7 +13,7 @@ jobs:
   update-pins:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Update AXe and baguette pins
         run: python3 scripts/tool_manager.py update all --no-install
       - name: Open dependency update pull request
