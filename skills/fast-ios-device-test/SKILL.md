@@ -32,7 +32,7 @@ PATH copies. A missing baguette is expected unless CarPlay support is needed and
 | PR evidence (sheet + clips) | nothing to run: every PASS flow run, and every `--before` run that failed at its outcome step, is filed in `~/Desktop/<project> <ticket>/` — "Evidence folder" in [references/usage.md](references/usage.md) |
 | Change that sheet (order, captions, a shot) | edit `source/sheet.json` there, then `fastEvidenceSheet <it>` — "Evidence sheet" in [references/usage.md](references/usage.md) |
 | Physical iPhone | read [references/device.md](references/device.md) first |
-| Physical iPhone on a weak network (`network_condition`), in Low Power Mode (`low_power`), hot (thermal state), or checking the app's log (`--app-log`, `expect_log`, `fastDeviceTest log wait`) | "Device conditions" in [references/device.md](references/device.md) |
+| Physical iPhone on a weak network (`network_condition`), in Low Power Mode (`low_power`), hot (thermal state, through Xcode's Debug menu with computer use), or checking the app's log (`--app-log`, `expect_log`, `fastDeviceTest log wait`) | "Device conditions" in [references/device.md](references/device.md) |
 | CarPlay (Simulator.app or Apple CarPlay Simulator + iPhone) | `fastCarPlayTest`; read [references/carplay.md](references/carplay.md) first. It reuses the phone engines and safely drives/captures the separate car surface |
 | Design or screen with Liquid Glass | identify the glass and derive the first `LG-` cases with [references/liquid-glass.md](references/liquid-glass.md) |
 | Another Mac app, Apple Watch | out of reach of the engines: say so at once. Do not drive it with `osascript`, `cliclick`, `screencapture` or a hand-written XCUITest unless the user asks for that |
