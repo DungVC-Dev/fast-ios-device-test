@@ -41,6 +41,9 @@
 
 ### Fixed
 
+- Apply requested iPhone Duo orientation after launching the target app, so a portrait-only app
+  left open from an earlier run cannot reject a landscape-capable app's flow; invalid variants now
+  print a concise `FAIL error=...` line instead of a Python traceback.
 - Preserve skill, command, agent and launcher symlinks managed by another checkout or company
   skill repository during install and uninstall; only verified links into this tool are replaced
   or removed, while dangling links are still repaired.

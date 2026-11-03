@@ -887,6 +887,54 @@ class SimulatorTrailTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("FAIL task=bad step=01_edge_swipe", err.getvalue())
 
+    def test_bad_duo_variant_is_a_fail_line_not_a_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            flow = Path(raw) / "bad-duo.json"
+            flow.write_text(json.dumps({
+                "version": 1, "name": "bad-duo", "actions": [],
+                "setup": {"duo_pose": "book", "duo_orientation": "portrait"},
+                "app": {"bundle_id": "com.example.app", "prebuilt": True,
+                        "simulator": "SIM", "project_root": raw},
+            }))
+            err = io.StringIO()
+            with mock.patch.object(fast_ui.sys, "argv", ["fastSimulatorTest", str(flow)]), \
+                    contextlib.redirect_stderr(err):
+                code = fast_ui.cli_main()
+        self.assertEqual(code, 1)
+        self.assertEqual(err.getvalue(),
+                         "FAIL error=duo variant: book is a vertical fold and requires landscape orientation\n")
+
+    def test_main_launches_target_before_applying_nondefault_duo_orientation(self) -> None:
+        events: list[str] = []
+        with tempfile.TemporaryDirectory() as raw:
+            flow = Path(raw) / "duo.json"
+            flow.write_text(json.dumps({
+                "version": 1, "name": "duo", "actions": [],
+                "setup": {"duo_pose": "closed", "duo_orientation": "landscape"},
+                "app": {"bundle_id": "com.example.app", "prebuilt": True,
+                        "simulator": "SIM", "project_root": raw},
+            }))
+
+            def command(arguments, **_kwargs):
+                if arguments[:3] == ["xcrun", "simctl", "launch"]:
+                    events.append("launch")
+                return mock.Mock(stdout="", stderr="", returncode=0)
+
+            with mock.patch.object(fast_ui.sys, "argv", ["fastSimulatorTest", str(flow)]), \
+                    mock.patch.object(fast_ui, "prepare_app", return_value=(None, False)), \
+                    mock.patch.object(fast_ui, "command", side_effect=command), \
+                    mock.patch.object(fast_ui, "apply_ui_settings"), \
+                    mock.patch.object(fast_ui, "set_preferences"), \
+                    mock.patch.object(fast_ui, "set_duo_pose",
+                                      side_effect=lambda _udid, _pose, orientation:
+                                      events.append(f"pose:{orientation}")), \
+                    mock.patch.object(fast_ui, "teardown"), \
+                    mock.patch.object(fast_ui, "axe", side_effect=FakeAxe(self.A)), \
+                    mock.patch.object(fast_ui, "record"), \
+                    contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(fast_ui.main(), 0)
+        self.assertEqual(events, ["pose:None", "launch", "pose:landscape"])
+
     def test_main_records_the_map_even_when_the_teardown_fails(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             flow = Path(raw) / "home.json"
