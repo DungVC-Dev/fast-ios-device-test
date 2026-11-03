@@ -13,7 +13,9 @@ installed; this repo ships only the test derivation guide, never Apple's source 
 Before the first run, confirm that `fastSimulatorTest` and `fastDeviceTest` are on `PATH`. If they
 are missing, use the bundled `fast-ios-device-test-setup` skill or run `npx fast-ios-device-test`
 and require its final `CHECK OK` before continuing. A run that ends with `update available: …`
-(at most once a day): tell the user once, at the end of the task; never update mid-task.
+(at most once a day): tell the user once, at the end of the task; never update mid-task. Normal
+installs enable a daily patch/minor updater; inspect it with
+`npx fast-ios-device-test auto-update status` and never change its setting unless the user asks.
 The runtime uses required project-pinned AXe and optional baguette under `~/.local/share` before
 PATH copies. A missing baguette is expected unless CarPlay support is needed and does not fail
 `CHECK OK`; install it with `install.sh --install-baguette`. Only run

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Updates
+
+- Enable a per-user daily launchd updater on normal installs, with explicit on/off/status controls,
+  patch/minor-only application, major-version notices, shared fast* run locking, small rotated logs,
+  linked-clone git advice, uninstall cleanup and `FAST_IOS_NO_AUTO_UPDATE=1` opt-out.
+- Make `npx fast-ios-device-test update` update installed Antigravity and Gemini plugins as well as
+  Codex and Claude Code; document Claude marketplace opt-in and Gemini's native `--auto-update`.
+- Check a linked clone against `origin/main` only in the cached daily refresh and report when it is
+  behind without adding network latency to normal engine runs.
+
 ### Physical iPhone
 
 - Run a fast, briefly cached one-`devicectl` readiness gate before every physical-iPhone flow and

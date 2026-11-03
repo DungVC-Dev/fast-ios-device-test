@@ -46,7 +46,10 @@ npx fast-ios-device-test --check
 
 This installs the launchers, required AXe, and optional CarPlay tool `baguette`. Tool versions and
 SHA-256 checksums are pinned in [`vendor/tools.json`](vendor/tools.json). Homebrew is not required.
-It also installs the bundled `fast-ios-device-test` and `iphone-duo-swiftui` skills for Claude Code.
+It also installs the bundled `fast-ios-device-test` and `iphone-duo-swiftui` skills for Claude Code,
+and enables a daily per-user updater. Disable it with
+`npx fast-ios-device-test auto-update off` or skip it at install time with
+`FAST_IOS_NO_AUTO_UPDATE=1`.
 
 ### 2. Connect your agent
 
@@ -56,13 +59,18 @@ The runtime gives you the engines. The plugin or extension teaches your agent ho
 |---|---|---|
 | **Codex** | `codex plugin marketplace add DungVC-Dev/fast-ios-device-test`<br>`codex plugin add fast-ios-device-test@fast-ios-device-test` | Restart Codex |
 | **Antigravity** | `agy plugin install https://github.com/DungVC-Dev/fast-ios-device-test` | `agy plugin list`, restart Antigravity |
-| **Gemini CLI** | `gemini extensions install https://github.com/DungVC-Dev/fast-ios-device-test` | Restart Gemini CLI |
+| **Gemini CLI** | `gemini extensions install https://github.com/DungVC-Dev/fast-ios-device-test --auto-update` | Restart Gemini CLI |
 | **Claude Code** | `/plugin marketplace add DungVC-Dev/fast-ios-device-test`<br>`/plugin install fast-ios-device-test@fast-ios-device-test` | Optional, see below |
 
 > [!NOTE]
 > **Claude Code needs no plugin.** `npx fast-ios-device-test` already links both bundled skills, the slash
 > commands and the subagent into `~/.claude`. Add the plugin only if you want to manage it with
 > `/plugin`; with both, Claude Code lists the skill and the commands twice.
+
+Claude Code auto-updates installed plugins only when their marketplace has auto-update enabled.
+Third-party marketplaces default to off and cannot opt in from `marketplace.json`: open `/plugin`,
+select **Marketplaces** → `fast-ios-device-test` → **Enable auto-update**. Codex has no native
+auto-update switch; the tool's daily updater runs its verified marketplace refresh/install pair.
 
 ### 3. Ask for a check
 
@@ -95,10 +103,20 @@ Antigravity **Customizations → Marketplace**.
 
 ```bash
 npx fast-ios-device-test update
+npx fast-ios-device-test auto-update status
+npx fast-ios-device-test auto-update on|off
 npx fast-ios-device-test update-tools
 npx fast-ios-device-test xcode-skills
 ./install.sh --check
 ```
+
+A normal install enables the launchd job by default and prints
+`auto-update: on (daily; turn off: npx fast-ios-device-test auto-update off)`. It updates the
+runtime plus installed Codex, Claude Code, Antigravity and Gemini plugins once a day. Patch and
+minor releases apply automatically; major releases only produce a notice for manual review. A
+running `fastSimulatorTest`, `fastDeviceTest`, or `fastCarPlayTest` makes that day's job skip, and
+the log is kept at `~/Library/Logs/fast-ios-device-test-update.log` (rotated near 1 MB).
+Development `--link` installs stay on git and do not enable the job automatically.
 
 A missing `baguette` does not fail the check. Install its verified pin only when needed with
 `./install.sh --install-baguette`.
@@ -421,6 +439,7 @@ local Xcode without redistributing it.
 | `FAST_IOS_INSTALL_DIR` | Runtime installation directory |
 | `FAST_IOS_DERIVED_DATA_ROOT` | Shared per-repository Simulator DerivedData root |
 | `FAST_IOS_NO_UPDATE_CHECK=1` | Disable background package and tool update checks |
+| `FAST_IOS_NO_AUTO_UPDATE=1` | Do not enable the daily launchd updater during a normal install |
 | `DUO_XCODE` | Override the Xcode 27.1 application used for iPhone Duo |
 
 </details>

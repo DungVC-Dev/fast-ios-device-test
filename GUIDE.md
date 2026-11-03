@@ -15,10 +15,15 @@ Intel hoặc đang offline vẫn cài tool bình thường và có thể chạy 
 Cài hai phần:
 
 1. **Bộ chạy trên Mac** (engine, AXe, baguette tùy chọn, các lệnh `fast…`), dùng chung cho mọi agent:
-   `npx fast-ios-device-test`. Cập nhật: `npx fast-ios-device-test update` (cập nhật luôn plugin
-   Codex và Claude Code; Antigravity và Gemini thì in ra lệnh cần chạy). Khi có bản mới,
+   `npx fast-ios-device-test`. Bản cài thường tự bật job launchd hằng ngày và in
+   `auto-update: on (daily; turn off: npx fast-ios-device-test auto-update off)`. Job tự áp dụng
+   bản vá/bản minor và cập nhật plugin Codex, Claude Code, Antigravity, Gemini; bản major chỉ báo để
+   người dùng chạy thủ công. Xem/tắt/bật bằng `npx fast-ios-device-test auto-update status|off|on`.
+   `FAST_IOS_NO_AUTO_UPDATE=1` lúc cài sẽ không bật job; `--link` cũng không tự bật vì clone cập nhật
+   bằng git. Cập nhật ngay: `npx fast-ios-device-test update`. Khi có bản mới,
    `fastSimulatorTest`/`fastDeviceTest` in một dòng `update available: …` (tối đa một lần mỗi ngày,
-   không tự cài; tắt bằng `FAST_IOS_NO_UPDATE_CHECK=1`). Với Claude Code, lệnh này đã cài luôn
+   tắt toàn bộ kiểm tra mạng bằng `FAST_IOS_NO_UPDATE_CHECK=1`). Job bỏ lượt nếu đang có lệnh fast*
+   chạy và ghi log xoay vòng ở `~/Library/Logs/fast-ios-device-test-update.log`. Với Claude Code, lệnh này đã cài luôn
    hai skill `fast-ios-device-test`, `iphone-duo-swiftui`, các lệnh `/fastSimulatorTest`,
    `/fastDeviceTest`, `/fastCarPlayTest`, `/fastUIReview` và subagent.
    Khi sửa code cho Duo, có thể chạy `npx fast-ios-device-test xcode-skills` để xuất thêm skill
@@ -30,11 +35,15 @@ Cài hai phần:
    - Codex: `codex plugin marketplace add DungVC-Dev/fast-ios-device-test` rồi
      `codex plugin add fast-ios-device-test@fast-ios-device-test`
    - Antigravity: `agy plugin install https://github.com/DungVC-Dev/fast-ios-device-test`
-   - Gemini CLI: `gemini extensions install https://github.com/DungVC-Dev/fast-ios-device-test`
+   - Gemini CLI: `gemini extensions install https://github.com/DungVC-Dev/fast-ios-device-test --auto-update`
+
+Claude Code không cho marketplace bên thứ ba tự opt-in bằng manifest: trong `/plugin`, mở
+**Marketplaces**, chọn `fast-ios-device-test`, rồi **Enable auto-update**. Codex không có công tắc
+auto-update riêng; job hằng ngày của tool chạy cặp refresh/install đã kiểm chứng.
 
 Kiểm tra: `npx fast-ios-device-test --check`, dòng cuối phải là `CHECK OK`. Lệnh này cũng báo khi
 version AXe pin/local/latest không khớp; baguette thiếu/cũ chỉ được báo là tùy chọn, không làm
-`CHECK OK` thất bại. Lệnh cũng báo khi skill của Codex hoặc Antigravity bị hỏng (link trỏ
+`CHECK OK` thất bại, đồng thời in trạng thái và kết quả gần nhất của auto-update. Lệnh cũng báo khi skill của Codex hoặc Antigravity bị hỏng (link trỏ
 vào thư mục đã xoá, plugin rỗng). Sau đó thoát
 rồi mở lại agent.
 

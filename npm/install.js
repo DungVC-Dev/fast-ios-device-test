@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // npx fast-ios-device-test                     install, or upgrade (copied to ~/.local/share/fast-ios-device-test)
 // npx fast-ios-device-test update              upgrade to the latest version, then each agent's plugin
+// npx fast-ios-device-test auto-update on|off|status   manage the daily launchd updater
 // npx fast-ios-device-test update-tools        pin and install latest AXe + baguette releases
 // npx fast-ios-device-test update-axe|update-baguette   update one pinned tool
 // npx fast-ios-device-test xcode-skills [--list|--skill <name>|--docs liquid-glass|--remove]
@@ -113,11 +114,31 @@ function updatePlugins() {
   }
   const agyPlugin = process.env.ANTIGRAVITY_PLUGIN_DIR || path.join(home, ".gemini", "config", "plugins", PACKAGE);
   if (hasSkill(agyPlugin)) {
-    console.log(`antigravity: reinstall the plugin: agy plugin install https://github.com/DungVC-Dev/${PACKAGE}`);
+    if (onPath("agy")) {
+      console.log("antigravity: updating the plugin (reinstall preserves its enabled state)");
+      if (run("agy", ["plugin", "install", `https://github.com/DungVC-Dev/${PACKAGE}`]) === 0) {
+        console.log("antigravity: restart Antigravity to load it");
+      } else {
+        console.log("antigravity: the plugin update failed (output above)");
+        failed = 1;
+      }
+    } else {
+      console.log(`antigravity: run agy plugin install https://github.com/DungVC-Dev/${PACKAGE}`);
+    }
   }
   const geminiExtension = process.env.GEMINI_EXTENSION_DIR || path.join(home, ".gemini", "extensions", PACKAGE);
   if (exists(geminiExtension)) {
-    console.log(`gemini: run gemini extensions update ${PACKAGE}`);
+    if (onPath("gemini")) {
+      console.log("gemini: updating the extension");
+      if (run("gemini", ["extensions", "update", PACKAGE]) === 0) {
+        console.log("gemini: restart Gemini CLI to load it");
+      } else {
+        console.log("gemini: the extension update failed (output above)");
+        failed = 1;
+      }
+    } else {
+      console.log(`gemini: run gemini extensions update ${PACKAGE}`);
+    }
   }
   return failed;
 }
@@ -153,6 +174,22 @@ function updateTool(name) {
   return run("bash", [path.join(target, "install.sh"), `--update-${name}`]);
 }
 
+function autoUpdate(action) {
+  if (!["on", "off", "status"].includes(action)) {
+    console.error(`usage: npx ${PACKAGE} auto-update on|off|status`);
+    return 2;
+  }
+  const installDir = process.env.FAST_IOS_INSTALL_DIR || path.join(home, ".local", "share", PACKAGE);
+  const target = installedRoot() || (exists(path.join(installDir, "scripts", "fast_auto_update.py")) ? installDir : root);
+  // An older --link clone does not have this manager yet. Status/off must still work from a
+  // newer npx package; `on` passes the active runtime separately and fails clearly if its helper
+  // is absent rather than writing a launchd job that cannot start.
+  const managerRoot = exists(path.join(target, "scripts", "fast_auto_update.py")) ? target : root;
+  const commandArgs = [path.join(managerRoot, "scripts", "fast_auto_update.py"), action];
+  if (action === "on") commandArgs.push(target);
+  return run("python3", commandArgs);
+}
+
 async function main() {
   if (process.platform !== "darwin") {
     console.error("fast-ios-device-test needs macOS with Xcode.");
@@ -163,6 +200,7 @@ async function main() {
     return 2;
   }
   if (args[0] === "update") return update();
+  if (args[0] === "auto-update") return autoUpdate(args[1] || "status");
   if (args[0] === "update-axe") return updateTool("axe");
   if (args[0] === "update-baguette") return updateTool("baguette");
   if (args[0] === "update-tools") return updateTool("tools");

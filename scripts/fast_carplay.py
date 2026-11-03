@@ -30,6 +30,7 @@ if str(SCRIPT_DIR) not in sys.path:
 import fast_device  # noqa: E402
 import fast_guard  # noqa: E402
 import fast_ui  # noqa: E402
+import fast_update  # noqa: E402
 
 
 DEFAULT_WIDTH = 1920
@@ -1133,8 +1134,9 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except CarPlayError as error:
-        print(f"FAIL error={error}", file=sys.stderr)
-        raise SystemExit(1)
+    with fast_update.runtime_lock():
+        try:
+            raise SystemExit(main())
+        except CarPlayError as error:
+            print(f"FAIL error={error}", file=sys.stderr)
+            raise SystemExit(1)

@@ -3,6 +3,7 @@ Nothing here reaches npm: FAST_IOS_LATEST_VERSION stands in for the registry."""
 
 import json
 import os
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -12,6 +13,7 @@ from pathlib import Path
 from unittest import mock
 
 import fast_update
+import fast_auto_update
 import tool_manager
 
 REPO = Path(__file__).resolve().parent.parent
@@ -47,7 +49,8 @@ class NoticeTests(unittest.TestCase):
         self.seed(checked_at=1000, latest="2.0.9")
         line = fast_update.notice(now=1000 + 60, current="2.0.3", spawn=False)
         self.assertEqual(line, "update available: fast-ios-device-test 2.0.3 -> 2.0.9 "
-                               "(run: npx fast-ios-device-test update)")
+                               "(run: npx fast-ios-device-test update; "
+                               "auto-update: npx fast-ios-device-test auto-update on)")
         self.assertIsNone(fast_update.notice(now=1000 + 120, current="2.0.3", spawn=False))
         self.assertIsNotNone(fast_update.notice(now=1000 + 60 + DAY, current="2.0.3", spawn=False))
 
@@ -123,9 +126,23 @@ class NoticeTests(unittest.TestCase):
             self.assertIsNone(fast_update.notice(now=5 + DAY, current="2.0.3"))
 
     def test_refresh_stores_the_latest_version(self):
-        with mock.patch.dict(os.environ, {"FAST_IOS_LATEST_VERSION": "3.1.4"}):
+        with mock.patch.dict(os.environ, {"FAST_IOS_LATEST_VERSION": "3.1.4"}), \
+                mock.patch.object(fast_update, "linked_clone_status", return_value=(None, None)):
             fast_update.refresh()
         self.assertEqual(json.loads(self.cache.read_text())["latest"], "3.1.4")
+
+    def test_major_notice_requires_a_manual_update(self):
+        self.seed(checked_at=1000, latest="3.0.0")
+        line = fast_update.notice(now=1001, current="2.9.9", spawn=False)
+        self.assertIn("major update; run manually", line or "")
+        self.assertNotIn("auto-update on", line or "")
+
+    def test_linked_clone_behind_origin_main_prints_git_advice(self):
+        clone = self.dir / "clone"
+        self.seed(checked_at=1000, latest="2.0.3", clone=str(clone), clone_behind=2)
+        line = fast_update.notice(now=1001, current="2.0.3", spawn=False)
+        self.assertIn("linked clone is 2 commits behind origin/main", line or "")
+        self.assertIn("pull --rebase", line or "")
 
     def test_tool_latest_is_checked_once_a_day_and_can_be_disabled(self):
         with mock.patch.dict(os.environ, {"FAST_IOS_LATEST_AXE_VERSION": "1.9.0"}):
@@ -229,7 +246,7 @@ class NpmUpdateTests(unittest.TestCase):
         self.stubs = self.home / "stubs"
         self.stubs.mkdir()
         self.log = self.home / "calls.log"
-        for name in ("codex", "claude", "npx"):
+        for name in ("codex", "claude", "agy", "gemini", "npx"):
             stub = self.stubs / name
             stub.write_text(f'#!/bin/sh\necho "{name} $*" >> "{self.log}"\n')
             stub.chmod(0o755)
@@ -307,6 +324,20 @@ class NpmUpdateTests(unittest.TestCase):
         self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
         self.assertEqual(calls, [])
 
+    def test_antigravity_and_gemini_plugins_are_updated_instead_of_only_printed(self):
+        self.linked_clone()
+        skill = self.home / ".gemini/config/plugins/fast-ios-device-test/skills/fast-ios-device-test"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text("x")
+        (self.home / ".gemini/extensions/fast-ios-device-test").mkdir(parents=True)
+        ran, calls = self.update()
+        self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+        self.assertEqual(calls, [
+            "agy plugin install https://github.com/DungVC-Dev/fast-ios-device-test",
+            "gemini extensions update fast-ios-device-test",
+        ])
+        self.assertIn("reinstall preserves its enabled state", ran.stdout)
+
     def test_update_axe_dispatches_to_the_pinned_installer(self):
         bash = self.stubs / "bash"
         bash.write_text(f'#!/bin/sh\necho "bash $*" >> "{self.log}"\n')
@@ -343,6 +374,101 @@ class NpmUpdateTests(unittest.TestCase):
             self.log.read_text().splitlines(),
             [f"bash {REPO / 'install.sh'} --xcode-skills --list"],
         )
+
+    def test_auto_update_status_dispatches_to_the_manager(self):
+        self.linked_clone()  # An older linked clone has no fast_auto_update.py yet.
+        ran = subprocess.run(
+            ["node", str(REPO / "npm" / "install.js"), "auto-update", "status"],
+            capture_output=True, text=True, env=self.env, timeout=30,
+        )
+        self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+        self.assertIn("auto-update: off", ran.stdout)
+
+
+class AutoUpdateTests(unittest.TestCase):
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.root = self.dir / "tool"
+        (self.root / "scripts").mkdir(parents=True)
+        shutil.copy(REPO / "scripts/fast_auto_update.py", self.root / "scripts/fast_auto_update.py")
+        (self.root / "package.json").write_text('{"version":"2.1.1"}')
+        self.bin = self.dir / "bin"
+        self.bin.mkdir()
+        (self.bin / "fastSimulatorTest").symlink_to(self.root / "scripts/fast_ui.py")
+        (self.root / "scripts/fast_ui.py").write_text("")
+        self.log = self.dir / "update.log"
+        self.status = self.dir / "status.json"
+        self.agent = self.dir / "agent.plist"
+        self.runtime_lock = self.dir / "runtime.lock"
+        self.env = {
+            "HOME": str(self.dir),
+            "FAST_IOS_BIN_DIR": str(self.bin),
+            "FAST_IOS_UPDATE_LOG": str(self.log),
+            "FAST_IOS_AUTO_UPDATE_STATUS": str(self.status),
+            "FAST_IOS_LAUNCH_AGENT": str(self.agent),
+            "FAST_IOS_RUNTIME_LOCK": str(self.runtime_lock),
+        }
+        self.env_patch = mock.patch.dict(os.environ, self.env, clear=False)
+        self.env_patch.start()
+        self.addCleanup(self.env_patch.stop)
+        os.environ.pop("FAST_IOS_NO_UPDATE_CHECK", None)
+
+    def test_enable_writes_a_daily_launch_agent_and_status_is_off_by_default(self):
+        with mock.patch.object(fast_auto_update, "launchctl", return_value=0):
+            self.assertEqual(fast_auto_update.show_status(), 0)
+            self.assertEqual(fast_auto_update.enable(self.root), 0)
+        data = plistlib.loads(self.agent.read_bytes())
+        self.assertEqual(data["Label"], fast_auto_update.LABEL)
+        self.assertEqual(data["StartCalendarInterval"], {"Hour": 9, "Minute": 0})
+        self.assertIn("--run", data["ProgramArguments"])
+
+    def test_daily_patch_update_runs_the_exact_safe_version(self):
+        npx = self.dir / "npx"
+        npx.write_text("#!/bin/sh\nexit 0\n")
+        npx.chmod(0o755)
+        with mock.patch.object(fast_auto_update.shutil, "which", side_effect=lambda name: str(npx) if name == "npx" else shutil.which(name)), \
+                mock.patch.object(fast_update, "fetch_latest", return_value="2.2.0"), \
+                mock.patch.object(fast_auto_update.subprocess, "run", wraps=subprocess.run) as run:
+            self.assertEqual(fast_auto_update.run_daily(), 0)
+        invoked = [call.args[0] for call in run.call_args_list if call.args and call.args[0][0] == str(npx)]
+        self.assertEqual(invoked, [[str(npx), "--yes", "fast-ios-device-test@2.2.0", "update"]])
+        self.assertEqual(json.loads(self.status.read_text())["result"], "ok")
+
+    def test_daily_major_update_only_writes_a_notice(self):
+        with mock.patch.object(fast_update, "fetch_latest", return_value="3.0.0"), \
+                mock.patch.object(fast_auto_update.subprocess, "run") as run:
+            self.assertEqual(fast_auto_update.run_daily(), 0)
+        run.assert_not_called()
+        self.assertIn("major update available", self.log.read_text())
+        self.assertEqual(json.loads(self.status.read_text())["result"], "notice")
+
+    def test_daily_job_skips_network_when_a_run_holds_the_lock(self):
+        with fast_update.runtime_lock(), mock.patch.object(fast_update, "fetch_latest") as fetch:
+            self.assertEqual(fast_auto_update.run_daily(), 0)
+        fetch.assert_not_called()
+        self.assertIn("fast* run is active", self.log.read_text())
+
+    def test_daily_job_respects_no_update_check(self):
+        with mock.patch.dict(os.environ, {"FAST_IOS_NO_UPDATE_CHECK": "1"}), \
+                mock.patch.object(fast_update, "fetch_latest") as fetch:
+            self.assertEqual(fast_auto_update.run_daily(), 0)
+        fetch.assert_not_called()
+        self.assertIn("no network checks", self.log.read_text())
+
+    def test_daily_job_logs_git_advice_for_a_linked_clone(self):
+        (self.root / ".git").mkdir()
+        with mock.patch.object(fast_update, "fetch_latest") as fetch:
+            self.assertEqual(fast_auto_update.run_daily(), 0)
+        fetch.assert_not_called()
+        self.assertIn("pull --rebase", self.log.read_text())
+
+    def test_daily_job_rotates_a_megabyte_log(self):
+        self.log.write_bytes(b"x" * (fast_auto_update.MAX_LOG_BYTES + 1))
+        with mock.patch.dict(os.environ, {"FAST_IOS_NO_UPDATE_CHECK": "1"}):
+            self.assertEqual(fast_auto_update.run_daily(), 0)
+        self.assertTrue(self.log.with_suffix(".log.1").is_file())
+        self.assertLess(self.log.stat().st_size, 1000)
 
 
 if __name__ == "__main__":

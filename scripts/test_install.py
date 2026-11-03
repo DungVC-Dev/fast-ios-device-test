@@ -45,7 +45,12 @@ class InstallCheckTests(unittest.TestCase):
                         CODEX_SKILLS_DIR=str(self.dirs["codex"]),
                         ANTIGRAVITY_SKILLS_DIR=str(self.dirs["antigravity"]),
                         FAST_IOS_NO_UPDATE_CHECK="1", FAST_IOS_LATEST_VERSION="0.0.1",
+                        FAST_IOS_NO_AUTO_UPDATE="1",
                         FAST_IOS_UPDATE_CACHE=str(self.home / "update.json"),
+                        FAST_IOS_LAUNCH_AGENT=str(self.home / "LaunchAgents" / "update.plist"),
+                        FAST_IOS_UPDATE_LOG=str(self.home / "update.log"),
+                        FAST_IOS_AUTO_UPDATE_STATUS=str(self.home / "auto-update.json"),
+                        FAST_IOS_RUNTIME_LOCK=str(self.home / "runtime.lock"),
                         ANTIGRAVITY_PLUGIN_DIR=str(self.home / "agy-plugins" / "fast-ios-device-test"))
 
     def fake_tool(self, name, version=None):
@@ -416,6 +421,30 @@ class InstallCheckTests(unittest.TestCase):
         self.assertIn("is a git clone", out)
         self.assertEqual((share / "keep.txt").read_text(), "mine")
 
+    @unittest.skipUnless(shutil.which("xcodebuild"), "install needs Xcode")
+    def test_plain_install_enables_daily_auto_update_by_default(self):
+        stubs = self.home / "stubs"
+        stubs.mkdir()
+        launchctl = stubs / "launchctl"
+        launchctl.write_text("#!/bin/sh\nexit 0\n")
+        launchctl.chmod(0o755)
+        self.env.pop("FAST_IOS_NO_AUTO_UPDATE")
+        self.env["PATH"] = f"{stubs}:{self.dirs['bin']}:{os.environ.get('PATH', '')}"
+        code, out = self.run_install()
+        self.assertEqual(code, 0, out)
+        agent = Path(self.env["FAST_IOS_LAUNCH_AGENT"])
+        self.assertTrue(agent.is_file())
+        self.assertIn("auto-update: on (daily; turn off: npx fast-ios-device-test auto-update off)", out)
+
+    @unittest.skipUnless(shutil.which("xcodebuild"), "install needs Xcode")
+    def test_link_install_does_not_enable_auto_update(self):
+        self.env.pop("FAST_IOS_NO_AUTO_UPDATE")
+        self.env["PATH"] = f"{self.dirs['bin']}:{os.environ.get('PATH', '')}"
+        code, out = self.run_install("--link")
+        self.assertEqual(code, 0, out)
+        self.assertFalse(Path(self.env["FAST_IOS_LAUNCH_AGENT"]).exists())
+        self.assertIn("auto-update: unchanged (--link clone updates with git)", out)
+
     def test_uninstall_removes_a_relative_link_into_the_copy(self):
         share = self.tool_copy("share")
         skill = share / "skills" / "fast-ios-device-test"
@@ -435,6 +464,21 @@ class InstallCheckTests(unittest.TestCase):
         code, out = self.run_install("--uninstall")
         self.assertEqual(code, 0, out)
         self.assertFalse(codex.is_symlink())
+
+    def test_uninstall_removes_the_daily_launch_agent(self):
+        agent = Path(self.env["FAST_IOS_LAUNCH_AGENT"])
+        agent.parent.mkdir(parents=True)
+        agent.write_text("fixture")
+        stubs = self.home / "stubs"
+        stubs.mkdir()
+        launchctl = stubs / "launchctl"
+        launchctl.write_text("#!/bin/sh\nexit 0\n")
+        launchctl.chmod(0o755)
+        self.env["PATH"] = f"{stubs}:{os.environ.get('PATH', '')}"
+        code, out = self.run_install("--uninstall")
+        self.assertEqual(code, 0, out)
+        self.assertFalse(agent.exists())
+        self.assertIn("auto-update: off", out)
 
     def test_uninstall_keeps_foreign_and_dangling_links_but_removes_owned_links(self):
         codex = self.dirs["codex"] / "fast-ios-device-test"

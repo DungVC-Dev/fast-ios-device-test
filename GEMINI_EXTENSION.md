@@ -6,6 +6,11 @@ CarPlay UI-flow verification. If its launchers are not available on `PATH`, use 
 `npx fast-ios-device-test --check` before running a flow. Do not treat this extension as a release,
 archive, or full XCTest-suite runner.
 
+Install this extension with native automatic updates enabled:
+`gemini extensions install https://github.com/DungVC-Dev/fast-ios-device-test --auto-update`.
+An existing install updates immediately with `gemini extensions update fast-ios-device-test`;
+`npx fast-ios-device-test update` also invokes that command when Gemini CLI is available.
+
 Gemini CLI has no Claude slash commands; drive every engine through the CLI launchers in `~/.local/bin`:
 
 ## 1. Simulator flows (`fastSimulatorTest`)

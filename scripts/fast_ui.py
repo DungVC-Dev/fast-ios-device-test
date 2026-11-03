@@ -34,6 +34,7 @@ from fast_guard import (  # noqa: E402
     check_actions, duo_orientation, parse_prompt_labels, risky_step,
 )
 from fast_ui_map import NOISE_LABEL, SCROLL_BAR_LABEL, Trail, record  # noqa: E402
+import fast_update  # noqa: E402
 from fast_update import print_notice  # noqa: E402
 
 
@@ -3478,7 +3479,8 @@ def cli_main() -> int:
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(cli_main())
-    finally:
-        print_notice()
+    with fast_update.runtime_lock():
+        try:
+            raise SystemExit(cli_main())
+        finally:
+            print_notice()
