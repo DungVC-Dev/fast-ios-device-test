@@ -19,7 +19,10 @@ Cài hai phần:
    Codex và Claude Code; Antigravity và Gemini thì in ra lệnh cần chạy). Khi có bản mới,
    `fastSimulatorTest`/`fastDeviceTest` in một dòng `update available: …` (tối đa một lần mỗi ngày,
    không tự cài; tắt bằng `FAST_IOS_NO_UPDATE_CHECK=1`). Với Claude Code, lệnh này đã cài luôn
-   skill, các lệnh `/fastSimulatorTest`, `/fastDeviceTest`, `/fastCarPlayTest`, `/fastUIReview` và subagent.
+   hai skill `fast-ios-device-test`, `iphone-duo-swiftui`, các lệnh `/fastSimulatorTest`,
+   `/fastDeviceTest`, `/fastCarPlayTest`, `/fastUIReview` và subagent.
+   Khi sửa code cho Duo, có thể chạy `npx fast-ios-device-test xcode-skills` để xuất thêm skill
+   `apple-app-resizability` từ Xcode đang cài. Nội dung Apple chỉ nằm trên máy, không có trong repo/npm.
    Cập nhật các tool như dependency đã khóa: `npx fast-ios-device-test update-tools` (hoặc
    `update-axe` / `update-baguette`); lệnh này tải release mới nhất, kiểm checksum + version,
    cập nhật pin rồi cài lại local.
@@ -47,7 +50,8 @@ Dọn cache và bản build khi test (tool vẫn còn): `npx fast-ios-device-tes
    ```
    Dùng Codex hoặc Antigravity thì link skill từ bản clone (README, mục "Development install"):
    `ln -sfn ~/fast-ios-device-test/skills/fast-ios-device-test ~/.codex/skills/fast-ios-device-test`
-   hoặc `~/.gemini/config/skills/fast-ios-device-test`.
+   hoặc `~/.gemini/config/skills/fast-ios-device-test`; làm tương tự cho thư mục
+   `skills/iphone-duo-swiftui` nếu cần sửa giao diện Duo.
 2. Thoát rồi mở lại agent.
 
 Cập nhật bản mới: `git -C ~/fast-ios-device-test pull && ~/fast-ios-device-test/install.sh --link`.
@@ -122,8 +126,11 @@ Agent tự chọn giữa viết flow (để chạy lại, chạy nhiều máy, q
   `{"type":"duo","pose":"closed|open|book|tabletop","orientation":"portrait|landscape"}`
   để đổi màn hình/tư thế/hướng; `orientation` là tuỳ chọn. `closed`/`open` dùng được cả hai hướng;
   `book` chỉ landscape (nếp dọc), `tabletop` chỉ portrait (nếp ngang).
+  `screenshot` có thể ghi `"display":"outer"` hoặc `"inner"`.
   Chạy matrix bằng `--duo-pose` và chỉ thêm `--duo-orientation` khi cần biến thể hướng; hướng
   không mặc định có hậu tố như `@duo-closed-landscape`. Video quay đúng framebuffer.
+  Khi sửa SwiftUI, dùng skill `iphone-duo-swiftui`; nếu đã export thì dùng thêm
+  `apple-app-resizability` của Xcode.
 - CarPlay Simulator.app cần Xcode 26.6, mặc định iOS 26.5 và simulator riêng tên `agent-tmp-*`.
   Nếu thiếu `baguette`, chạy `./install.sh --install-baguette`.
   Dùng `--display widescreen` hoặc `--display standard` cho 1920×720@2 hoặc 800×480@2. Mỗi lệnh

@@ -3,13 +3,12 @@
   "name": "fast-ios-device-test",
   "displayName": "Fast iOS Device Test",
   "version": "2.1.1",
-  "description": "Run fast iOS UI flows on Simulator, iPhone Duo outer/inner poses, physical iPhone and CarPlay from a local Mac.",
+  "description": "Run fast iOS UI flows on Simulator, iPhone Duo outer/inner poses, physical iPhone and CarPlay, with bundled fold-aware SwiftUI guidance.",
   "logo": "assets/fast-ios-device-test.png",
   "suggestedPrompts": [
     "Set up Fast iOS Device Test on this Mac",
     "Verify this screen across iPhone Duo closed, open, book and tabletop poses",
-    "Run this UI flow on my connected iPhone",
-    "Run this mixed phone and CarPlay flow"
+    "Run this flow on my connected iPhone or a mixed phone and CarPlay rig"
   ],
   "author": {
     "name": "DungVC",

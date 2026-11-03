@@ -4,6 +4,11 @@
 
 ### iPhone Duo
 
+- Bundle the company `iphone-duo-swiftui` skill across Claude Code, Codex, Gemini CLI and
+  Antigravity packages, with `fastSimulatorTest` as its primary four-pose verification path.
+- Add `npx fast-ios-device-test xcode-skills` / `install.sh --xcode-skills` to list, export and
+  remove agent skills from a locally installed Xcode. Apple content remains local and is never
+  redistributed in the repository or npm/provider packages.
 - iPhone Duo flows can request `portrait` or `landscape` on a `duo` action, through
   `setup.duo_orientation`, or with `--duo-orientation`. Device Hub rotates until the selected
   framebuffer dimensions match, and non-default rows use names such as `@duo-closed-landscape`.

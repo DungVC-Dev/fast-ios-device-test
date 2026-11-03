@@ -46,6 +46,7 @@ npx fast-ios-device-test --check
 
 This installs the launchers, required AXe, and optional CarPlay tool `baguette`. Tool versions and
 SHA-256 checksums are pinned in [`vendor/tools.json`](vendor/tools.json). Homebrew is not required.
+It also installs the bundled `fast-ios-device-test` and `iphone-duo-swiftui` skills for Claude Code.
 
 ### 2. Connect your agent
 
@@ -59,7 +60,7 @@ The runtime gives you the engines. The plugin or extension teaches your agent ho
 | **Claude Code** | `/plugin marketplace add DungVC-Dev/fast-ios-device-test`<br>`/plugin install fast-ios-device-test@fast-ios-device-test` | Optional, see below |
 
 > [!NOTE]
-> **Claude Code needs no plugin.** `npx fast-ios-device-test` already links the skill, the slash
+> **Claude Code needs no plugin.** `npx fast-ios-device-test` already links both bundled skills, the slash
 > commands and the subagent into `~/.claude`. Add the plugin only if you want to manage it with
 > `/plugin`; with both, Claude Code lists the skill and the commands twice.
 
@@ -95,11 +96,16 @@ Antigravity **Customizations → Marketplace**.
 ```bash
 npx fast-ios-device-test update
 npx fast-ios-device-test update-tools
+npx fast-ios-device-test xcode-skills
 ./install.sh --check
 ```
 
 A missing `baguette` does not fail the check. Install its verified pin only when needed with
 `./install.sh --install-baguette`.
+The `xcode-skills` command exports Apple's `app-resizability` skill from your own Xcode into the
+agent skill directories already managed by the installer. Apple content is never included in this
+repository or npm package. Use `xcode-skills --list`, `--skill <name>`, or `--remove` for other
+local Xcode skills and cleanup.
 
 </details>
 
@@ -109,7 +115,7 @@ A missing `baguette` does not fail the check. Install its verified pin only when
 |---|---|---:|---:|---:|---|
 | iPhone Simulator | AXe | Yes | Yes | Yes | Xcode 26 or 27 |
 | Physical iPhone | Bundled XCUITest runner | Yes | Yes | Yes | Recording uses a one-shot run |
-| iPhone Duo | AXe + Device Hub | Yes | Outer + inner | One display | Xcode 27.1; four poses; portrait/landscape where physically valid |
+| iPhone Duo | AXe + Device Hub | Yes | Outer + inner | One display | Xcode 27.1; bundled `iphone-duo-swiftui` skill; four poses; portrait/landscape where physically valid |
 | CarPlay Simulator | AXe + `baguette` | Phone + car | Yes | No | Disposable `agent-tmp-*` simulator only |
 | CarPlay hardware | XCUITest + CarPlay Simulator | Phone + car | Yes | Yes | USB iPhone; Automaker UI reports `VOID` |
 
@@ -356,6 +362,9 @@ a disposable simulator named `agent-tmp-*`.
 
 Install Xcode 27.1's additional components and iOS runtime. Allow the terminal or agent under
 **System Settings → Privacy & Security → Accessibility** so Device Hub can change pose.
+For code changes, use the bundled `iphone-duo-swiftui` skill. Optionally run
+`npx fast-ios-device-test xcode-skills` to add Apple's `apple-app-resizability` guidance from your
+local Xcode without redistributing it.
 
 </details>
 
@@ -371,6 +380,8 @@ Install Xcode 27.1's additional components and iOS runtime. Allow the terminal o
 | `scripts/fast_carplay.py` | Simulator and hardware CarPlay engine |
 | `device-runner/` | Cached XCUITest runner project |
 | `skills/fast-ios-device-test/` | Agent skill, examples, and detailed action reference |
+| `skills/iphone-duo-swiftui/` | Fold-aware SwiftUI skill, components, references, and Device Hub fallback |
+| `scripts/xcode_skills.py` | Local Xcode skill exporter; generated Apple content stays outside the repo |
 | `commands/` | Claude Code slash commands |
 | `vendor/tools.json` | Pinned versions, URLs, checksums, and licenses |
 | `build/fast-ui/` | Default Simulator artifacts |

@@ -23,13 +23,14 @@
       "interface": {
         "displayName": "Fast iOS Device Test",
         "shortDescription": "Fast iOS UI flow tests",
-        "longDescription": "Verify focused iOS UI flows quickly on Simulator, a connected physical iPhone, or a mixed phone and CarPlay rig. The plugin writes guarded JSON flows, drives real UI interactions, records video when requested, reviews runs, and prepares captioned PR evidence. It runs only on a local Mac and requires Xcode 26 or 27; physical-device runs also require a development profile for the connected iPhone.",
+        "longDescription": "Verify focused iOS UI flows quickly on Simulator, a connected physical iPhone, or a mixed phone and CarPlay rig. The plugin also bundles fold-aware SwiftUI guidance for iPhone Duo and can use an Apple app-resizability skill exported from the user's own Xcode. It writes guarded JSON flows, drives real UI interactions, records video when requested, reviews runs, and prepares captioned PR evidence. It runs only on a local Mac and requires Xcode 26 or 27; physical-device runs also require a development profile for the connected iPhone.",
         "developerName": "DungVC",
         "category": "Developer Tools",
         "capabilities": [
           "Run iOS Simulator UI flows",
           "Run physical iPhone UI flows",
           "Run mixed phone and CarPlay flows",
+          "Adapt SwiftUI screens for iPhone Duo",
           "Record and review UI test sessions",
           "Prepare captioned PR evidence"
         ],

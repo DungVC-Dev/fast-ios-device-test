@@ -8,6 +8,11 @@ It also drives the Xcode 27.1 iPhone Duo through the installed `fastSimulatorTes
 outer and inner displays, closed/open/book/tabletop poses, framebuffer-specific screenshots and
 one-pose-per-row recordings. The agent never needs to click Device Hub directly.
 
+The plugin bundles `iphone-duo-swiftui` for fold-aware SwiftUI code changes. If
+`apple-app-resizability` has been exported from the user's local Xcode, use both skills together.
+Run `npx fast-ios-device-test xcode-skills` to export it without redistributing Apple content;
+`npx fast-ios-device-test xcode-skills --list` shows other locally available Xcode skills.
+
 ## Requirements
 
 - macOS with Xcode 26 or 27

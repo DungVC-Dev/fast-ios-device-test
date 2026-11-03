@@ -20,10 +20,13 @@ This is a local macOS tool. Never attempt setup in a cloud or Linux sandbox.
    Antigravity skill that will not load; follow the fix printed on that line. AXe is required;
    missing/old baguette is reported as optional and still permits `CHECK OK`. Update only when
    requested with `npx fast-ios-device-test update-tools` (or a per-tool update command).
+   For iPhone Duo code changes, the installer also links `iphone-duo-swiftui`. Export Apple's
+   complementary app-resizability skill from the user's own Xcode only when requested with
+   `npx fast-ios-device-test xcode-skills`; the Apple content is never shipped by this project.
 5. When the user wants physical-iPhone runs, also run
    `npx fast-ios-device-test --check --device "<iPhone name or UDID>"` and follow the reported
    signing, trust, Developer Mode, or profile fix. Do not guess a device when several are present.
 
 The installer also exposes the same skill to Claude Code. That extra link is harmless and does not
 change the active agent's configuration. Never probe `install.sh` with unknown arguments: only its
-documented `--link`, `--check`, tool install/update, and `--uninstall` modes are safe.
+documented `--link`, `--check`, tool install/update, `--xcode-skills`, and `--uninstall` modes are safe.

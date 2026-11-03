@@ -283,7 +283,7 @@ class ActionTests(unittest.TestCase):
         from PIL import Image
         frames = iter(colours)
 
-        def shoot(_udid: str, path: Path) -> None:
+        def shoot(_udid: str, path: Path, _display: str | None = None) -> None:
             Image.new("RGB", (20, 100), next(frames)).save(path)
 
         folder = Path(tempfile.mkdtemp())

@@ -3,6 +3,7 @@
 // npx fast-ios-device-test update              upgrade to the latest version, then each agent's plugin
 // npx fast-ios-device-test update-tools        pin and install latest AXe + baguette releases
 // npx fast-ios-device-test update-axe|update-baguette   update one pinned tool
+// npx fast-ios-device-test xcode-skills [--list|--skill <name>|--remove]
 // npx fast-ios-device-test --check [--device <name>]   what is there and what is missing
 // npx fast-ios-device-test --uninstall         remove the tool (caches and build output stay)
 // npx fast-ios-device-test clean [--project <root>] [--maps] [--yes]   delete caches and test builds
@@ -165,6 +166,9 @@ async function main() {
   if (args[0] === "update-axe") return updateTool("axe");
   if (args[0] === "update-baguette") return updateTool("baguette");
   if (args[0] === "update-tools") return updateTool("tools");
+  if (args[0] === "xcode-skills") {
+    return run("bash", [path.join(root, "install.sh"), "--xcode-skills", ...args.slice(1)]);
+  }
   if (args[0] === "clean") return run("python3", [path.join(root, "scripts", "fast_ui_clean.py"), ...args.slice(1)]);
   return run("bash", [path.join(root, "install.sh"), ...args]);
 }

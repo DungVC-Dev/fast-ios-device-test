@@ -5,6 +5,12 @@ verification. If its launchers are not available on `PATH`, use the bundled
 `fast-ios-device-test-setup` skill before running a flow. Do not treat this extension as a release,
 archive, or full XCTest-suite runner.
 
+Use the bundled `iphone-duo-swiftui` skill when changing SwiftUI code for iPhone Duo. If the
+locally exported `apple-app-resizability` skill is installed, use it alongside the bundled skill
+for Apple's current resizing guidance. Export it from the user's own Xcode without redistributing
+Apple content with `npx fast-ios-device-test xcode-skills`; list other exportable Xcode skills with
+`npx fast-ios-device-test xcode-skills --list`.
+
 For iPhone Duo, use Xcode 27.1 and the installed `fastSimulatorTest` launcher. Put
 `"simulator":"iPhone Duo"` in the flow; the engine selects Xcode 27.1, boots it and opens
 Device Hub. Never click Device Hub directly.

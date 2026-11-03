@@ -5,6 +5,9 @@ description: Use when asked to run, verify, re-test, or record an iOS screen or 
 
 # Fast iOS Device Test
 
+For iPhone Duo code changes, also use `apple-app-resizability` when that locally exported Xcode
+skill is installed; use the bundled `iphone-duo-swiftui` skill for fold-aware SwiftUI patterns.
+
 Before the first run, confirm that `fastSimulatorTest` and `fastDeviceTest` are on `PATH`. If they
 are missing, use the bundled `fast-ios-device-test-setup` skill or run `npx fast-ios-device-test`
 and require its final `CHECK OK` before continuing. A run that ends with `update available: …`
