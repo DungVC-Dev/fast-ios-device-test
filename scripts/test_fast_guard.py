@@ -66,7 +66,9 @@ class RiskyStepTests(unittest.TestCase):
 
     def test_duo_and_display_shapes_are_checked(self) -> None:
         fast_guard.check_actions([
-            {"type": "duo", "pose": "tabletop"},
+            {"type": "duo", "pose": "tabletop", "orientation": "portrait"},
+            {"type": "duo", "pose": "closed", "orientation": "landscape"},
+            {"type": "duo", "pose": "open", "orientation": "portrait"},
             {"type": "screenshot", "display": "inner"},
         ])
         with self.assertRaisesRegex(ValueError, "duo pose"):
@@ -75,6 +77,12 @@ class RiskyStepTests(unittest.TestCase):
             fast_guard.check_actions([{"type": "screenshot", "display": "both"}])
         with self.assertRaisesRegex(ValueError, "supported only"):
             fast_guard.check_actions([{"type": "tap_point", "x": 1, "y": 2, "display": "outer"}])
+        with self.assertRaisesRegex(ValueError, "book is a vertical fold"):
+            fast_guard.check_actions([{"type": "duo", "pose": "book", "orientation": "portrait"}])
+        with self.assertRaisesRegex(ValueError, "tabletop is a horizontal fold"):
+            fast_guard.check_actions([{"type": "duo", "pose": "tabletop", "orientation": "landscape"}])
+        with self.assertRaisesRegex(ValueError, "duo orientation"):
+            fast_guard.check_actions([{"type": "duo", "pose": "open", "orientation": "upside-down"}])
 
     def test_prompt_labels_parse_from_text_or_rules(self) -> None:
         self.assertEqual(fast_guard.parse_prompt_labels("Allow, Don’t Allow"), ["Allow", "Don’t Allow"])

@@ -98,10 +98,13 @@ Everything the engine needs is in the flow; there is no per-project config.
   [references/usage.md](references/usage.md#gestures-keyboard-controls-assertions-and-device-state).
   Prove a control changed with `assert_value`, not by the tap succeeding.
 - **iPhone Duo (Xcode 27.1):** use `"simulator": "iPhone Duo"`. A step
-  `{"type":"duo","pose":"closed|open|book|tabletop"}` selects the pose (`closed` uses the
-  outer display; the others use the inner display). A following `screenshot` automatically
+  `{"type":"duo","pose":"closed|open|book|tabletop","orientation":"portrait|landscape"}`
+  selects the pose and optional orientation (`closed` uses the outer display; the others use the
+  inner display). `closed`/`open` allow both orientations; `book` is landscape with a vertical
+  fold and `tabletop` portrait with a horizontal fold. A following `screenshot` automatically
   targets that framebuffer, or can set `"display":"outer|inner"` explicitly. For a recorded
-  matrix, run the flow once per `--duo-pose`; see
+  matrix, run the flow once per `--duo-pose`; add `setup.duo_orientation` or
+  `--duo-orientation` only when that orientation variant was requested. See
   [references/usage.md](references/usage.md#iphone-duo-xcode-271).
 - `tap_label` matches a `Button`; when the flow sets no `element_type` and exactly one node of
   any type has the label, it taps that node and reports `fallback_type`.
@@ -206,4 +209,4 @@ message, each with its flow paths, UDID, the command
 "return only the PASS/FAIL lines"; never two agents on one simulator. Collate with
 `fastUIReport --root <artifacts-root> --session <name>` and paste its table. Variants:
 `--appearance light|dark`, `--content-size <simctl name>` and iPhone Duo
-`--duo-pose closed|open|book|tabletop` are their own rows.
+`--duo-pose closed|open|book|tabletop [--duo-orientation portrait|landscape]` are their own rows.

@@ -1468,10 +1468,22 @@ class UIVariantTests(unittest.TestCase):
         )
         duo = fast_ui.ui_variant({"duo_pose": "book"}, None, None, "tabletop")
         self.assertEqual(fast_ui.variant_name("home", duo), "home@duo-tabletop")
+        rotated = fast_ui.ui_variant(
+            {"duo_pose": "closed", "duo_orientation": "landscape"}, None, None
+        )
+        self.assertEqual(fast_ui.variant_name("home", rotated), "home@duo-closed-landscape")
+        explicit_default = fast_ui.ui_variant(
+            {"duo_pose": "closed", "duo_orientation": "portrait"}, None, None
+        )
+        self.assertEqual(fast_ui.variant_name("home", explicit_default), "home@duo-closed")
 
     def test_unknown_setting_fails_closed(self) -> None:
         with self.assertRaises(fast_ui.FastUIError):
             fast_ui.ui_variant({"content_size": "huge"}, None, None)
+        with self.assertRaisesRegex(fast_ui.FastUIError, "duo_orientation requires"):
+            fast_ui.ui_variant({"duo_orientation": "landscape"}, None, None)
+        with self.assertRaisesRegex(fast_ui.FastUIError, "book is a vertical fold"):
+            fast_ui.ui_variant({"duo_pose": "book", "duo_orientation": "portrait"}, None, None)
 
     def test_apply_records_previous_and_restore_puts_it_back(self) -> None:
         current = {"appearance": "light", "content_size": "extra-extra-large"}
@@ -1509,10 +1521,10 @@ class UIVariantTests(unittest.TestCase):
         self.assertEqual(previous, {"appearance": "light", "content_size": "large"})
 
     def test_variant_flags_parse(self) -> None:
-        with mock.patch.object(sys, "argv", ["fast_ui.py", "flow.json", "--appearance", "dark", "--content-size", "accessibility-large", "--duo-pose", "book"]):
+        with mock.patch.object(sys, "argv", ["fast_ui.py", "flow.json", "--appearance", "dark", "--content-size", "accessibility-large", "--duo-pose", "open", "--duo-orientation", "portrait"]):
             args = fast_ui.parse_arguments()
         self.assertEqual((args.appearance, args.content_size), ("dark", "accessibility-large"))
-        self.assertEqual(args.duo_pose, "book")
+        self.assertEqual((args.duo_pose, args.duo_orientation), ("open", "portrait"))
 
 
 class DuoTests(unittest.TestCase):
@@ -1534,13 +1546,54 @@ class DuoTests(unittest.TestCase):
 
     def test_pose_maps_closed_to_outer_and_folded_states_to_inner(self) -> None:
         clicked: list[str] = []
+        orientations = {"outer": False, "inner": True}
+
+        def click(_udid, value):
+            clicked.append(value)
+            if value == "rotate":
+                orientations["inner"] = not orientations["inner"]
+
         with mock.patch.object(fast_ui, "simulator_name", return_value="iPhone Duo"), \
-                mock.patch.object(fast_ui, "click_duo_button", side_effect=lambda _u, value: clicked.append(value)), \
-                mock.patch.object(fast_ui, "duo_display_is_landscape", side_effect=lambda _u, display: display == "inner"):
+                mock.patch.object(fast_ui, "click_duo_button", side_effect=click), \
+                mock.patch.object(fast_ui, "duo_display_is_landscape",
+                                  side_effect=lambda _u, display: orientations[display]):
             self.assertEqual(fast_ui.set_duo_pose("SIM", "closed"), "outer")
             self.assertEqual(fast_ui.set_duo_pose("SIM", "book"), "inner")
             self.assertEqual(fast_ui.set_duo_pose("SIM", "tabletop"), "inner")
         self.assertEqual(clicked, ["closed", "open", "book", "open", "rotate", "book"])
+
+    def test_requested_orientation_uses_png_dimensions_and_device_hub_rotate(self) -> None:
+        clicked: list[str] = []
+        landscape = False
+
+        def click(_udid, button):
+            nonlocal landscape
+            clicked.append(button)
+            if button == "rotate":
+                landscape = not landscape
+
+        def capture(_udid, path, _display):
+            width, height = (2796, 1398) if landscape else (1398, 2796)
+            path.write_bytes(
+                b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR"
+                + width.to_bytes(4, "big") + height.to_bytes(4, "big")
+            )
+
+        with mock.patch.object(fast_ui, "simulator_name", return_value="iPhone Duo"), \
+             mock.patch.object(fast_ui, "click_duo_button", side_effect=click), \
+             mock.patch.object(fast_ui, "screenshot", side_effect=capture):
+            self.assertEqual(fast_ui.set_duo_pose("SIM", "closed", "landscape"), "outer")
+        self.assertEqual(clicked, ["closed", "rotate"])
+
+    def test_requested_orientation_fails_after_three_rotate_clicks(self) -> None:
+        clicked: list[str] = []
+        with mock.patch.object(fast_ui, "simulator_name", return_value="iPhone Duo"), \
+             mock.patch.object(fast_ui, "click_duo_button",
+                               side_effect=lambda _u, value: clicked.append(value)), \
+             mock.patch.object(fast_ui, "duo_display_is_landscape", return_value=False):
+            with self.assertRaisesRegex(fast_ui.FastUIError, "after 3 Device Hub rotate clicks"):
+                fast_ui.set_duo_pose("SIM", "closed", "landscape")
+        self.assertEqual(clicked, ["closed", "rotate", "rotate", "rotate"])
 
     def test_duo_action_persists_display_for_screenshot_in_next_do_process(self) -> None:
         calls: list[list[str]] = []
@@ -1590,9 +1643,12 @@ class DuoTests(unittest.TestCase):
 
     def test_duo_action_reports_pose_and_display(self) -> None:
         with mock.patch.object(fast_ui, "set_duo_pose", return_value="inner") as pose:
-            result = fast_ui.run_action({"type": "duo", "pose": "open"}, "SIM", Path("/tmp"), 2, [])
-        pose.assert_called_once_with("SIM", "open")
-        self.assertEqual(result, {"pose": "open", "display": "inner"})
+            result = fast_ui.run_action(
+                {"type": "duo", "pose": "open", "orientation": "portrait"},
+                "SIM", Path("/tmp"), 2, [],
+            )
+        pose.assert_called_once_with("SIM", "open", "portrait")
+        self.assertEqual(result, {"pose": "open", "orientation": "portrait", "display": "inner"})
 
 
 class StepLabelTests(unittest.TestCase):

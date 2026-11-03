@@ -118,9 +118,12 @@ Agent tự chọn giữa viết flow (để chạy lại, chạy nhiều máy, q
   iPhone, chúng chỉ là tham số khi mở app, không ghi vào máy.
 - Quay video được cả Simulator lẫn iPhone thật (iPhone dùng tính năng quay của XCTest, không cần
   Control Center hay QuickTime); video nén nhẹ, khoảng 1–2 MB cho 20 giây.
-- iPhone Duo cần Xcode 27.1. Flow dùng `{"type":"duo","pose":"closed|open|book|tabletop"}`
-  để đổi màn hình/tư thế; `screenshot` có thể ghi `"display":"outer"` hoặc `"inner"`.
-  Chạy matrix bằng `--duo-pose`; mỗi dòng có hậu tố `@duo-<pose>` và video quay đúng framebuffer.
+- iPhone Duo cần Xcode 27.1. Flow dùng
+  `{"type":"duo","pose":"closed|open|book|tabletop","orientation":"portrait|landscape"}`
+  để đổi màn hình/tư thế/hướng; `orientation` là tuỳ chọn. `closed`/`open` dùng được cả hai hướng;
+  `book` chỉ landscape (nếp dọc), `tabletop` chỉ portrait (nếp ngang).
+  Chạy matrix bằng `--duo-pose` và chỉ thêm `--duo-orientation` khi cần biến thể hướng; hướng
+  không mặc định có hậu tố như `@duo-closed-landscape`. Video quay đúng framebuffer.
 - CarPlay Simulator.app cần Xcode 26.6, mặc định iOS 26.5 và simulator riêng tên `agent-tmp-*`.
   Nếu thiếu `baguette`, chạy `./install.sh --install-baguette`.
   Dùng `--display widescreen` hoặc `--display standard` cho 1920×720@2 hoặc 800×480@2. Mỗi lệnh

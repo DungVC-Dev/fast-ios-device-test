@@ -109,7 +109,7 @@ A missing `baguette` does not fail the check. Install its verified pin only when
 |---|---|---:|---:|---:|---|
 | iPhone Simulator | AXe | Yes | Yes | Yes | Xcode 26 or 27 |
 | Physical iPhone | Bundled XCUITest runner | Yes | Yes | Yes | Recording uses a one-shot run |
-| iPhone Duo | AXe + Device Hub | Yes | Outer + inner | One display | Xcode 27.1; closed, open, book, tabletop |
+| iPhone Duo | AXe + Device Hub | Yes | Outer + inner | One display | Xcode 27.1; four poses; portrait/landscape where physically valid |
 | CarPlay Simulator | AXe + `baguette` | Phone + car | Yes | No | Disposable `agent-tmp-*` simulator only |
 | CarPlay hardware | XCUITest + CarPlay Simulator | Phone + car | Yes | Yes | USB iPhone; Automaker UI reports `VOID` |
 
@@ -222,8 +222,9 @@ Run by hand: `fastDeviceTest flow.json --device <name-or-udid> [--install <app>]
 ```
 
 The agent drives Device Hub (Xcode 27.1): `closed` shows the outer display, `open`, `book` and
-`tabletop` the inner one, and each screenshot comes from the display in use. One result row per
-pose (`@duo-closed`, `@duo-open`).
+`tabletop` the inner one, and each screenshot comes from the display in use. `closed` and `open`
+support portrait or landscape; `book` is the vertical-fold landscape pose and `tabletop` the
+horizontal-fold portrait pose. One result row per pose (`@duo-closed`, `@duo-open`).
 
 <details>
 <summary>Flow the agent writes</summary>
@@ -240,7 +241,7 @@ pose (`@duo-closed`, `@duo-open`).
   },
   "actions": [
     {"type": "launch"},
-    {"type": "duo", "pose": "closed"},
+    {"type": "duo", "pose": "closed", "orientation": "landscape"},
     {"type": "screenshot", "name": "outer.png"},
     {"type": "duo", "pose": "open"},
     {"type": "screenshot", "name": "inner.png"}
@@ -248,7 +249,9 @@ pose (`@duo-closed`, `@duo-open`).
 }
 ```
 
-Run by hand: `fastSimulatorTest flow.json --duo-pose closed|open|book|tabletop`.
+Run by hand: `fastSimulatorTest flow.json --duo-pose <pose> [--duo-orientation portrait|landscape]`.
+The orientation defaults to each pose's existing behavior;
+a non-default row is named, for example, `@duo-closed-landscape`.
 </details>
 
 ### `/fastCarPlayTest`: CarPlay
