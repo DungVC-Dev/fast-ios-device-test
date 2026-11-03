@@ -433,7 +433,7 @@ framebuffer without changing pose, add `"display":"outer"` or `"inner"` to `scre
 For a reviewable pose matrix, run the same flow four times with `--duo-pose closed`, `open`,
 `book` and `tabletop`, plus one shared `--session`. Add `--duo-orientation portrait|landscape`
 (or `setup.duo_orientation`) only for a requested orientation variant. Default rows are named
-`@duo-<pose>`; non-default rows include it, such as `@duo-closed-landscape`. `--record`
+`@duo-<pose>`; non-default rows include it, such as `@duo-closed-landscape`.
 `--record` targets that pose's display. A recording has one framebuffer, so a flow that switches
 pose mid-run should use screenshots for those switches; use fixed-pose matrix rows for video.
 
@@ -510,7 +510,7 @@ reads every `metrics.json` of the session that has a video (Simulator or iPhone 
 step name) plus one every `--interval` seconds. Interval frames whose pixels
 changed less than `--change-threshold` (share, 0–1) against the previous kept
 frame are dropped; step frames are always kept. Each `SHEET` line reports
-`frames=kept/total` and `tokens≈` (pixels / 750, Claude's image cost).
+`frames=kept/total` and `tokens≈` (pixels / 750, rough image token cost).
 
 It also writes `<out>/review-notes-<session>.json`:
 

@@ -192,8 +192,8 @@ Use this repository's `fastSimulatorTest` engine as the primary verification pat
 }
 ```
 
-In Claude Code, ask `/fastSimulatorTest` to run the flow. From another agent or a shell, run
-`fastSimulatorTest <flow.json>`. For independent evidence rows or recordings, repeat the run with
+In Claude Code, ask `/fastSimulatorTest` to run the flow. From Gemini CLI, Antigravity, Codex,
+or a shell, run `fastSimulatorTest <flow.json>` directly. For independent evidence rows or recordings, repeat the run with
 `--duo-pose closed|open|book|tabletop`; `closed` records the outer display and the other poses
 record the inner display. A `duo` action also persists its selected display for a following
 separate `fastSimulatorTest do '{"type":"screenshot"}'` process.

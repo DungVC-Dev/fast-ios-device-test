@@ -30,6 +30,12 @@
 - Make the Pillow-dependent evidence and review test modules skip cleanly when Pillow is absent,
   so full unittest discovery remains usable with only Python's standard library.
 
+### Gemini CLI & Antigravity
+
+- Update `GEMINI.md`, `GEMINI_EXTENSION.md`, and `.antigravity-plugin/README.md` to comprehensively guide Gemini CLI and Antigravity agents on launcher usage (`fastSimulatorTest`, `fastDeviceTest`, `fastCarPlayTest`, `fastUIReview`), iPhone Duo, CarPlay, Liquid Glass verification, and local Xcode skill exports (`apple-app-resizability`, `apple-liquid-glass`).
+- Support optional `export` argument in `install.sh --xcode-skills` and automatically export Xcode skills to Antigravity (`~/.gemini/config/skills/`) when the Antigravity plugin is installed.
+- Document non-Claude alternatives for slash commands and subagents across all bundled skills.
+
 ## 2.1.1 — 2026-11-03
 
 - README: restored the per-agent plugin install steps (Codex, Antigravity, Gemini CLI, Claude Code)

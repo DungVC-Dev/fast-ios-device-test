@@ -38,7 +38,7 @@ case "${1:-}" in
     --update-baguette) MODE="update-baguette" ;;
     --install-tools) MODE="install-tools" ;;
     --update-tools) MODE="update-tools" ;;
-    --xcode-skills) MODE="xcode-skills"; shift; XCODE_SKILL_ARGS=("$@"); XCODE_SKILL_ARG_COUNT=$# ;;
+    --xcode-skills) MODE="xcode-skills"; shift; [[ "${1:-}" == "export" ]] && shift; XCODE_SKILL_ARGS=("$@"); XCODE_SKILL_ARG_COUNT=$# ;;
     --uninstall) MODE="uninstall" ;;
 esac
 
@@ -81,12 +81,16 @@ fi
 
 if [[ "$MODE" == "xcode-skills" ]]; then
     destinations=(--destination "$SKILLS_DIR")
-    # Codex and Antigravity receive the export only when install.sh already manages their
-    # direct skill links. Plugin caches are immutable provider packages, not export targets.
-    [[ -e "$CODEX_SKILLS_DIR/fast-ios-device-test" || -L "$CODEX_SKILLS_DIR/fast-ios-device-test" ]] \
-        && destinations+=(--destination "$CODEX_SKILLS_DIR")
-    [[ -e "$ANTIGRAVITY_SKILLS_DIR/fast-ios-device-test" || -L "$ANTIGRAVITY_SKILLS_DIR/fast-ios-device-test" ]] \
-        && destinations+=(--destination "$ANTIGRAVITY_SKILLS_DIR")
+    # Codex and Antigravity receive the export when install.sh manages their direct skill links
+    # or when their plugin cache/directory has the skill installed.
+    if [[ -e "$CODEX_SKILLS_DIR/fast-ios-device-test" || -L "$CODEX_SKILLS_DIR/fast-ios-device-test" ]] \
+        || plugin_has_skill "$CODEX_PLUGIN_CACHE" "fast-ios-device-test"; then
+        destinations+=(--destination "$CODEX_SKILLS_DIR")
+    fi
+    if [[ -e "$ANTIGRAVITY_SKILLS_DIR/fast-ios-device-test" || -L "$ANTIGRAVITY_SKILLS_DIR/fast-ios-device-test" ]] \
+        || plugin_has_skill "$ANTIGRAVITY_PLUGIN_DIR" "fast-ios-device-test"; then
+        destinations+=(--destination "$ANTIGRAVITY_SKILLS_DIR")
+    fi
     if [[ "$XCODE_SKILL_ARG_COUNT" -gt 0 ]]; then
         exec python3 "$SOURCE/scripts/xcode_skills.py" "${destinations[@]}" "${XCODE_SKILL_ARGS[@]}"
     else

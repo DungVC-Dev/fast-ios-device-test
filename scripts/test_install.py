@@ -337,6 +337,25 @@ class InstallCheckTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertFalse(exported.exists())
 
+    def test_xcode_skills_export_with_antigravity_plugin(self):
+        app = self.home / "Xcode.app"
+        resources = app / "Contents/PlugIns/IDEIntelligenceChat.framework/Versions/A/Resources"
+        resources.mkdir(parents=True)
+        with (app / "Contents/Info.plist").open("wb") as stream:
+            plistlib.dump({"CFBundleShortVersionString": "27.1"}, stream)
+        (resources / "app-resizability.idechatprompttemplate").write_text(
+            "---\nname: app-resizability\ndescription: Fixture.\n---\n# Fixture\n"
+        )
+        self.link_everything()
+        agy_plugin_skill = Path(self.env["ANTIGRAVITY_PLUGIN_DIR"]) / "skills" / "fast-ios-device-test"
+        agy_plugin_skill.mkdir(parents=True)
+        (agy_plugin_skill / "SKILL.md").write_text("---\nname: fast-ios-device-test\n---\n")
+        self.env["FAST_IOS_XCODE_PATHS"] = str(app)
+        code, out = self.run_install("--xcode-skills", "export")
+        self.assertEqual(code, 0, out)
+        self.assertTrue((self.dirs["skills"] / "apple-app-resizability" / "SKILL.md").is_file())
+        self.assertTrue((self.dirs["antigravity"] / "apple-app-resizability" / "SKILL.md").is_file())
+
     @unittest.skipUnless(shutil.which("xcodebuild"), "install needs Xcode")
     def test_plain_install_refuses_to_delete_a_clone_in_the_install_folder(self):
         share = self.home / "share"

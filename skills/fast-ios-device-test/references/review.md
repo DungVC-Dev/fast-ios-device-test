@@ -24,7 +24,7 @@ that is what the tool does, without ffmpeg. After a `--record` session:
 3. It also writes `review-notes-<session>.json` with one entry per case
    (`expect`, `sheet`, `video`, `verdict: null`, `note: ""`). Re-runs keep
    verdicts already written.
-4. Read every sheet with the Read tool. Fill the entry: `note` = what the frames
+4. Read or inspect every sheet with your file-reading or image viewer tool. Fill the entry: `note` = what the frames
    show at which second, `verdict` = `OK` / `product bug` (the app did the wrong
    thing) / `flow bug` (the flow asserted the wrong thing). A sheet that
    contradicts the PASS line is a finding, never a rerun. `pending=0` in the
