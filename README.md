@@ -1,8 +1,7 @@
 <div align="center">
   <img src="assets/fast-ios-device-test.png" width="176" alt="fast-ios-device-test logo">
   <h1>fast-ios-device-test</h1>
-  <p><strong>Fast, repeatable iOS UI-flow verification for AI coding agents.</strong></p>
-  <p>One JSON flow. Simulator, iPhone, iPhone Duo, or CarPlay. Clear results and reviewable evidence.</p>
+  <p><strong>Tell your coding agent what to verify. Get a PASS/FAIL and evidence you can review.</strong></p>
 
   <p>
     <a href="https://www.npmjs.com/package/fast-ios-device-test"><img alt="npm version" src="https://img.shields.io/npm/v/fast-ios-device-test?style=flat-square&logo=npm&color=CB3837"></a>
@@ -20,57 +19,38 @@
   </p>
 </div>
 
-## How you use it
+## Why fast-ios-device-test?
 
-You talk to your agent. The agent writes the flow, runs the engine and reports back. You do not
-type `flow.json` commands yourself.
+- **Fast feedback.** Cached builds and local drivers keep repeat runs short.
+- **No XCUITest target to write.** The agent writes the flow; AXe and the bundled runner drive it.
+- **Evidence you can review.** Every case keeps metrics; ask for screenshots, video, or a report.
 
-**Slash commands** (Claude Code):
+<table>
+  <tr>
+    <td align="center" width="34%"><img src="https://raw.githubusercontent.com/DungVC-Dev/fast-ios-device-test/672db5ba22f38faf7152bc1742fd43952cb1ef6f/assets/readme/settings-simulator.png" width="220" alt="Settings on an iPhone Simulator after a passing fastSimulatorTest run"></td>
+    <td align="center" width="66%"><img src="https://raw.githubusercontent.com/DungVC-Dev/fast-ios-device-test/672db5ba22f38faf7152bc1742fd43952cb1ef6f/assets/readme/carplay-simulator.jpg" width="520" alt="CarPlay home screen in a real Simulator run"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Simulator</strong><br><code>PASS</code> Settings in 9.5s</td>
+    <td align="center"><strong>CarPlay Simulator</strong><br>Real display capture</td>
+  </tr>
+</table>
 
-| You want to… | Type in Claude Code |
-|---|---|
-| Check a screen on Simulator | `/fastSimulatorTest the Settings screen opens General and shows About` |
-| Check it on a real iPhone | `/fastDeviceTest login flow on my iPhone, record a video` |
-| Check iPhone Duo | `/fastSimulatorTest Home screen on iPhone Duo, closed and open` |
-| Check CarPlay | `/fastCarPlayTest lyrics widget shows on the CarPlay screen, small display too` |
-| Review recordings | `/fastUIReview last session` |
+## Quick start
 
-**Any agent** (Claude Code, Codex, Antigravity, Gemini CLI): just ask in plain words. The
-`fast-ios-device-test` skill picks it up.
-
-> *"Test the paywall on Simulator in dark mode and record it."*
-> *"Kiểm tra màn Settings trên iPhone thật, quay video giúp tôi."*
-> *"Run the CarPlay browse case CPB-01 on the CarPlay Simulator."*
-
-You get one PASS/FAIL line per case, screenshots, an optional video and the cause of any failure.
-
-## Install in 30 seconds
+### 1. Install the runtime
 
 ```bash
 npx fast-ios-device-test
 npx fast-ios-device-test --check
 ```
 
-The installer provides the launchers and Claude Code integration; the repository also ships Codex,
-Gemini CLI, and Antigravity packages. It installs the required AXe and optional CarPlay tool
-`baguette` from versions pinned in [`vendor/tools.json`](vendor/tools.json), with SHA-256
-verification. Homebrew is not required.
+This installs the launchers, required AXe, and optional CarPlay tool `baguette`. Tool versions and
+SHA-256 checksums are pinned in [`vendor/tools.json`](vendor/tools.json). Homebrew is not required.
 
-Update the package and managed tools independently:
+### 2. Connect your agent
 
-```bash
-npx fast-ios-device-test update
-npx fast-ios-device-test update-tools
-```
-
-From a clone, use `./install.sh --check`. A missing `baguette` is reported but does not fail the
-check; install it later with
-`./install.sh --install-baguette` when CarPlay testing is needed.
-
-## Add it to your agent
-
-The runtime above gives you the engines and launchers. The plugin teaches your agent how to use
-them. Pick your agent:
+The runtime gives you the engines. The plugin or extension teaches your agent how to use them.
 
 | Agent | Install | Then |
 |---|---|---|
@@ -84,6 +64,21 @@ them. Pick your agent:
 > commands and the subagent into `~/.claude`. Add the plugin only if you want to manage it with
 > `/plugin`; with both, Claude Code lists the skill and the commands twice.
 
+### 3. Ask for a check
+
+Claude Code has slash commands:
+
+```text
+/fastSimulatorTest Settings opens and shows General, take a screenshot
+```
+
+With Codex, Gemini CLI, or Antigravity, ask in plain words:
+
+> Test the paywall on Simulator in dark mode and record it.
+
+The agent writes the flow, runs it, and returns one result line per case. You do not write
+`flow.json` by hand.
+
 <details>
 <summary>Store status</summary>
 
@@ -94,6 +89,30 @@ not live yet. When they are, install from Codex `/plugins` (search **Fast iOS De
 Antigravity **Customizations → Marketplace**.
 
 </details>
+
+<details>
+<summary>Update or check a clone</summary>
+
+```bash
+npx fast-ios-device-test update
+npx fast-ios-device-test update-tools
+./install.sh --check
+```
+
+A missing `baguette` does not fail the check. Install its verified pin only when needed with
+`./install.sh --install-baguette`.
+
+</details>
+
+## Supported targets
+
+| Target | Driver | UI flow | Screenshots | Recording | Notes |
+|---|---|---:|---:|---:|---|
+| iPhone Simulator | AXe | Yes | Yes | Yes | Xcode 26 or 27 |
+| Physical iPhone | Bundled XCUITest runner | Yes | Yes | Yes | Recording uses a one-shot run |
+| iPhone Duo | AXe + Device Hub | Yes | Outer + inner | One display | Xcode 27.1; closed, open, book, tabletop |
+| CarPlay Simulator | AXe + `baguette` | Phone + car | Yes | No | Disposable `agent-tmp-*` simulator only |
+| CarPlay hardware | XCUITest + CarPlay Simulator | Phone + car | Yes | Yes | USB iPhone; Automaker UI reports `VOID` |
 
 ## How a run works
 
@@ -122,13 +141,13 @@ and answers with one result line per case plus the evidence.
 ### `/fastSimulatorTest`: Simulator
 
 ```text
-/fastSimulatorTest Settings opens General and shows About, in dark mode, record it
+/fastSimulatorTest Settings opens and shows General, take a screenshot
 ```
 
 The agent builds the app once, drives the Simulator through AXe and replies:
 
 ```text
-PASS task=settings-general@dark total=9.9s build=skip artifacts=file:///…/settings-general@dark/
+PASS task=settings-general-smoke total=9.5s build=skip artifacts=file:///…/settings-general-smoke/
 ```
 
 A failure names the step and the cause (`FAIL … step=03_wait error=…`) next to a screenshot and the
@@ -141,7 +160,7 @@ maps them to `--appearance`, `--content-size` and `--record`.
 ```json
 {
   "version": 1,
-  "name": "settings-general",
+  "name": "settings-general-smoke",
   "app": {
     "project_root": "/absolute/path/to/project",
     "bundle_id": "com.apple.Preferences",
@@ -156,7 +175,9 @@ maps them to `--appearance`, `--content-size` and `--record`.
 }
 ```
 
-Run by hand: `fastSimulatorTest flow.json [--record] [--session <name>] [--appearance light|dark] [--content-size <size>]`. Step by step: `fastSimulatorTest start | do | labels | save`.
+Run by hand: `fastSimulatorTest flow.json --record --session <name>`. Step by step:
+`fastSimulatorTest start <draft.json>`, `fastSimulatorTest do '<action-json>'`,
+`fastSimulatorTest labels`, then `fastSimulatorTest save <flow.json>`.
 </details>
 
 ### `/fastDeviceTest`: physical iPhone
@@ -169,7 +190,7 @@ Same flows, run on the cabled iPhone by a cached, auto-signed XCUITest runner. S
 and SpringBoard work too.
 
 ```text
-PASS task=login device=My iPhone mode=server total=14.2s artifacts=file:///…/login/
+PASS task=login device=My iPhone mode=server total=<seconds>s artifacts=<file-url>
 ```
 
 <details>
@@ -236,7 +257,7 @@ Run by hand: `fastSimulatorTest flow.json --duo-pose closed|open|book|tabletop`.
 ```text
 /fastCarPlayTest the lyrics widget shows on the CarPlay screen
 /fastCarPlayTest same check on the small 800×480 display
-/fastCarPlayTest CPR-01 on the CarPlay Simulator with my iPhone
+/fastCarPlayTest CPR-01 on the CarPlay Simulator
 ```
 
 - **Simulator**: Xcode's CarPlay window on a throwaway `agent-tmp-*` simulator, driven by baguette.
@@ -274,7 +295,9 @@ PASS task=lyrics-widget target=sim total=17.5s artifacts=file:///…/lyrics-widg
 }
 ```
 
-Run by hand: `fastCarPlayTest doctor --target sim|hardware` and `fastCarPlayTest run flow.json --target sim|hardware [--display widescreen|standard|hd|WxH@S] [--udid|--device] [--record]` (`--record`: hardware only).
+Run by hand: `fastCarPlayTest doctor --target sim --display widescreen`, then
+`fastCarPlayTest run flow.json --target sim --display widescreen --udid <udid>`. For hardware,
+use `fastCarPlayTest run flow.json --target hardware --device <name> --record`.
 </details>
 
 ### `/fastUIReview`: review and report
@@ -291,6 +314,48 @@ and devices from `fastUIReport`.
 Ask for them in one message: *"check this screen in light and dark, normal and largest text"*.
 The agent runs one variant per run in a shared session and answers with one table. It adds only the
 variants you ask for.
+
+## FAQ
+
+<details>
+<summary><strong>Do I have to write the JSON flow?</strong></summary>
+
+No. Describe the check to your agent. The JSON shown below each command is the repeatable artifact
+the agent writes and runs for you.
+
+</details>
+
+<details>
+<summary><strong>Does this require Homebrew?</strong></summary>
+
+No. The installer manages a checksum-verified AXe pin under `~/.local/share/axe`. It installs
+optional `baguette` under `~/.local/share/baguette` for CarPlay Simulator runs.
+
+</details>
+
+<details>
+<summary><strong>Why can CarPlay Simulator take screenshots but not record video?</strong></summary>
+
+The Simulator target supports `car_screenshot` steps. `--record` is supported only by the hardware
+target's standalone CarPlay Simulator window.
+
+</details>
+
+<details>
+<summary><strong>Why will a CarPlay run not use my normal simulator?</strong></summary>
+
+Changing a CarPlay display can reboot and re-arm the simulator. For safety, the engine accepts only
+a disposable simulator named `agent-tmp-*`.
+
+</details>
+
+<details>
+<summary><strong>What does iPhone Duo need?</strong></summary>
+
+Install Xcode 27.1's additional components and iOS runtime. Allow the terminal or agent under
+**System Settings → Privacy & Security → Accessibility** so Device Hub can change pose.
+
+</details>
 
 ## Reference
 
@@ -332,23 +397,8 @@ variants you ask for.
 
 </details>
 
-<details>
-<summary><strong>Troubleshooting</strong></summary>
-
-- **Duo device missing:** open Xcode 27.1 and install its requested additional components and iOS
-  runtime. Device Hub, not the older Simulator app, owns the iPhone Duo window.
-- **Duo pose does not change:** allow the terminal or agent under **System Settings → Privacy &
-  Security → Accessibility**, then reopen the Duo device in Device Hub.
-- **CarPlay display is stuck:** after installing or replacing an app, relaunch Apple's standalone
-  CarPlay Simulator. The hardware engine does this before waiting for its window.
-- **`baguette` is missing:** it is optional and used only by Simulator CarPlay runs. Install the
-  verified pin with `./install.sh --install-baguette`. The released binary is arm64-only.
-- **A check fails:** run `./install.sh --check`. It prints each missing item and its repair command.
-
-For guided setup, see [SETUP.md](SETUP.md). Testers can use the Vietnamese [GUIDE.md](GUIDE.md).
-Release history is in [CHANGELOG.md](CHANGELOG.md).
-
-</details>
+For guided setup and troubleshooting, see [SETUP.md](SETUP.md). Testers can use the Vietnamese
+[GUIDE.md](GUIDE.md). Release history is in [CHANGELOG.md](CHANGELOG.md).
 
 ## License and credits
 
