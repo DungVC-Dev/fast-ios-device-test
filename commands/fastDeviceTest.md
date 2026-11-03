@@ -20,6 +20,9 @@ use the one the user named (a unique part of the name is enough). More than one 
 step-by-step exploration → `fastDeviceTest serve`, then flows or `fastDeviceTest do '<json>'`,
 and `fastDeviceTest stop` when done; at the end of the work `fastDeviceTest lock` instead (stops
 the runner and locks the screen). Video wanted → add `--record` to a one-shot run (not
-through `serve`); the PASS line carries `video=`.
+through `serve`); the PASS line carries `video=`. Weak network, Low Power Mode or the app's log
+as a pass criterion → the `network_condition` / `low_power` steps and `--app-log` /
+`expect_log` / `fastDeviceTest log wait` ("Device conditions" in `device.md`); they switch
+conditions off again on their own.
 
 Return the PASS/FAIL line and one cause per FAIL, with artifact links. Remove temporary flows.

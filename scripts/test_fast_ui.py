@@ -2072,6 +2072,16 @@ class SessionTests(unittest.TestCase):
 
 
 class DeviceLauncherTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # Per-iPhone state (labels, conditions, app logs) never lands in the real cache.
+        import fast_device
+        cache = tempfile.TemporaryDirectory()
+        self.addCleanup(cache.cleanup)
+        patcher = mock.patch.object(fast_device, "CACHE_ROOT", Path(cache.name))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.cache = Path(cache.name)
+
     GOOD_DETAILS = {
         "connectionProperties": {"pairingState": "paired", "tunnelState": "connected", "transportType": "wired"},
         "deviceProperties": {"name": "tester’s iPhone", "osVersionNumber": "26.7.1",
@@ -2256,6 +2266,157 @@ class DeviceLauncherTests(unittest.TestCase):
                 tempfile.TemporaryDirectory() as raw, contextlib.redirect_stdout(out):
             fast_device.run_command(["do", *argv, "--out", raw])
         return request, out.getvalue()
+
+    def test_do_expands_a_network_condition_and_remembers_it(self) -> None:
+        request, out = self.run_do('{"type":"network_condition","profile":"3g"}', "--app", "com.example.app")
+        payload = request.call_args.args[1]
+        self.assertEqual(payload["op"], "actions")
+        steps = payload["actions"]
+        self.assertEqual(steps[0], {"type": "launch", "app": "com.apple.Preferences", "via": "network_condition"})
+        self.assertIn({"type": "tap_label", "label": "3G", "element_type": "Cell", "app": "com.apple.Preferences",
+                       "via": "network_condition"}, steps)
+        self.assertEqual(steps[-2]["type"], "set_switch")
+        self.assertIs(steps[-2]["on"], True)
+        self.assertEqual(steps[-1], {"type": "activate", "app": "com.example.app", "via": "network_condition"})
+        self.assertTrue(out.startswith("PASS actions=1 "), out)
+        self.assertIn("conditions_on=network=3G", out)
+        self.assertEqual(json.loads((self.cache / "conditions-U.json").read_text()), {"network": "3G"})
+
+    def test_do_reports_a_failing_expanded_step_by_the_step_written(self) -> None:
+        reply = {"status": "fail", "step": 5, "error": "timed out", "results": [{"step": 3, "optional_missing": True}],
+                 "labels": []}
+        _, out = self.run_do('[{"type":"wait","label":"A"},{"type":"low_power","on":true}]', reply=reply)
+        self.assertIn("step=2 type=low_power (wait)", out)
+        # Skipped navigation inside the expansion is the expansion's business, not a skipped step.
+        self.assertNotIn("skipped_optional", out)
+
+    def test_do_refuses_an_unknown_network_profile(self) -> None:
+        import fast_device
+        with self.assertRaisesRegex(fast_device.FastDeviceError, "Very Bad Network"):
+            self.run_do('{"type":"network_condition","profile":"5G"}')
+
+    def test_do_names_skipped_optional_steps(self) -> None:
+        reply = {"status": "pass", "labels": [],
+                 "results": [{"step": 1, "optional_missing": True, "skipped": "timed out"}]}
+        _, out = self.run_do('[{"type":"tap_label","label":"Not now","optional":true},{"type":"wait","label":"A"}]',
+                             reply=reply)
+        self.assertIn("skipped_optional=1", out)
+
+    def test_do_writes_dumps_to_the_cache_not_the_working_directory(self) -> None:
+        import fast_device
+        reply = {"status": "pass", "labels": [], "results": [{"step": 1, "nodes": [{"label": "A"}]}]}
+        out = io.StringIO()
+        with mock.patch.object(fast_device, "resolve_device", return_value={"udid": "U", "name": "X"}), \
+                mock.patch.object(fast_device, "preflight_device"), \
+                mock.patch.object(fast_device, "start_server"), \
+                mock.patch.object(fast_device, "request", return_value=reply), contextlib.redirect_stdout(out):
+            fast_device.run_command(["do", '[{"type":"dump"}]'])
+        self.assertTrue((self.cache / "do" / "U" / "step-01-ui.json").exists())
+
+    def test_do_labels_changed_prints_only_the_difference(self) -> None:
+        self.run_do('{"type":"wait","label":"A"}', reply={"status": "pass", "labels": ["A", "B"]})
+        _, out = self.run_do('{"type":"wait","label":"A"}', "--labels", "changed",
+                             reply={"status": "pass", "labels": ["A", "C"]})
+        self.assertIn('labels_added=["C"] labels_gone=["B"]', out)
+        self.assertNotIn("labels=[", out)
+        _, quiet = self.run_do('{"type":"wait","label":"A"}', "--labels", "none",
+                               reply={"status": "pass", "labels": ["A"]})
+        self.assertNotIn("labels", quiet)
+
+    def test_do_drives_the_app_a_log_capture_launched(self) -> None:
+        import os
+        import fast_applog
+        (self.cache / "applog-U.json").write_text(json.dumps(
+            {"pid": os.getpid(), "bundle_id": "com.example.app", "log": str(self.cache / "x.log"), "cursor": 0}))
+        request, _ = self.run_do('{"type":"wait","label":"A"}')
+        self.assertEqual(request.call_args.args[1]["action"]["app"], "com.example.app")
+        self.assertIsNotNone(fast_applog.load(self.cache, "U"))
+
+    def test_flow_switches_conditions_off_after_a_failure(self) -> None:
+        import fast_device
+        flow_report = {"status": "fail", "step": "08_set_switch", "error": "switch did not turn on", "results": []}
+        replies = [flow_report, {"status": "pass", "results": [], "labels": []}]
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as raw:
+            flow = Path(raw) / "weak.json"
+            flow.write_text(json.dumps({"version": 1, "app": {"bundle_id": "com.example.app"},
+                                        "actions": [{"type": "network_condition", "profile": "Edge"},
+                                                    {"type": "wait", "label": "Lyrics"}]}))
+            device = {"udid": "U0000000", "name": "X", "os": "26.0", "connected": True}
+            with mock.patch.object(fast_device, "resolve_device", return_value=device), \
+                    mock.patch.object(fast_device, "preflight_device"), \
+                    mock.patch.object(fast_device, "start_server"), \
+                    mock.patch.object(fast_device, "server_alive", return_value=True), \
+                    mock.patch.object(fast_device, "request", side_effect=replies) as request, \
+                    contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = fast_device.run_flow(fast_device.parse_flow_arguments([str(flow), "--artifacts-root", raw]))
+        self.assertEqual(code, 1)
+        cleanup = request.call_args_list[1].args[1]
+        self.assertEqual(cleanup["op"], "actions")
+        self.assertIs(cleanup["actions"][-2]["on"], False)
+        self.assertEqual(cleanup["actions"][-1]["app"], "com.example.app")
+        self.assertIn("step=01_network_condition (set_switch)", err.getvalue())
+        self.assertIn("conditions_restored=network=Edge", err.getvalue())
+        self.assertFalse((self.cache / "conditions-U0000000.json").exists())
+
+    def test_flow_app_log_checks_expect_log_and_keeps_the_console_launch(self) -> None:
+        import fast_device
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as raw:
+            flow = Path(raw) / "lyrics.json"
+            flow.write_text(json.dumps({"version": 1, "app": {"bundle_id": "com.example.app"},
+                                        "expect_log": ["song changed: .+"], "expect_no_log": ["not_authorized"],
+                                        "actions": [{"type": "wait", "label": "Lyrics"}]}))
+            device = {"udid": "U0000000", "name": "X", "os": "26.0", "connected": True}
+
+            def fake_start(udid: str, bundle: str, log: Path) -> dict:
+                log.write_text("Launched application with com.example.app bundle identifier.\n"
+                               "[SpotifyEngine] skip next: wamp.error.not_authorized\n")
+                return {}
+
+            with mock.patch.object(fast_device, "resolve_device", return_value=device), \
+                    mock.patch.object(fast_device, "preflight_device"), \
+                    mock.patch.object(fast_device, "start_server"), \
+                    mock.patch.object(fast_device, "server_alive", return_value=True), \
+                    mock.patch.object(fast_device, "start_app_log", side_effect=fake_start), \
+                    mock.patch.object(fast_device.fast_applog, "stop") as stop, \
+                    mock.patch.object(fast_device, "request",
+                                      return_value={"status": "pass", "results": [], "labels": []}) as request, \
+                    contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = fast_device.run_flow(fast_device.parse_flow_arguments([str(flow), "--artifacts-root", raw]))
+        self.assertEqual(code, 1)
+        self.assertIs(request.call_args.args[1]["flow"]["setup"]["launch"], False)
+        stop.assert_called_once()
+        self.assertIn("expect_log 'song changed: .+' never matched", err.getvalue())
+        self.assertIn("expect_no_log 'not_authorized' matched", err.getvalue())
+        self.assertIn("app_log=", err.getvalue())
+
+    def test_stop_switches_conditions_off_first(self) -> None:
+        import fast_device
+        (self.cache / "conditions-U.json").write_text('{"low_power": true}')
+        out = io.StringIO()
+        with mock.patch.object(fast_device, "resolve_device", return_value={"udid": "U", "name": "X"}), \
+                mock.patch.object(fast_device, "server_alive", return_value=True), \
+                mock.patch.object(fast_device, "stop_server"), \
+                mock.patch.object(fast_device, "request", return_value={"status": "pass"}) as request, \
+                contextlib.redirect_stdout(out):
+            fast_device.run_command(["stop"])
+        self.assertIn({"type": "set_switch", "label": "Low Power Mode", "element_type": "Switch", "on": False,
+                       "app": "com.apple.Preferences", "via": "low_power"}, request.call_args.args[1]["actions"])
+        self.assertIn("STOPPED device=X conditions_restored=low_power=on", out.getvalue())
+
+    def test_serve_installs_first_when_asked(self) -> None:
+        import fast_device
+        calls = []
+        with mock.patch.object(fast_device, "resolve_device", return_value={"udid": "U", "name": "X"}), \
+                mock.patch.object(fast_device, "preflight_device"), \
+                mock.patch.object(fast_device, "install_app", side_effect=lambda *a: calls.append("install")), \
+                mock.patch.object(fast_device, "start_server", side_effect=lambda *a: calls.append("serve")), \
+                mock.patch.object(fast_device, "server_state_path", return_value=self.cache / "s.json"), \
+                contextlib.redirect_stdout(io.StringIO()):
+            (self.cache / "s.json").write_text('{"address": "fd00::1", "port": 1, "log": "l"}')
+            fast_device.run_command(["serve", "--install", "/tmp/App.app"])
+        self.assertEqual(calls, ["install", "serve"])
 
     def test_do_sends_only_the_prompt_labels_it_declares(self) -> None:
         request, _ = self.run_do('{"type":"wait","label":"A"}', "--prompt-labels", "Allow, Don’t Allow")

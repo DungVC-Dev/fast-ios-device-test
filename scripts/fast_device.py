@@ -25,6 +25,8 @@ HERE = Path(__file__).resolve().parent
 # bin/ holds symlinks in a git checkout but copies in the zip, so look beside scripts/ too.
 sys.path[:0] = [str(HERE), str(HERE.parent / "scripts")]
 from fast_media import VIDEO_SUFFIXES, prune_artifacts, publish_video, shrink_video  # noqa: E402
+import fast_applog  # noqa: E402
+import fast_conditions  # noqa: E402
 import fast_evidence  # noqa: E402
 import fast_guard  # noqa: E402
 from fast_ui_map import record  # noqa: E402
@@ -516,6 +518,13 @@ def report_notes(report: dict[str, Any]) -> str:
     moving = [str(result.get("screenshot")) for result in results if result.get("stable") is False]
     if moving:
         notes += f" unsettled={','.join(moving)}"
+    skipped = [str(result.get("step")) for result in results if result.get("optional_missing")]
+    if skipped:
+        notes += f" skipped_optional={','.join(skipped)}"
+    if report.get("conditions"):
+        notes += f" {report['conditions']}"
+    if report.get("app_log"):
+        notes += f" app_log={file_link(report['app_log'])}"
     return notes
 
 
@@ -533,7 +542,62 @@ def prepare_flow(spec: dict[str, Any], appearance: str | None = None, content_si
         # A device has no simctl; UIKit reads the category from the argument domain instead.
         arguments += ["-UIPreferredContentSizeCategoryName", f"UICTContentSizeCategory{CONTENT_SIZES[content_size]}"]
     setup["launch_arguments"] = arguments + [str(value) for value in setup.get("launch_arguments", [])]
-    return {**spec, "setup": setup}
+    try:
+        actions, _ = fast_conditions.expand(list(spec.get("actions", [])), spec.get("app", {}).get("bundle_id"))
+    except ValueError as error:
+        raise FastDeviceError(str(error)) from error
+    return {**spec, "setup": setup, "actions": actions}
+
+
+def own_steps(report: dict[str, Any], written: list[dict[str, Any]], actions: list[dict[str, Any]],
+              origin: list[int]) -> None:
+    """Report against the steps the agent wrote: results of the Settings steps a condition
+    expanded into are dropped, and a failing step is named by the step it came from."""
+    def source(step: Any) -> int | None:
+        return origin[step - 1] if isinstance(step, int) and 0 < step <= len(origin) else None
+    kept = []
+    for result in report.get("results") or []:
+        index = result.get("step")
+        if isinstance(index, int) and 0 < index <= len(actions) and actions[index - 1].get("via"):
+            continue
+        if source(index):
+            result["step"] = source(index)
+        kept.append(result)
+    if "results" in report:
+        report["results"] = kept
+    step = report.get("step")
+    match = re.match(r"(\d+)_", step) if isinstance(step, str) else None
+    index = int(match.group(1)) if match else step
+    if source(index) and report.get("status") != "pass":
+        inner = actions[index - 1].get("type")
+        kind = written[source(index) - 1].get("type")
+        label = f"{source(index):02d}_{kind}" + (f" ({inner})" if inner != kind else "")
+        report["step"] = label if match else source(index)
+        if not match:
+            report["step_type"] = kind + (f" ({inner})" if inner != kind else "")
+
+
+def request_budget(actions: list[dict[str, Any]], base: float) -> float:
+    """Seconds a request may take: each step's timeout (6 s by default) plus its pauses."""
+    return base + sum(float(a.get("timeout", 6)) + float(a.get("seconds", 0)) for a in actions)
+
+
+def restore_conditions(udid: str, return_app: str | None) -> str:
+    """Switch off what a flow or `do` left on (Network Link Conditioner, Low Power Mode);
+    returns a note for the report, empty when nothing was on."""
+    active = fast_conditions.load(CACHE_ROOT, udid)
+    if not active:
+        return ""
+    steps = fast_conditions.cleanup_steps(active, return_app)
+    try:
+        response = request(udid, {"op": "actions", "actions": steps, "wait_for_idle": False},
+                           timeout=request_budget(steps, 30))
+    except FastDeviceError as error:
+        return f"conditions_left_on={fast_conditions.describe(active)} ({error})"
+    if response.get("status") != "pass":
+        return f"conditions_left_on={fast_conditions.describe(active)} ({response.get('error')})"
+    fast_conditions.remember(CACHE_ROOT, udid, {"network": None, "low_power": None})
+    return f"conditions_restored={fast_conditions.describe(active)}"
 
 
 def enable_recording(xctestrun: Path) -> None:
@@ -560,6 +624,21 @@ def publish_recording(artifacts: Path, passed: bool, session: str = "") -> Path 
 
 def install_app(udid: str, app_path: str) -> None:
     run(["xcrun", "devicectl", "device", "install", "app", "--device", udid, app_path])
+
+
+def start_app_log(udid: str, bundle_id: str, log: Path | None = None) -> dict[str, Any]:
+    """Launch the app with its console attached; returns once devicectl reports the launch."""
+    state = fast_applog.start(CACHE_ROOT, udid, bundle_id, log)
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        text = Path(state["log"]).read_text(errors="replace") if Path(state["log"]).exists() else ""
+        if "Launched application" in text or "Waiting for the application to terminate" in text:
+            return state
+        if not fast_applog.alive(state["pid"]):
+            fast_applog.stop(CACHE_ROOT, udid)
+            raise FastDeviceError(f"could not launch {bundle_id} with its console: {text.strip()[-300:]}")
+        time.sleep(0.3)
+    return state
 
 
 def export_attachments(result_bundle: Path, output: Path, developer_dir: str) -> None:
@@ -882,7 +961,8 @@ def parse_flow_arguments(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="fastDeviceTest",
         description="Run a JSON UI flow on a physical iPhone via XCUITest. "
-        "Subcommands: serve | stop | status | check | do '<action json>'.",
+        "Subcommands: serve | stop | status | check | do '<action json>' | log start|wait|assert|"
+        "assert-absent|mark|show|stop | conditions status|off.",
     )
     parser.add_argument("flow", type=Path)
     parser.add_argument("--device", help="UDID or name; required when several iPhones are connected")
@@ -910,6 +990,11 @@ def parse_flow_arguments(argv: list[str]) -> argparse.Namespace:
         "--before", action="store_true",
         help="This run shows the bug (e.g. on the base build): a failure at the outcome step is filed as "
         "the case's before shot (env FAST_EVIDENCE=0 files nothing)",
+    )
+    parser.add_argument(
+        "--app-log", action="store_true",
+        help="Launch the app with its console attached and keep its log as <artifacts>/app.log; "
+        "implied by the flow's expect_log / expect_no_log",
     )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
@@ -959,15 +1044,48 @@ def run_flow(args: argparse.Namespace) -> int:
     prune_artifacts(root, float(os.environ.get("FAST_UI_KEEP_DAYS", "3")))
     artifacts.mkdir(parents=True, exist_ok=True)
     prepared = prepare_flow(spec, appearance, content_size)
+    udid = device["udid"]
+    bundle_id = app.get("bundle_id")
+    conditions = fast_conditions.requested(spec.get("actions", []))
+    if any(conditions.values()):
+        # Remembered before the run, so `stop` or `conditions off` can undo a run that died.
+        fast_conditions.remember(CACHE_ROOT, udid, conditions)
+    expect_log = [str(p) for p in spec.get("expect_log", [])]
+    expect_no_log = [str(p) for p in spec.get("expect_no_log", [])]
+    app_log = None
+    if args.app_log or expect_log or expect_no_log:
+        if not bundle_id:
+            raise FastDeviceError("--app-log needs app.bundle_id in the flow")
+        app_log = artifacts / "app.log"
+        start_app_log(udid, bundle_id, app_log)
+        # The console-launched app is the one to drive: relaunching it would end its console.
+        prepared["setup"]["launch"] = False
 
-    if server_alive(device["udid"]):
-        mode = "server"
-        budget = 60 + sum(float(a.get("timeout", 6)) + float(a.get("seconds", 0)) for a in spec.get("actions", []))
-        report = request(device["udid"], {"op": "flow", "flow": prepared}, timeout=budget)
-        report["screenshots"] = save_screenshots(report, artifacts)
-    else:
-        mode = "one-shot"
-        report = run_one_shot(device, prepared, artifacts, args.rebuild_runner, args.record)
+    try:
+        if server_alive(udid):
+            mode = "server"
+            budget = request_budget(prepared["actions"], 60)
+            report = request(udid, {"op": "flow", "flow": prepared}, timeout=budget)
+            report["screenshots"] = save_screenshots(report, artifacts)
+        else:
+            mode = "one-shot"
+            report = run_one_shot(device, prepared, artifacts, args.rebuild_runner, args.record)
+    finally:
+        if app_log:
+            fast_applog.stop(CACHE_ROOT, udid)
+    own_steps(report, spec.get("actions", []), prepared["actions"],
+              fast_conditions.expand(list(spec.get("actions", [])), bundle_id)[1])
+    if app_log:
+        report["app_log"] = str(app_log)
+        problems = fast_applog.check_expectations(
+            app_log.read_text(encoding="utf-8", errors="replace") if app_log.exists() else "", expect_log, expect_no_log,
+        )
+        if problems and report["status"] == "pass":
+            report.update({"status": "fail", "step": "expect_log", "error": "; ".join(problems)})
+    if fast_conditions.load(CACHE_ROOT, udid) and not prepared["setup"].get("keep_conditions"):
+        if not server_alive(udid):
+            start_server(device, args.rebuild_runner)
+        report["conditions"] = restore_conditions(udid, bundle_id)
     save_trail(report)
     save_dumps(report.get("results", []), artifacts)
     video = publish_recording(artifacts, report["status"] == "pass", args.session)
@@ -1053,6 +1171,17 @@ def run_command(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog=f"fastDeviceTest {argv[0]}")
     parser.add_argument("--device")
     parser.add_argument("--rebuild-runner", action="store_true")
+    if argv[0] == "serve":
+        parser.add_argument("--install", help="Install this .app on the device before the runner starts")
+    if argv[0] == "log":
+        parser.add_argument("op", choices=["start", "wait", "assert", "assert-absent", "mark", "show", "stop"])
+        parser.add_argument("pattern", nargs="?", help="Regex for wait / assert / assert-absent; show filters by it")
+        parser.add_argument("--app", help="Bundle id to launch with its console (log start)")
+        parser.add_argument("--timeout", type=float, default=60, help="Seconds log wait waits (default 60)")
+        parser.add_argument("--lines", type=int, default=20, help="Lines log show prints (default 20)")
+    if argv[0] == "conditions":
+        parser.add_argument("op", choices=["status", "off"])
+        parser.add_argument("--app", help="Bundle id to bring back after switching conditions off")
     if argv[0] == "do":
         parser.add_argument(
             "action",
@@ -1060,7 +1189,15 @@ def run_command(argv: list[str]) -> int:
             "or a JSON array of actions run in one request (stops at the first failure)",
         )
         parser.add_argument("--app", help="Bundle id to drive from this (or the first) action on")
-        parser.add_argument("--out", type=Path, default=Path.cwd(), help="Where screenshots go")
+        parser.add_argument(
+            "--out", type=Path, default=None,
+            help="Where screenshots and dumps go (default: a per-iPhone folder in the cache, never the project)",
+        )
+        parser.add_argument(
+            "--labels", choices=["all", "changed", "none"], default="all",
+            help="Print every visible label (default), only labels that appeared or went away since the "
+            "previous do on this iPhone, or none",
+        )
         parser.add_argument(
             "--idle-wait", action="store_true",
             help="Use XCUITest's wait-for-idle around each event; by default it is off and the runner "
@@ -1088,15 +1225,31 @@ def run_command(argv: list[str]) -> int:
     udid = device["udid"]
     if argv[0] == "check":
         return check_device(device)
-    if argv[0] in {"serve", "lock", "do"}:
+    if argv[0] == "log":
+        return run_log_command(device, args)
+    if argv[0] in {"serve", "lock", "do", "conditions"}:
         preflight_device(device)
     if argv[0] == "serve":
+        if args.install:
+            install_app(udid, str(Path(args.install).expanduser()))
         start_server(device, args.rebuild_runner)
         state = json.loads(server_state_path(udid).read_text())
         print(f"SERVING device={device['name']} address=[{state['address']}]:{state['port']} log={state['log']}")
+    elif argv[0] == "conditions":
+        active = fast_conditions.load(CACHE_ROOT, udid)
+        if args.op == "status" or not active:
+            print(f"CONDITIONS device={device['name']} {fast_conditions.describe(active) or 'none'}")
+            return 0
+        start_server(device, args.rebuild_runner)
+        note = restore_conditions(udid, args.app)
+        print(f"{'FAIL' if 'left_on' in note else 'PASS'} conditions device={device['name']} {note}")
+        return 1 if "left_on" in note else 0
     elif argv[0] == "stop":
+        note = restore_conditions(udid, None) if server_alive(udid) else ""
         stop_server(udid)
-        print(f"STOPPED device={device['name']}")
+        active = fast_conditions.describe(fast_conditions.load(CACHE_ROOT, udid))
+        left = f" conditions_left_on={active} (run `fastDeviceTest conditions off`)" if active and not note else ""
+        print(f"STOPPED device={device['name']}{f' {note}' if note else ''}{left}")
     elif argv[0] == "lock":
         lock_device(device, args.rebuild_runner)
         print(f"LOCKED device={device['name']}")
@@ -1105,43 +1258,119 @@ def run_command(argv: list[str]) -> int:
     else:
         start_server(device, args.rebuild_runner)
         parsed = json.loads(args.action)
-        actions = parsed if isinstance(parsed, list) else [parsed]
-        if args.app and actions and "app" not in actions[0]:
-            actions[0]["app"] = args.app
-        timeout = 30 + sum(float(a.get("timeout", 6)) + float(a.get("seconds", 0)) for a in actions)
+        written = parsed if isinstance(parsed, list) else [parsed]
+        logged = fast_applog.load(CACHE_ROOT, udid)
+        app_id = args.app or (logged or {}).get("bundle_id")
+        if app_id and written and "app" not in written[0]:
+            # The app a `log start` launched is not one the runner started: name it, or the
+            # first step finds no current app.
+            written[0]["app"] = app_id
+        try:
+            actions, origin = fast_conditions.expand(written, app_id)
+        except ValueError as error:
+            raise FastDeviceError(str(error)) from error
+        conditions = fast_conditions.requested(written)
+        if conditions:
+            fast_conditions.remember(CACHE_ROOT, udid, conditions)
+        timeout = request_budget(actions, 30)
         extra: dict[str, Any] = {} if args.idle_wait else {"wait_for_idle": False}
         if args.prompt_labels:
             extra["optional_permission_labels"] = parse_prompt_labels(args.prompt_labels)
-        if isinstance(parsed, list):
+        several = isinstance(parsed, list) or len(actions) > 1
+        if several:
             response = request(udid, {"op": "actions", "actions": actions, **extra}, timeout=timeout)
             results = response.get("results", [])
         else:
             response = request(udid, {"op": "action", "action": actions[0], **extra}, timeout=timeout)
             results = [response["result"]] if response.get("result") else []
         save_trail(response)
-        args.out.mkdir(parents=True, exist_ok=True)
-        shots = save_screenshots(response, args.out)
-        dumps = save_dumps(results, args.out)
+        if several:
+            own_steps(response, written, actions, origin)
+            results = response.get("results", [])
+        out = (args.out or CACHE_ROOT / "do" / udid).expanduser()
+        out.mkdir(parents=True, exist_ok=True)
+        shots = save_screenshots(response, out)
+        dumps = save_dumps(results, out)
         status = "PASS" if response.get("status") == "pass" else "FAIL"
-        if isinstance(parsed, list):
+        if several:
             failed = response.get("step")
-            head = f"actions={len(actions)}" + (
-                f" step={failed} type={actions[failed - 1].get('type')}" if status == "FAIL" and failed else ""
-            )
+            head = f"actions={len(written)}"
+            if status == "FAIL" and failed:
+                kind = response.get("step_type") or (written[failed - 1].get("type") if 0 < failed <= len(written) else "?")
+                head += f" step={failed} type={kind}"
         else:
-            head = str(actions[0].get("type"))
+            head = str(written[0].get("type"))
         error = f" error={response.get('error')}" if response.get("error") else ""
         shot = f" screenshot{'s' if len(shots) > 1 else ''}={','.join(map(file_link, shots))}" if shots else ""
         ui = f" ui={','.join(map(file_link, dumps))}" if dumps else ""
-        labels = json.dumps(response.get("labels", []), ensure_ascii=False)
-        print(f"{status} {head}{error}{shot}{ui}{report_notes(response)} labels={labels}")
+        active = fast_conditions.describe(fast_conditions.load(CACHE_ROOT, udid))
+        on = f" conditions_on={active}" if active else ""
+        print(f"{status} {head}{error}{shot}{ui}{report_notes(response)}{on}{label_report(udid, response.get('labels', []), args.labels)}")
         return 0 if status == "PASS" else 1
+    return 0
+
+
+def label_report(udid: str, labels: list[str], mode: str) -> str:
+    """` labels=[…]`, or with `changed` only what appeared (+) or went away (-) since the
+    previous `do` on this iPhone, which keeps a long screen's report to the part that moved."""
+    path = CACHE_ROOT / f"labels-{udid}.json"
+    try:
+        previous = json.loads(path.read_text())
+    except (OSError, ValueError):
+        previous = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(labels, ensure_ascii=False))
+    except OSError:
+        pass
+    if mode == "none":
+        return ""
+    if mode == "changed" and previous is not None:
+        added = [label for label in labels if label not in previous]
+        gone = [label for label in previous if label not in labels]
+        return (f" labels_added={json.dumps(added, ensure_ascii=False)}"
+                f" labels_gone={json.dumps(gone, ensure_ascii=False)}")
+    return f" labels={json.dumps(labels, ensure_ascii=False)}"
+
+
+def run_log_command(device: dict[str, Any], args: argparse.Namespace) -> int:
+    udid = device["udid"]
+    try:
+        if args.op == "start":
+            if not args.app:
+                raise FastDeviceError("log start needs --app <bundle id>")
+            preflight_device(device)
+            state = start_app_log(udid, args.app)
+            print(f"LOGGING app={args.app} device={device['name']} log={file_link(state['log'])}")
+        elif args.op == "stop":
+            state = fast_applog.stop(CACHE_ROOT, udid)
+            print(f"STOPPED log device={device['name']}" + (f" log={file_link(state['log'])}" if state else ""))
+        elif args.op == "mark":
+            fast_applog.mark(CACHE_ROOT, udid)
+            print(f"MARKED log device={device['name']}")
+        elif args.op == "show":
+            state = fast_applog.require(CACHE_ROOT, udid)
+            text, _ = fast_applog.text_from(state, cursor=0)
+            lines = [line for line in text.splitlines() if not args.pattern or fast_applog.find(args.pattern, line)]
+            print("\n".join(lines[-args.lines:]))
+        else:
+            if not args.pattern:
+                raise FastDeviceError(f"log {args.op} needs a regex")
+            if args.op == "wait":
+                line = fast_applog.wait(CACHE_ROOT, udid, args.pattern, args.timeout)
+                print(f"PASS log wait line={json.dumps(line, ensure_ascii=False)}")
+            else:
+                line = fast_applog.check(CACHE_ROOT, udid, args.pattern, present=args.op == "assert")
+                print(f"PASS log {args.op}" + (f" line={json.dumps(line, ensure_ascii=False)}" if line else ""))
+    except fast_applog.AppLogError as error:
+        print(f"FAIL log {args.op} error={error}", file=sys.stderr)
+        return 1
     return 0
 
 
 def main() -> int:
     argv = sys.argv[1:]
-    if argv and argv[0] in {"serve", "stop", "lock", "status", "do", "check"}:
+    if argv and argv[0] in {"serve", "stop", "lock", "status", "do", "check", "log", "conditions"}:
         return run_command(argv)
     return run_flow(parse_flow_arguments(argv))
 
