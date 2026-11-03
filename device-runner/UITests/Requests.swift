@@ -22,7 +22,7 @@ enum Requests {
     static func endsWithRead(_ action: [String: Any]) -> Bool {
         if action["expect"] != nil { return true }
         switch action["type"] as? String {
-        case "wait", "wait_absent", "assert_absent", "dump", "scroll_to": return true
+        case "wait", "wait_change", "wait_absent", "assert_absent", "dump", "scroll_to": return true
         case "tap_nearest": return action["success"] != nil
         default: return false
         }

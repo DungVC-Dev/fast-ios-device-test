@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Physical iPhone
+
+- New `network_condition` (Network Link Conditioner presets such as `3G`, `Edge`,
+  `Very Bad Network`) and `low_power` steps for `fastDeviceTest`. They drive Settings, return to
+  the app, and are switched off again at the end of the flow (PASS or FAIL), at
+  `fastDeviceTest stop`, or with `fastDeviceTest conditions off`.
+- App logs: `fastDeviceTest <flow> --app-log` keeps the app's console as `app.log`. A flow's
+  `expect_log` / `expect_no_log` regexes decide PASS or FAIL. For step-by-step work there is
+  `fastDeviceTest log start|wait|assert|assert-absent|mark|show|stop`; `do` then drives the
+  logged app on its own.
+- Any step can be `"optional": true` and is skipped when its target is absent, for example a
+  Play button or a third-party upsell. `wait_change` waits, minutes if needed, until a label or
+  value changes.
+- When `tap_label` misses, the error names the element types that text has on screen.
+- `do --labels changed|none` shortens the report. `do` no longer writes screenshots and
+  `step-NN-ui.json` into the current directory: they go to a cache folder unless `--out` says
+  otherwise. `serve --install <app>` installs before starting the runner.
+- Document heat through Xcode 27's Debug › Induce Device Conditions, and Spotify Free skip
+  limits.
+
 ## 2.2.0 — 2026-11-03
 
 ### Updates

@@ -332,8 +332,8 @@ case ":$PATH:" in
 *) echo "note: add '$BIN_DIR' to PATH, e.g. echo 'export PATH=\"$BIN_DIR:\$PATH\"' >> ~/.zshrc" ;;
 esac
 
-(cd "$HERE/scripts" && python3 -m unittest test_fast_ui test_fast_carplay test_fast_media test_fast_ui_map test_fast_guard >/dev/null 2>&1) && echo "engine self-test: OK" \
-    || echo "engine self-test: FAILED (cd scripts && python3 -m unittest test_fast_ui test_fast_carplay test_fast_media test_fast_ui_map test_fast_guard)"
+(cd "$HERE/scripts" && python3 -m unittest test_fast_ui test_fast_carplay test_fast_media test_fast_ui_map test_fast_guard test_fast_conditions >/dev/null 2>&1) && echo "engine self-test: OK" \
+    || echo "engine self-test: FAILED (cd scripts && python3 -m unittest test_fast_ui test_fast_carplay test_fast_media test_fast_ui_map test_fast_guard test_fast_conditions)"
 if [[ "$MODE" == "copy" ]]; then
     if [[ -n "${FAST_IOS_NO_AUTO_UPDATE:-}" ]]; then
         echo "auto-update: off (FAST_IOS_NO_AUTO_UPDATE=1)"

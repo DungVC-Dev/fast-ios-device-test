@@ -54,6 +54,14 @@ the full multi-line report.
   `set_appearance`, `set_location`, `set_permission` (`reset` only), clipboard. Earlier names
   `rotate_gesture` and `set_orientation` still run. Simulator-only: `motion`, `shake`,
   `push_notification`, `status_bar`, permission `grant`/`revoke`.
+- iPhone-only, for device conditions and long waits: `network_condition`, `low_power` (see
+  "Device conditions" below) and `wait_change` (a selector; waits up to `timeout` seconds, minutes
+  are fine, until the first matching node shows another label or value or is gone, and returns
+  `from`/`to`). Any step may say `"optional": true`: when its target is absent it is skipped
+  (`skipped_optional=<step>` in the PASS line) instead of failing the request, and its default
+  timeout drops to 2 s. Use it for "tap Play if paused" or a third-party upsell's `Close` / `Not now`.
+- When `tap_label` finds nothing, the error lists the types that text has on screen
+  ("that text is on screen as Cell, StaticText"): set `element_type` to one of them.
 - `set_slider` and `set_picker` use XCUITest's own adjustments (`adjust(toNormalizedSliderPosition:)`,
   `adjust(toPickerWheelValue:)`); `tap_alert` looks on SpringBoard first, then the app.
 
@@ -160,12 +168,16 @@ through one xcodebuild test instead:
 fastDeviceTest do '{"type":"tap_label","label":"Lyrics","element_type":"RadioButton"}' --device <d>
 fastDeviceTest do '{"type":"screenshot","name":"now"}' --device <d> --out <dir>
 fastDeviceTest do '{"type":"launch"}' --app com.apple.Preferences --device <d>
+fastDeviceTest serve --install <path/to/App.app> --device <d>   # install, then start the runner
 fastDeviceTest status|stop --device <d>
 fastDeviceTest lock --device <d>     # end of the work: stop, then lock the screen
 ```
 
 Each `do` prints PASS/FAIL plus the visible labels after the action, so an agent
-can look, decide, and act step by step.
+can look, decide, and act step by step. On a long screen add `--labels changed` (only
+`labels_added=` / `labels_gone=` since the previous `do` on that iPhone) or `--labels none`.
+Screenshots and dumps go to a per-iPhone cache folder (printed as links) unless `--out <dir>`
+names one; nothing is written into the current directory.
 
 Once the steps are known, send them as one JSON array: the runner executes them in
 one request, stops at the first failure (`FAIL actions=N step=K type=…`) and snapshots
@@ -195,6 +207,80 @@ collects diagnostics) is ended and replaced; a locked iPhone is reported in seco
   the clip (`run.mp4` on FAIL; `<task>/final[-<session>].mp4` on PASS).
 - Device must be unlocked, in Developer Mode, trusting the Mac; enable
   Settings › Developer › Enable UI Automation if iOS asks. One run per device at a time.
+
+### Device conditions: weak network, heat, Low Power Mode, app logs
+
+Checked on an iPhone 15 Plus, iOS 26.6.1, Xcode 27.1. Use these to test how an app behaves on a
+bad connection or a hot phone, and write the result per condition (the CARFACE
+`docs/test-cases/lyrics-regression.md` §4.13 is an example matrix).
+
+- **Weak network:** `{"type":"network_condition","profile":"3G"}` switches Network Link
+  Conditioner on in Settings › Developer with that preset, then activates the flow's app again
+  (in `do`: the `--app` app, or `"return_to"`). Presets: `100% Loss`, `3G`, `DSL`, `Edge`,
+  `High Latency DNS`, `LTE`, `Very Bad Network`, `Wi-Fi`, `Wi-Fi 802.11ac`; `"profile":"off"`
+  switches it off.
+- **Low Power Mode:** `{"type":"low_power","on":true}` (Settings › Battery).
+- Both are remembered per iPhone and **switched off again on their own**: at the end of the flow
+  (PASS or FAIL; `setup.keep_conditions: true` keeps them), at `fastDeviceTest stop`, or with
+  `fastDeviceTest conditions off --device <d> [--app <bundle id>]` after a series of `do`
+  requests; `conditions status` shows what is on, and every `do` prints `conditions_on=` while
+  something is. A condition left on survives app restarts and makes every later run on a shared
+  phone look broken.
+- Settings may reopen on the page it was left on; the steps cope with the start page, the
+  Developer page and the Network Link Conditioner page. A FAIL names the step you wrote
+  (`step=2 type=network_condition (tap_label)`).
+- **Heat: Xcode › Debug › Induce Device Conditions › Thermal State › Fair / Serious / Critical**
+  (the same submenu has Network Link and GPU Performance State). No command line reaches it:
+  Xcode 27 has no Devices window, Device Hub has no conditions, `devicectl` has none. The condition
+  applies to the scheme's **Active Run Destination**, so select the test iPhone there first; the
+  submenu then reads `Thermal State (Active)`. To stop it, pick the same profile again; the menu
+  shows the change only after a few seconds. Put the run destination back afterwards.
+  - Agents doing this through GUI automation: a Mac often runs two Xcodes. `tell application
+    "Xcode"`, `process "Xcode"` and plain keystrokes can reach the other one and type into its
+    editor. Address Xcode by path (`tell application "/path/to/Xcode.app"`), set the destination
+    with `set active run destination of workspace document "<X>.xcodeproj" to run destination
+    "<device name>" of …`, click the menu on `first application process whose unix id is <pid>`
+    after checking it is frontmost, and never send typed text or Return. Tell the user before
+    bringing Xcode to the front, and run `git status` in the other open projects afterwards.
+
+#### App logs
+
+Most pass criteria of a background feature live in the app's log (`song changed:`,
+`not_authorized`). The app is launched with its console attached (`devicectl … --console`,
+`os_log` mirrored); the console lives as long as the app, so ending the capture ends the app.
+
+- **In a flow:** `--app-log`, or list regexes in the flow's `"expect_log": [...]` (each must
+  match somewhere in the run's log) and `"expect_no_log": [...]` (none may match). The log is
+  kept as `<artifacts>/app.log` (`app_log=` in the result) and a miss turns a PASS into
+  `FAIL step=expect_log`. The flow then drives the console-launched app (`setup.launch` is set
+  to false for it).
+- **Step by step:**
+
+  ```bash
+  fastDeviceTest log start --app <bundle id> --device <d>   # (re)launches the app with its console
+  fastDeviceTest do '{"type":"tap_label","label":"Next"}' --device <d>   # drives that app, no --app needed
+  fastDeviceTest log wait 'song changed: .+' --timeout 120 --device <d>
+  fastDeviceTest log assert-absent 'not_authorized' --device <d>
+  fastDeviceTest log show --lines 30 [<regex>] --device <d>
+  fastDeviceTest log stop --device <d>
+  ```
+
+  `wait` and `assert` read only lines after the previous match (or `log mark`), so a line logged
+  between two commands is neither missed nor matched twice. `assert` / `assert-absent` do not
+  wait. `idevicesyslog` and `devicectl` cannot read an app group's log files.
+- **Long waits** (a song that ends on its own after ~80 s): `log wait … --timeout 120`, or a
+  `wait_change` step on the title (`{"type":"wait_change","id":"songTitle","timeout":120}`). A
+  `do` request's budget is the sum of its steps' `timeout` and `pause` seconds plus 30 s, so a
+  long `timeout` is all it takes.
+
+#### Third-party apps in tests
+
+- Spotify **Free** allows 6 skips per hour and a few song picks per day; after that Spotify
+  rejects Next from every surface (App Remote returns `Code=-2001`, `wamp.error.not_authorized`)
+  and shows "You've got 6 skips per hour". A "Next keeps the old song" result on a Free account is
+  that limit, not the app. Use Premium for skip cases. Labels in Spotify (`com.spotify.client`):
+  `Next track`, `Previous track`, `Close the Now Playing View`, `Close` on its upsell sheets
+  (close those with an optional step: `{"type":"tap_label","label":"Close","optional":true}`).
 
 ### Troubleshooting before and during a run
 

@@ -252,7 +252,15 @@ private extension FlowRunner {
         isRunningAction = true
         defer { isRunningAction = false }
         trail.startAction()
-        let result = try perform(action, index: index)
+        let result: [String: Any]?
+        do {
+            result = try perform(action, index: index)
+        } catch let failure as Failure where action["optional"] as? Bool ?? false {
+            // "optional": true on any step: what it looked for is not there (a Play button that
+            // only shows when paused, a sheet a third-party app sometimes raises). The step is
+            // skipped and reported; the request goes on.
+            return ["optional_missing": true, "skipped": failure.message]
+        }
         if let actionIssue { throw Failure(message: "XCTest: \(actionIssue)") }
         let kind = action["type"] as? String ?? ""
         if Trail.gestureKinds.contains(kind), result?["optional_missing"] == nil {
@@ -280,7 +288,8 @@ private extension FlowRunner {
         guard let kind = action["type"] as? String else { throw Failure(message: "action \(index) has no type") }
         if let bundleID = action["app"] as? String { use(bundleID) }
         guard let app = current else { throw Failure(message: "no current app") }
-        let timeout = number(action["timeout"]) ?? 6
+        // An optional step gives up sooner: it is there to be skipped when its target is absent.
+        let timeout = number(action["timeout"]) ?? ((action["optional"] as? Bool ?? false) ? 2 : 6)
         let postDelay = number(action["post_delay"]) ?? 0.15
 
         switch kind {
@@ -295,6 +304,8 @@ private extension FlowRunner {
             app.terminate()
         case "wait":
             _ = try waitNodes(timeout) { nodes in nodes.contains { self.matches($0, action) } }
+        case "wait_change":
+            return try waitChange(action, timeout: timeout)
         case "wait_absent":
             do {
                 _ = try waitNodes(timeout) { nodes in !nodes.contains { self.matches($0, action) } }
@@ -328,8 +339,13 @@ private extension FlowRunner {
             if action["optional"] as? Bool ?? false {
                 node = resolveTapTarget(snapshotNodes(), selector, explicitType: explicitType)
             } else {
-                let nodes = try waitNodes(timeout) { nodes in
-                    self.resolveTapTarget(nodes, selector, explicitType: explicitType) != nil
+                let nodes: [Node]
+                do {
+                    nodes = try waitNodes(timeout) { nodes in
+                        self.resolveTapTarget(nodes, selector, explicitType: explicitType) != nil
+                    }
+                } catch let failure as Failure {
+                    throw Failure(message: failure.message + typeHint(selector))
                 }
                 node = resolveTapTarget(nodes, selector, explicitType: explicitType)
             }
@@ -892,6 +908,40 @@ private extension FlowRunner {
         if app.keyboards.firstMatch.exists {
             throw Failure(message: "the keyboard is still up; name the field's dismiss button with \"button\"")
         }
+    }
+
+    // Waits (up to `timeout`, minutes are fine) until the first node the selector matches shows
+    // another label or value than when the step began, or is gone: a song title that changes
+    // on its own, a counter, a status line.
+    func waitChange(_ action: [String: Any], timeout: Double) throws -> [String: Any] {
+        guard hasSelector(action) || action["element_type"] != nil else {
+            throw Failure(message: "wait_change needs a selector (id, label_contains, element_type, frame)")
+        }
+        func reading(_ nodes: [Node]) -> String? {
+            sorted(nodes.filter { matches($0, action) }, by: ["y", "x"]).first.map { "\($0.label)|\($0.value)" }
+        }
+        let start = try resolveNode(action, timeout: min(timeout, 6))
+        let before = "\(start.label)|\(start.value)"
+        var after: String?
+        do {
+            _ = try waitNodes(timeout) { nodes in
+                after = reading(nodes)
+                return after != before
+            }
+        } catch {
+            throw Failure(message: "'\(before)' did not change within \(timeout)s; visible labels: \(lastLabels)")
+        }
+        return ["from": before, "to": after ?? "(gone)"]
+    }
+
+    // After a tap target was not found: the types the same text has on screen, since a wrong
+    // or missing element_type is the usual cause ("3G" is a Cell in Settings, not a Button).
+    func typeHint(_ selector: [String: Any]) -> String {
+        var loose = selector
+        loose["element_type"] = nil
+        let types = Array(Set(snapshotNodes().filter { matches($0, loose) }.map(\.type))).sorted()
+        guard !types.isEmpty else { return "" }
+        return "; that text is on screen as \(types.joined(separator: ", ")): set element_type to one of them"
     }
 
     // Taps only when the switch is not already in the wanted state, then waits for the change.
