@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.1.1 — 2026-11-03
 
 - README: restored the per-agent plugin install steps (Codex, Antigravity, Gemini CLI, Claude Code)
   that the 2.1.0 README rewrite dropped.
