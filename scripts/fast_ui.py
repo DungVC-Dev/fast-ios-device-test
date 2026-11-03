@@ -13,6 +13,7 @@ import os
 import plistlib
 import re
 import shlex
+import shutil
 import signal
 import struct
 import subprocess

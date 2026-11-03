@@ -921,6 +921,7 @@ class SimulatorTrailTests(unittest.TestCase):
                 return mock.Mock(stdout="", stderr="", returncode=0)
 
             with mock.patch.object(fast_ui.sys, "argv", ["fastSimulatorTest", str(flow)]), \
+                    mock.patch.object(fast_ui, "select_duo_toolchain"), \
                     mock.patch.object(fast_ui, "prepare_app", return_value=(None, False)), \
                     mock.patch.object(fast_ui, "command", side_effect=command), \
                     mock.patch.object(fast_ui, "apply_ui_settings"), \
@@ -1734,6 +1735,7 @@ class DuoTests(unittest.TestCase):
         tree = sim_tree("Demo", button("Ready"))
         with tempfile.TemporaryDirectory() as raw, \
                 mock.patch.object(fast_ui, "LOCK_DIR", Path(raw) / "locks"), \
+                mock.patch.object(fast_ui, "select_duo_toolchain"), \
                 mock.patch.object(fast_ui, "command", side_effect=fake_command), \
                 mock.patch.object(fast_ui, "ensure_device_hub"), \
                 mock.patch.object(fast_ui, "simulator_name", return_value="iPhone Duo"), \
@@ -1835,6 +1837,15 @@ class AxeErrorTests(unittest.TestCase):
     def test_explicit_baguette_overrides_managed_install(self) -> None:
         with mock.patch.dict(fast_ui.os.environ, {"FAST_IOS_BAGUETTE": "~/custom/baguette"}):
             self.assertEqual(fast_ui.baguette_executable(), str(Path("~/custom/baguette").expanduser()))
+
+    def test_missing_managed_baguette_uses_path_without_host_files(self) -> None:
+        with tempfile.TemporaryDirectory() as raw, mock.patch.dict(fast_ui.os.environ, {
+                "FAST_IOS_BAGUETTE_DIR": str(Path(raw) / "empty-managed"),
+                "FAST_IOS_BIN_DIR": str(Path(raw) / "empty-bin"),
+        }), mock.patch.object(fast_ui.shutil, "which", return_value=None) as which:
+            fast_ui.os.environ.pop("FAST_IOS_BAGUETTE", None)
+            self.assertEqual(fast_ui.baguette_executable(), "baguette")
+        which.assert_called_once_with("baguette")
 
     def test_automation_session_timeout_is_retried_once(self) -> None:
         timed_out = mock.Mock(returncode=1, stdout="", stderr="Error: Timed out creating the simulator remote automation session")
@@ -2061,6 +2072,84 @@ class SessionTests(unittest.TestCase):
 
 
 class DeviceLauncherTests(unittest.TestCase):
+    GOOD_DETAILS = {
+        "connectionProperties": {"pairingState": "paired", "tunnelState": "connected", "transportType": "wired"},
+        "deviceProperties": {"name": "tester’s iPhone", "osVersionNumber": "26.7.1",
+                             "developerModeStatus": "enabled", "ddiServicesAvailable": True},
+    }
+
+    def test_device_list_details_make_preflight_one_devicectl_call(self) -> None:
+        import fast_device
+        payload = {"result": {"devices": [{
+            "hardwareProperties": {"udid": "U", "reality": "physical", "platform": "iOS"},
+            **self.GOOD_DETAILS,
+        }]}}
+        calls: list[list[str]] = []
+
+        def fake_run(arguments, **_kwargs):
+            calls.append(arguments)
+            Path(arguments[arguments.index("--json-output") + 1]).write_text(json.dumps(payload))
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        with tempfile.TemporaryDirectory() as raw, mock.patch.object(fast_device, "CACHE_ROOT", Path(raw)), \
+                mock.patch.object(fast_device, "run", side_effect=fake_run), \
+                mock.patch.object(fast_device, "developer_dir_for", return_value="/Xcode"), \
+                mock.patch.object(fast_device, "signing_profile_lists_device", return_value=True):
+            device = fast_device.resolve_device("U")
+            fast_device.preflight_device(device)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][:4], ["xcrun", "devicectl", "list", "devices"])
+
+    def test_preflight_details_are_briefly_cached_per_udid(self) -> None:
+        import fast_device
+        device = {"udid": "U", "name": "tester", "os": "26.7.1", "connected": True}
+        with tempfile.TemporaryDirectory() as raw, mock.patch.object(fast_device, "CACHE_ROOT", Path(raw)), \
+                mock.patch.object(fast_device, "device_details", return_value=self.GOOD_DETAILS) as details:
+            self.assertEqual(fast_device.fast_device_details(device, now=100), self.GOOD_DETAILS)
+            self.assertEqual(fast_device.fast_device_details(device, now=101), self.GOOD_DETAILS)
+            self.assertEqual(fast_device.fast_device_details(device, now=104), self.GOOD_DETAILS)
+        self.assertEqual(details.call_count, 2)
+
+    def test_preflight_stops_at_each_readiness_gap_with_a_fix(self) -> None:
+        import fast_device
+        cases = (
+            ("connectionProperties", "pairingState", "unpaired", "not paired/trusted"),
+            ("connectionProperties", "tunnelState", "disconnected", "not connected"),
+            ("deviceProperties", "developerModeStatus", "disabled", "Developer Mode is off"),
+            ("deviceProperties", "ddiServicesAvailable", False, "developer disk image is not mounted"),
+        )
+        device = {"udid": "U", "name": "tester", "os": "26.7.1", "connected": True}
+        for section, key, value, message in cases:
+            details = json.loads(json.dumps(self.GOOD_DETAILS))
+            details[section][key] = value
+            with self.subTest(gap=key), mock.patch.object(fast_device, "fast_device_details", return_value=details), \
+                    self.assertRaisesRegex(fast_device.PreflightError, message):
+                fast_device.preflight_device(dict(device))
+        with mock.patch.object(fast_device, "fast_device_details", return_value=self.GOOD_DETAILS), \
+                mock.patch.object(fast_device, "developer_dir_for", side_effect=fast_device.FastDeviceError("SDKs: [26]")), \
+                self.assertRaisesRegex(fast_device.PreflightError, "install a matching Xcode"):
+            fast_device.preflight_device(dict(device))
+        with mock.patch.object(fast_device, "fast_device_details", return_value=self.GOOD_DETAILS), \
+                mock.patch.object(fast_device, "developer_dir_for", return_value="/Xcode"), \
+                mock.patch.object(fast_device, "signing_profile_lists_device", return_value=False), \
+                self.assertRaisesRegex(fast_device.PreflightError, "no development signing profile lists"):
+            fast_device.preflight_device(dict(device))
+
+    def test_runtime_log_failures_have_actionable_fixes(self) -> None:
+        import fast_device
+        cases = {
+            "Rejecting automation session connection because Automation Mode is not enabled": "Enable UI Automation",
+            "Application launch failed: Untrusted Developer": "VPN & Device Management",
+            "The device is busy: Preparing device support; Copying shared cache files": "retry later",
+            "The version of the OS on the device is newer than the version of Xcode": "set DEVELOPER_DIR",
+            "Developer Mode cannot be enabled because a passcode is required": "set a device passcode",
+            "Device disconnected while trying to start test session": "disconnected mid-run",
+            "Xcode cannot launch tests because the device is locked": "unlock it and run again",
+        }
+        for log, fix in cases.items():
+            with self.subTest(log=log):
+                self.assertIn(fix, fast_device.runtime_failure(log) or "")
+
     def test_save_dumps_writes_nodes_and_keeps_the_report_short(self) -> None:
         import fast_device
 
@@ -2092,6 +2181,7 @@ class DeviceLauncherTests(unittest.TestCase):
         import fast_device
         reply = {"status": "pass", "results": [], "labels": []}
         with mock.patch.object(fast_device, "resolve_device", return_value={"udid": "U", "name": "X"}), \
+                mock.patch.object(fast_device, "preflight_device"), \
                 mock.patch.object(fast_device, "start_server"), \
                 mock.patch.object(fast_device, "request", return_value=dict(reply)) as request, \
                 tempfile.TemporaryDirectory() as raw:
@@ -2101,6 +2191,7 @@ class DeviceLauncherTests(unittest.TestCase):
         # Off by default too: the runner settles on its own; `--idle-wait` turns XCTest's wait back on.
         self.assertIs(request.call_args_list[1].args[1]["wait_for_idle"], False)
         with mock.patch.object(fast_device, "resolve_device", return_value={"udid": "U", "name": "X"}), \
+                mock.patch.object(fast_device, "preflight_device"), \
                 mock.patch.object(fast_device, "start_server"), \
                 mock.patch.object(fast_device, "request", return_value=dict(reply)) as request, \
                 tempfile.TemporaryDirectory() as raw:
@@ -2111,6 +2202,7 @@ class DeviceLauncherTests(unittest.TestCase):
         import fast_device
         out = io.StringIO()
         with mock.patch.object(fast_device, "resolve_device", return_value={"udid": "U", "name": "X"}), \
+                mock.patch.object(fast_device, "preflight_device"), \
                 mock.patch.object(fast_device, "start_server") as start, \
                 mock.patch.object(fast_device, "request", return_value={"status": "pass"}) as request, \
                 mock.patch.object(fast_device, "release_runner") as release, contextlib.redirect_stdout(out):
@@ -2123,6 +2215,7 @@ class DeviceLauncherTests(unittest.TestCase):
     def test_lock_that_fails_still_frees_the_iphone(self) -> None:
         import fast_device
         with mock.patch.object(fast_device, "resolve_device", return_value={"udid": "U", "name": "X"}), \
+                mock.patch.object(fast_device, "preflight_device"), \
                 mock.patch.object(fast_device, "start_server"), \
                 mock.patch.object(fast_device, "request", return_value={"status": "fail", "error": "no pressLockButton"}), \
                 mock.patch.object(fast_device, "release_runner") as release:
@@ -2137,6 +2230,7 @@ class DeviceLauncherTests(unittest.TestCase):
         reply = reply or {"status": "pass", "results": [], "labels": []}
         out = io.StringIO()
         with mock.patch.object(fast_device, "resolve_device", return_value={"udid": "U", "name": "X"}), \
+                mock.patch.object(fast_device, "preflight_device"), \
                 mock.patch.object(fast_device, "start_server"), \
                 mock.patch.object(fast_device, "request", return_value=dict(reply)) as request, \
                 tempfile.TemporaryDirectory() as raw, contextlib.redirect_stdout(out):
@@ -2185,6 +2279,7 @@ class DeviceLauncherTests(unittest.TestCase):
             flow.write_text(json.dumps({"version": 1, "app": {"bundle_id": "com.example.app"}, "actions": []}))
             device = {"udid": "U0000000", "name": "X", "os": "26.0", "connected": True}
             with mock.patch.object(fast_device, "resolve_device", return_value=device), \
+                    mock.patch.object(fast_device, "preflight_device"), \
                     mock.patch.object(fast_device, "server_alive", return_value=True), \
                     mock.patch.object(fast_device, "request", return_value=dict(report)), \
                     contextlib.redirect_stdout(out):
@@ -2229,6 +2324,7 @@ class DeviceLauncherTests(unittest.TestCase):
             flow.write_text(json.dumps({"version": 1, "app": {"bundle_id": "com.example.app"}, "actions": []}))
             device = {"udid": "U0000000", "name": "X", "os": "26.0", "connected": True}
             with mock.patch.object(fast_device, "resolve_device", return_value=device), \
+                    mock.patch.object(fast_device, "preflight_device"), \
                     mock.patch.object(fast_device, "server_alive", return_value=True), \
                     mock.patch.object(fast_device, "request", return_value=dict(report)), \
                     mock.patch.object(fast_device, "record") as record, contextlib.redirect_stdout(out):
@@ -2272,6 +2368,20 @@ FlowRunner.swift:403: Expected failure in -[FastDeviceUITests.FlowRunner testSer
             log.write_text("FlowRunner.swift:398: error: -[FastDeviceUITests.FlowRunner testServe] : Requested adjust to value '7'\n")
             self.assertEqual(fast_device.runner_end_reason(log), "Requested adjust to value '7'")
             self.assertEqual(fast_device.runner_end_reason(Path(raw) / "missing.log"), "")
+
+    def test_request_timeout_uses_runtime_log_instead_of_a_traceback(self) -> None:
+        import fast_device
+        with tempfile.TemporaryDirectory() as raw:
+            log = Path(raw) / "server.log"
+            log.write_text("Rejecting automation session because Automation Mode is not enabled")
+            state = Path(raw) / "state.json"
+            state.write_text(json.dumps({"pid": 1, "address": "::1", "port": 1, "log": str(log)}))
+            connection = mock.MagicMock()
+            connection.__enter__.return_value.recv.side_effect = TimeoutError
+            with mock.patch.object(fast_device, "server_state_path", return_value=state), \
+                    mock.patch.object(fast_device.socket, "create_connection", return_value=connection):
+                with self.assertRaisesRegex(fast_device.FastDeviceError, "Enable UI Automation"):
+                    fast_device.request("U", {"op": "flow"}, 12)
 
     def test_a_serving_iphone_resolves_without_devicectl(self) -> None:
         import fast_device
@@ -2353,7 +2463,7 @@ FlowRunner.swift:403: Expected failure in -[FastDeviceUITests.FlowRunner testSer
                     mock.patch.object(fast_device, "kill_runners") as kill, \
                     mock.patch.object(fast_device.time, "sleep"):
                 started = time.perf_counter()
-                with self.assertRaisesRegex(fast_device.FastDeviceError, "tester’s iPhone is locked: unlock it"):
+                with self.assertRaisesRegex(fast_device.FastDeviceError, "iPhone is locked: unlock it"):
                     fast_device.start_server(device, rebuild=False)
                 self.assertLess(time.perf_counter() - started, 5)
             kill.assert_called_once_with("U")
@@ -2367,6 +2477,7 @@ FlowRunner.swift:403: Expected failure in -[FastDeviceUITests.FlowRunner testSer
             flow.write_text(json.dumps({"version": 1, "app": {"bundle_id": "com.example.app"}, "actions": []}))
             device = {"udid": "U0000000", "name": "X", "os": "26.0", "connected": True}
             with mock.patch.object(fast_device, "resolve_device", return_value=device), \
+                    mock.patch.object(fast_device, "preflight_device"), \
                     mock.patch.object(fast_device, "start_server") as start, \
                     mock.patch.object(fast_device, "server_alive", side_effect=lambda udid: start.called), \
                     mock.patch.object(fast_device, "request", return_value=dict(report)), \

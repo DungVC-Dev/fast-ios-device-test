@@ -360,6 +360,7 @@ class EngineTests(Base):
         device = {"udid": "U0000000", "name": "Test iPhone", "os": "26.0", "connected": True}
         out = io.StringIO()
         with mock.patch.object(fast_device, "resolve_device", return_value=device), \
+                mock.patch.object(fast_device, "preflight_device"), \
                 mock.patch.object(fast_device, "server_alive", return_value=True), \
                 mock.patch.object(fast_device, "request", return_value=dict(report)), \
                 mock.patch.object(fast_device, "record"), contextlib.redirect_stdout(out), \

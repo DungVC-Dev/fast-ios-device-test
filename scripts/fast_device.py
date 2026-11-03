@@ -37,10 +37,15 @@ PROFILE_DIRS = [
 ]
 TEST_TARGET = "FastDeviceUITests"
 TEST_ID = f"{TEST_TARGET}/FlowRunner/testFlow"
+PREFLIGHT_CACHE_SECONDS = 3.0
 
 
 class FastDeviceError(RuntimeError):
     pass
+
+
+class PreflightError(FastDeviceError):
+    """A readiness failure that must remain the command's only output line."""
 
 
 def run(args: list[str], env: dict[str, str] | None = None, check: bool = True, **kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -67,6 +72,12 @@ def physical_devices() -> list[dict[str, Any]]:
             "name": device["deviceProperties"].get("name"),
             "os": device["deviceProperties"].get("osVersionNumber") or "0",
             "connected": device["connectionProperties"].get("tunnelState") == "connected",
+            # `list devices` already carries the same readiness fields as `device info details`.
+            # Reusing them keeps a normal run to one preflight devicectl call.
+            "details": {
+                "connectionProperties": device.get("connectionProperties", {}),
+                "deviceProperties": device.get("deviceProperties", {}),
+            },
         }
         for device in devices
         if device["hardwareProperties"].get("reality") == "physical"
@@ -127,6 +138,96 @@ def device_details(udid: str) -> dict[str, Any]:
         return json.loads(Path(output.name).read_text()).get("result", {})
 
 
+def preflight_cache_path(udid: str) -> Path:
+    return CACHE_ROOT / f"preflight-{re.sub(r'[^A-Za-z0-9._-]', '_', udid)}.json"
+
+
+def fast_device_details(device: dict[str, Any], now: float | None = None) -> dict[str, Any]:
+    """Read readiness once, sharing a very short cache across consecutive CLI invocations."""
+    current = time.time() if now is None else now
+    embedded = device.get("details")
+    path = preflight_cache_path(str(device["udid"]))
+    if isinstance(embedded, dict) and embedded:
+        details = embedded
+    else:
+        try:
+            cached = json.loads(path.read_text())
+            if current - float(cached["checked_at"]) <= PREFLIGHT_CACHE_SECONDS:
+                return cached["details"]
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+        details = device_details(str(device["udid"]))
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"checked_at": current, "details": details}))
+    except OSError:
+        pass
+    return details
+
+
+def readiness_checks(details: dict[str, Any]) -> tuple[tuple[str, bool, str], ...]:
+    connection = details.get("connectionProperties", {})
+    properties = details.get("deviceProperties", {})
+    return (
+        ("paired", connection.get("pairingState") == "paired",
+         "unlock the iPhone, tap Trust for this Mac, or pair it in Xcode › Window › Devices and Simulators"),
+        ("connected", connection.get("tunnelState") == "connected",
+         "plug the iPhone in (or join this Mac's Wi-Fi) and unlock it"),
+        ("developer-mode", properties.get("developerModeStatus") == "enabled",
+         "Settings › Privacy & Security › Developer Mode on, then restart the iPhone"),
+        ("ddi", properties.get("ddiServicesAvailable") is True,
+         "open Xcode with the iPhone connected and unlocked once, so it mounts the developer disk image"),
+    )
+
+
+def signing_profile_lists_device(udid: str) -> bool:
+    """Cheap signing gate: the full `check`/runner selection still validates identity and bundle id."""
+    now = datetime.now(timezone.utc)
+    for directory in PROFILE_DIRS:
+        for path in directory.glob("*.mobileprovision"):
+            profile = decode_profile(path)
+            if not profile or udid not in profile.get("ProvisionedDevices", []):
+                continue
+            expiry = profile.get("ExpirationDate")
+            if expiry and expiry.replace(tzinfo=timezone.utc) < now:
+                continue
+            if profile.get("Entitlements", {}).get("get-task-allow"):
+                return True
+    return False
+
+
+def preflight_device(device: dict[str, Any]) -> None:
+    """Fast fail before a flow, `do`, `serve`, or `lock`; `check` remains the full report."""
+    try:
+        details = fast_device_details(device)
+    except FastDeviceError as error:
+        raise PreflightError(f"device details unavailable: keep the iPhone unlocked and connected ({error})") from error
+    labels = {
+        "paired": "iPhone is not paired/trusted",
+        "connected": "iPhone is not connected",
+        "developer-mode": "Developer Mode is off",
+        "ddi": "developer disk image is not mounted",
+    }
+    for key, ok, fix in readiness_checks(details):
+        if not ok:
+            raise PreflightError(f"{labels[key]}: {fix}")
+    properties = details.get("deviceProperties", {})
+    os_version = str(properties.get("osVersionNumber") or device.get("os", ""))
+    device["os"] = os_version
+    device["connected"] = True
+    try:
+        device["developer_dir"] = developer_dir_for(os_version)
+    except FastDeviceError as error:
+        raise PreflightError(
+            f"Xcode cannot handle iOS {os_version}: install a matching Xcode or set FAST_DEVICE_DEVELOPER_DIR ({error})"
+        ) from error
+    if not signing_profile_lists_device(str(device["udid"])):
+        raise PreflightError(
+            "no development signing profile lists this iPhone: sign in to Xcode (Settings › Accounts) "
+            "and run an app on this iPhone once"
+        )
+
+
 def check_device(device: dict[str, Any]) -> int:
     """`fastDeviceTest check`: what this iPhone needs before a run, each gap with its fix."""
     udid, missing, fixes = device["udid"], [], []
@@ -137,19 +238,8 @@ def check_device(device: dict[str, Any]) -> int:
         missing.append("details")
         fixes.append(f"details: {error}")
     connection = details.get("connectionProperties", {})
-    properties = details.get("deviceProperties", {})
     print(f"device={device['name']} udid={udid} ios={device.get('os')} transport={connection.get('transportType', '?')}")
-    checks = (
-        ("paired", connection.get("pairingState") == "paired",
-         "unlock the iPhone, tap Trust for this Mac, or pair it in Xcode › Window › Devices and Simulators"),
-        ("connected", connection.get("tunnelState") == "connected",
-         "plug the iPhone in (or join this Mac's Wi-Fi) and unlock it"),
-        ("developer-mode", properties.get("developerModeStatus") == "enabled",
-         "Settings › Privacy & Security › Developer Mode on, then restart the iPhone"),
-        ("ddi", properties.get("ddiServicesAvailable") is True,
-         "open Xcode with the iPhone connected and unlocked once, so it mounts the developer disk image"),
-    )
-    for name, ok, fix in checks:
+    for name, ok, fix in readiness_checks(details):
         print(f"{name.replace('-', '_')}={'yes' if ok and name != 'developer-mode' else 'enabled' if ok else 'no'}")
         if not ok:
             missing.append(name)
@@ -518,18 +608,33 @@ def request(udid: str, payload: dict[str, Any], timeout: float) -> dict[str, Any
     if not state_path.exists():
         raise FastDeviceError("server not running")
     state = json.loads(state_path.read_text())
-    with socket.create_connection((state["address"], state["port"]), timeout=timeout) as connection:
-        connection.sendall((json.dumps(payload) + "\n").encode())
-        chunks = []
-        while True:
-            chunk = connection.recv(1 << 20)
-            if not chunk:
-                break
-            chunks.append(chunk)
-            if chunk.endswith(b"\n"):
-                break
+    try:
+        with socket.create_connection((state["address"], state["port"]), timeout=timeout) as connection:
+            connection.sendall((json.dumps(payload) + "\n").encode())
+            chunks = []
+            while True:
+                chunk = connection.recv(1 << 20)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                if chunk.endswith(b"\n"):
+                    break
+    except TimeoutError as error:
+        log_path = Path(state.get("log", ""))
+        try:
+            failure = runtime_failure(log_path.read_text(errors="replace"))
+        except OSError:
+            failure = None
+        raise FastDeviceError(
+            failure or f"runner request timed out after {timeout:.0f}s: keep the iPhone unlocked and connected, then retry"
+        ) from error
     if not chunks:
-        reason = runner_end_reason(Path(state.get("log", "")))
+        log_path = Path(state.get("log", ""))
+        reason = runner_end_reason(log_path)
+        try:
+            failure = runtime_failure(log_path.read_text(errors="replace"))
+        except OSError:
+            failure = None
         # This request's runner is gone (it answers every request it reads to the end); its
         # xcodebuild lingers collecting diagnostics and would make the next request find the
         # iPhone busy. Ended by the pattern `stop` uses, never by a pid that may be reused, and
@@ -540,6 +645,8 @@ def request(udid: str, payload: dict[str, Any], timeout: float) -> dict[str, Any
                 state_path.unlink()
         except (OSError, ValueError):
             pass
+        if failure:
+            raise FastDeviceError(failure)
         raise FastDeviceError(
             "the runner ended without a reply" + (f": {reason}" if reason else "")
             + "; the next request starts it again"
@@ -564,6 +671,47 @@ def runner_end_reason(log: Path) -> str:
     return ""
 
 
+def runtime_failure(text: str) -> str | None:
+    """Turn stable Xcode/XCTest log markers into one actionable error.
+
+    The Automation Mode, shared-cache, OS/Xcode and disconnect phrases come from the
+    XCTestCore/DVTDeviceFoundation binaries shipped in Xcode 26.6 and 27.1. Trust and
+    passcode wording varies by iOS release, so those match stable keyword pairs.
+    """
+    lower = text.lower()
+    if "because the device is locked" in lower or "unlock " in lower and " to continue" in lower:
+        return "iPhone is locked: unlock it and run again (a longer Auto-Lock on a test phone helps)"
+    if any(marker in lower for marker in (
+        "automation mode is not enabled", "enable ui automation", "ui automation is disabled",
+    )):
+        return "UI Automation is disabled: Enable UI Automation — Settings › Developer › Enable UI Automation"
+    if any(marker in lower for marker in (
+        "untrusted developer", "is not trusted on this device", "profile has not been explicitly trusted",
+        "certificate not trusted",
+    )):
+        return (
+            "developer profile is not trusted: Settings › General › VPN & Device Management › "
+            "trust the developer"
+        )
+    if "developer mode" in lower and "passcode" in lower:
+        return "Developer Mode requires a passcode: set a device passcode, enable Developer Mode, then retry"
+    if any(marker in lower for marker in (
+        "version of the os on the device is newer than the version of xcode",
+        "device support files could not be located", "could not locate device support files",
+    )) or ("xcode" in lower and "does not support" in lower and "ios" in lower):
+        return "iOS is newer than the selected Xcode: install a matching Xcode or set DEVELOPER_DIR"
+    if any(marker in lower for marker in (
+        "copying shared cache", "device is busy", "preparing device support", "preparing the device",
+    )):
+        return "device is busy preparing or copying the shared cache: wait, keep it unlocked and connected; retry later"
+    if any(marker in lower for marker in (
+        "device disconnected", "device was disconnected", "device is no longer connected",
+        "lost connection to the device", "kdevicedisconnectederror",
+    )):
+        return "iPhone disconnected mid-run: reconnect it, keep it unlocked, and retry"
+    return None
+
+
 def server_alive(udid: str) -> bool:
     try:
         return request(udid, {"op": "ping"}, timeout=3).get("pong") is True
@@ -579,7 +727,7 @@ def remember_device(udid: str, device: dict[str, Any]) -> None:
         state = json.loads(path.read_text())
     except (OSError, ValueError):
         return
-    known = {key: value for key, value in device.items() if key != "serving"}
+    known = {key: value for key, value in device.items() if key not in {"serving", "details", "developer_dir"}}
     if state.get("device") != known:
         path.write_text(json.dumps({**state, "device": known}))
 
@@ -598,7 +746,7 @@ def start_server(device: dict[str, Any], rebuild: bool) -> None:
             f"{device['name']} is busy: another runner holds it (maybe another agent). "
             "Reuse it, or `fastDeviceTest stop` only if it is yours"
         )
-    developer_dir = developer_dir_for(device["os"])
+    developer_dir = str(device.get("developer_dir") or developer_dir_for(device["os"]))
     xctestrun = build_runner(developer_dir, pick_signing(udid), rebuild)
     serve_xctestrun = xctestrun.with_name(f"serve-{udid}.xctestrun")
     shutil.copy(xctestrun, serve_xctestrun)
@@ -616,21 +764,21 @@ def start_server(device: dict[str, Any], rebuild: bool) -> None:
     )
     server_state_path(udid).write_text(json.dumps({
         "pid": process.pid, "address": tunnel_address(udid), "port": SERVER_PORT, "log": str(log),
-        "device": {key: value for key, value in device.items() if key != "serving"},
+        "device": {key: value for key, value in device.items() if key not in {"serving", "details", "developer_dir"}},
     }))
     deadline = time.perf_counter() + 120
     while time.perf_counter() < deadline:
+        log_text = log.read_text(errors="replace")
+        failure = runtime_failure(log_text)
+        if failure:
+            end_runner(udid)
+            raise FastDeviceError(failure)
         if process.poll() is not None:
-            tail = " | ".join(log.read_text(errors="replace").strip().splitlines()[-6:])
+            tail = " | ".join(log_text.strip().splitlines()[-6:])
             server_state_path(udid).unlink(missing_ok=True)
             raise FastDeviceError(f"runner exited before serving: {tail}")
         if server_alive(udid):
             return
-        # A locked iPhone makes xcodebuild wait for the passcode for as long as it takes.
-        if "because the device is locked" in log.read_text(errors="replace"):
-            end_runner(udid)
-            raise FastDeviceError(f"{device['name']} is locked: unlock it and run again "
-                                  "(a longer Auto-Lock on a test phone helps)")
         time.sleep(1)
     end_runner(udid)
     raise FastDeviceError(f"runner did not answer on port {SERVER_PORT} within 120s; log {log}")
@@ -788,8 +936,7 @@ def run_flow(args: argparse.Namespace) -> int:
     content_size = args.content_size or setup.get("content_size")
     name = variant_name(spec.get("name") or flow_path.stem, args.appearance, args.content_size)
     device = resolve_device(args.device or app.get("device"))
-    if not device["connected"]:
-        raise FastDeviceError(f"{device['name']} is not connected; unlock it and plug it in or join the same Wi-Fi")
+    preflight_device(device)
     if args.install or app.get("install_path"):
         install_app(device["udid"], str(Path(args.install or app["install_path"]).expanduser()))
     # A flow starts or reuses the persistent runner (~5 s once, then 4–6 s a flow instead of
@@ -863,7 +1010,7 @@ def run_flow(args: argparse.Namespace) -> int:
 def run_one_shot(
     device: dict[str, Any], prepared: dict[str, Any], artifacts: Path, rebuild: bool, record: bool = False
 ) -> dict[str, Any]:
-    developer_dir = developer_dir_for(device["os"])
+    developer_dir = str(device.get("developer_dir") or developer_dir_for(device["os"]))
     signing = pick_signing(device["udid"])
     xctestrun = build_runner(developer_dir, signing, rebuild)
     encoded = base64.b64encode(json.dumps(prepared).encode()).decode()
@@ -883,7 +1030,11 @@ def run_one_shot(
         env={**os.environ, "DEVELOPER_DIR": developer_dir}, check=False,
     )
     run_xctestrun.unlink(missing_ok=True)
-    (artifacts / "xcodebuild.log").write_text(test.stdout + test.stderr)
+    log_text = test.stdout + test.stderr
+    (artifacts / "xcodebuild.log").write_text(log_text)
+    failure = runtime_failure(log_text)
+    if failure:
+        raise FastDeviceError(failure)
     export_attachments(result_bundle, artifacts, developer_dir)
     result_file = next(artifacts.glob("zz_result.*"), None)
     if result_file:
@@ -934,6 +1085,8 @@ def run_command(argv: list[str]) -> int:
     udid = device["udid"]
     if argv[0] == "check":
         return check_device(device)
+    if argv[0] in {"serve", "lock", "do"}:
+        preflight_device(device)
     if argv[0] == "serve":
         start_server(device, args.rebuild_runner)
         state = json.loads(server_state_path(udid).read_text())
@@ -991,10 +1144,16 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    show_notice = True
     try:
         raise SystemExit(main())
+    except PreflightError as error:
+        show_notice = False
+        print(f"FAIL error={error}", file=sys.stderr)
+        raise SystemExit(1)
     except FastDeviceError as error:
         print(f"FAIL error={error}", file=sys.stderr)
         raise SystemExit(1)
     finally:
-        print_notice()
+        if show_notice:
+            print_notice()
