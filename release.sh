@@ -46,8 +46,15 @@ log = pathlib.Path("CHANGELOG.md")
 log.write_text(log.read_text().replace("## Unreleased", f"## {version} — {datetime.date.today()}", 1))
 EOF
 
-(cd scripts && python3 -m unittest test_fast_ui test_fast_carplay test_fast_media test_fast_ui_map test_fast_guard test_fast_ui_clean test_install test_fast_update test_xcode_skills test_package_marketplaces >/dev/null 2>&1) \
-    || { git checkout -- package.json plugin.json .claude-plugin/plugin.json .antigravity-plugin/plugin.json gemini-extension.json CHANGELOG.md; echo "error: tests fail (cd scripts && python3 -m unittest …); nothing released"; exit 1; }
+if test_output="$(cd scripts && python3 -m unittest discover -p 'test_*.py' 2>&1)"; then
+    tests_run="$(printf '%s\n' "$test_output" | sed -n 's/^Ran \([0-9][0-9]*\) tests.*/\1/p' | tail -1)"
+    echo "tests: ${tests_run:-unknown} passed"
+else
+    git checkout -- package.json plugin.json .claude-plugin/plugin.json .antigravity-plugin/plugin.json gemini-extension.json CHANGELOG.md
+    printf '%s\n' "$test_output"
+    echo "error: tests fail (cd scripts && python3 -m unittest discover -p 'test_*.py'); nothing released"
+    exit 1
+fi
 
 git commit -qam "release $version"
 git tag "v$version"

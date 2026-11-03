@@ -4,9 +4,9 @@
 # `install.sh --link`  links this folder in place instead of copying (for editing).
 # `--install-tools` installs the pinned AXe + baguette; per-tool install/update flags are also
 # available. `--uninstall` removes what install.sh put in place.
-# Codex and Antigravity skill links (README, "Development install") are never created here, but
-# one left dangling (its clone moved or deleted) is re-pointed at this copy: a dead link hides
-# the bundled skills from that agent while the launchers still work.
+# Codex and Antigravity skill links (README, "Development install") are never created here.
+# Dangling links and links into another copy of this tool are re-pointed; working foreign links
+# are preserved because another checkout or company skill repository owns them.
 # `install.sh --check` prints versions and what is missing or broken, and changes nothing;
 # `install.sh --check --device <name|udid>` also checks that iPhone (fastDeviceTest check).
 # Safe to re-run; re-running from a newer shared folder upgrades in place.
@@ -67,6 +67,36 @@ link_target() {
     printf '%s\n' "$target"
 }
 
+# Print the root of the fast-ios-device-test copy containing a link target. A checkout, linked
+# development tree and installed copy all have scripts/fast_ui.py at their root.
+tool_root_for_target() {
+    local target="$1" cursor
+    if [[ -d "$target" ]]; then
+        cursor="$(cd "$target" 2>/dev/null && pwd -P)" || return 1
+    elif [[ -e "$target" ]]; then
+        cursor="$(cd "$(dirname "$target")" 2>/dev/null && echo "$(pwd -P)/$(basename "$target")")" \
+            || return 1
+        cursor="$(dirname "$cursor")"
+    else
+        return 1
+    fi
+    while [[ "$cursor" != "/" && -n "$cursor" ]]; do
+        if [[ -f "$cursor/scripts/fast_ui.py" ]]; then
+            printf '%s\n' "$cursor"
+            return 0
+        fi
+        cursor="$(dirname "$cursor")"
+    done
+    return 1
+}
+
+link_points_to_tool() {
+    local target
+    [[ -L "$1" ]] || return 1
+    target="$(link_target "$1")"
+    tool_root_for_target "$target" >/dev/null
+}
+
 # True when a plugin folder holds the main skill (not only the setup skill).
 plugin_has_skill() {
     [[ -n "$(find "$1" -path "*/skills/$2/SKILL.md" 2>/dev/null | head -1)" ]]
@@ -99,28 +129,23 @@ if [[ "$MODE" == "xcode-skills" ]]; then
 fi
 
 if [[ "$MODE" == "uninstall" ]]; then
-    # Only links that point at a copy of this tool (any folder holding scripts/fast_ui.py
-    # or the skill): a file the user put there, or a link elsewhere, stays.
+    # Only links whose target lives in a verified copy of this tool are ours to remove.
     for path in "${LINKS[@]}"; do
         [[ -L "$path" ]] || continue
-        target="$(readlink "$path")"
-        case "$target" in
-        */scripts/fast_*.py | */skills/fast-ios-device-test | */skills/iphone-duo-swiftui | */commands/fast*.md | */agents/ui-explorer.md)
-            rm "$path"; echo "removed: $path" ;;
-        *) echo "kept: $path (points at $target)" ;;
-        esac
+        if link_points_to_tool "$path"; then
+            rm "$path"; echo "removed: $path"
+        else
+            echo "kept: $path (points at $(readlink "$path"); managed elsewhere)"
+        fi
     done
-    # A Codex/Antigravity link into the copy deleted below would be left dangling; one already
-    # dangling serves nothing. A link to a clone that still exists stays.
-    install_real="$(cd "$INSTALL_DIR" 2>/dev/null && pwd -P || echo "$INSTALL_DIR")"
+    # Codex/Antigravity links follow the same ownership rule as Claude links.
     for entry in "${OTHER_SKILL_LINKS[@]}"; do
         path="${entry##*:}"
         [[ -L "$path" ]] || continue
-        target="$(link_target "$path")"
-        target_real="$(cd "$(dirname "$target")" 2>/dev/null && echo "$(pwd -P)/$(basename "$target")" || echo "$target")"
-        if [[ ! -e "$path" || "$target_real" == "$install_real" || "$target_real" == "$install_real/"* \
-              || "$target" == "$INSTALL_DIR" || "$target" == "$INSTALL_DIR/"* ]]; then
+        if link_points_to_tool "$path"; then
             rm "$path"; echo "removed: $path"
+        else
+            echo "kept: $path (points at $(readlink "$path"); managed elsewhere)"
         fi
     done
     # Project-managed tools only when their wrappers are the ones install.sh wrote.
@@ -185,13 +210,14 @@ if [[ "$MODE" == "check" ]]; then
     need_link() {
         if [[ ! -L "$1" ]]; then missing+=("$2")
         elif [[ ! -e "$1" ]]; then echo "  broken link: $1 -> $(readlink "$1")"; missing+=("$2 (broken link)")
+        elif [[ "${3:-}" == "show" ]]; then echo "$2=$1 -> $(readlink "$1")"
         fi
     }
     for name in fastSimulatorTest fastDeviceTest fastCarPlayTest fastUIReview fastUIReport fastEvidenceSheet fastUIMap fastUIClean; do
         need_link "$BIN_DIR/$name" "$name launcher"
     done
-    need_link "$SKILLS_DIR/fast-ios-device-test" skill
-    need_link "$SKILLS_DIR/iphone-duo-swiftui" "iphone-duo-swiftui skill"
+    need_link "$SKILLS_DIR/fast-ios-device-test" skill show
+    need_link "$SKILLS_DIR/iphone-duo-swiftui" "iphone-duo-swiftui skill" show
     need_link "$AGENTS_DIR/ui-explorer.md" "ui-explorer agent"
     # Codex and Antigravity are optional; a broken install of either is not.
     for entry in "${OTHER_SKILL_LINKS[@]}"; do
@@ -258,6 +284,10 @@ link() {
         echo "skip: $path exists and is not a symlink (remove it to let install.sh manage it)"
         return
     fi
+    if [[ -L "$path" && -e "$path" ]] && ! link_points_to_tool "$path"; then
+        echo "keep: $path -> $(readlink "$path") (managed elsewhere)"
+        return
+    fi
     ln -sfn "$target" "$path"
     echo "link: $path -> $target"
 }
@@ -286,9 +316,8 @@ link "$HERE/scripts/fast_ui_map.py" "$BIN_DIR/fastUIMap"
 link "$HERE/scripts/fast_ui_clean.py" "$BIN_DIR/fastUIClean"
 for entry in "${OTHER_SKILL_LINKS[@]}"; do
     rest="${entry#*:}"; skill="${rest%%:*}"; path="${rest#*:}"
-    # Only a dangling link (its name says it is this skill): a working one may be a clone the
-    # user links on purpose.
-    [[ -L "$path" && ! -e "$path" ]] || continue
+    # Do not create optional links, but repair dangling/owned ones and preserve foreign ones.
+    [[ -L "$path" ]] || continue
     link "$HERE/skills/$skill" "$path"
 done
 chmod +x "$HERE/scripts/fast_ui.py" "$HERE/scripts/fast_ui_report.py" "$HERE/scripts/fast_ui_review.py" "$HERE/scripts/fast_device.py" "$HERE/scripts/fast_carplay.py" \

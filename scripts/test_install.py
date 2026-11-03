@@ -69,6 +69,16 @@ class InstallCheckTests(unittest.TestCase):
         if include_baguette:
             self.fake_tool("baguette")
 
+    def tool_copy(self, name="old-tool"):
+        root = self.home / name
+        (root / "scripts").mkdir(parents=True)
+        (root / "scripts" / "fast_ui.py").write_text("# fixture\n")
+        for skill in ("fast-ios-device-test", "iphone-duo-swiftui"):
+            path = root / "skills" / skill
+            path.mkdir(parents=True)
+            (path / "SKILL.md").write_text(f"---\nname: {skill}\n---\n")
+        return root
+
     def run_install(self, *args):
         result = subprocess.run(["bash", str(REPO / "install.sh"), *args], env=self.env,
                                 capture_output=True, text=True, timeout=300)
@@ -305,6 +315,45 @@ class InstallCheckTests(unittest.TestCase):
             REPO / "skills" / "iphone-duo-swiftui",
         )
 
+    @unittest.skipUnless(shutil.which("xcodebuild"), "install needs Xcode")
+    def test_link_install_keeps_foreign_skill_links_and_check_reports_them(self):
+        self.link_everything()
+        foreign = self.home / "company-ios-skills" / "iphone-duo-swiftui"
+        foreign.mkdir(parents=True)
+        (foreign / "SKILL.md").write_text("---\nname: iphone-duo-swiftui\n---\n")
+        links = [
+            self.dirs["skills"] / "iphone-duo-swiftui",
+            self.dirs["codex"] / "iphone-duo-swiftui",
+            self.dirs["antigravity"] / "iphone-duo-swiftui",
+        ]
+        links[0].unlink()
+        for path in links:
+            path.symlink_to(foreign)
+        self.env["PATH"] = f"{self.dirs['bin']}:{os.environ.get('PATH', '')}"
+        code, out = self.run_install("--link")
+        self.assertEqual(code, 0, out)
+        for path in links:
+            self.assertEqual(Path(os.readlink(path)), foreign)
+            self.assertIn(f"keep: {path} -> {foreign} (managed elsewhere)", out)
+        self.fake_tool("axe")
+        code, out = self.run_install("--check")
+        self.assertEqual(code, 0, out)
+        self.assertIn(f"iphone-duo-swiftui skill={links[0]} -> {foreign}", out)
+
+    @unittest.skipUnless(shutil.which("xcodebuild"), "install needs Xcode")
+    def test_link_install_replaces_owned_link_and_repairs_dangling_link(self):
+        old = self.tool_copy()
+        duo = self.dirs["skills"] / "iphone-duo-swiftui"
+        duo.symlink_to(old / "skills" / "iphone-duo-swiftui")
+        command = self.dirs["commands"] / "fastSimulatorTest.md"
+        command.symlink_to(old / "commands" / "fastSimulatorTest.md")
+        # The missing command target is dangling and should be repaired independently of ownership.
+        self.env["PATH"] = f"{self.dirs['bin']}:{os.environ.get('PATH', '')}"
+        code, out = self.run_install("--link")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(Path(os.readlink(duo)), REPO / "skills" / "iphone-duo-swiftui")
+        self.assertEqual(Path(os.readlink(command)), REPO / "commands" / "fastSimulatorTest.md")
+
     def test_xcode_skill_export_uses_managed_agent_destinations_and_check_is_informational(self):
         app = self.home / "Xcode 27.1.app"
         resources = app / "Contents/PlugIns/IDEIntelligenceChat.framework/Versions/A/Resources"
@@ -368,9 +417,8 @@ class InstallCheckTests(unittest.TestCase):
         self.assertEqual((share / "keep.txt").read_text(), "mine")
 
     def test_uninstall_removes_a_relative_link_into_the_copy(self):
-        skill = self.home / "share" / "skills" / "fast-ios-device-test"
-        skill.mkdir(parents=True)
-        (skill / "SKILL.md").write_text("x")
+        share = self.tool_copy("share")
+        skill = share / "skills" / "fast-ios-device-test"
         (self.home / "share" / "install.sh").write_text("")
         codex = self.dirs["codex"] / "fast-ios-device-test"
         codex.symlink_to(Path("..") / "share" / "skills" / "fast-ios-device-test")
@@ -380,25 +428,30 @@ class InstallCheckTests(unittest.TestCase):
         self.assertFalse(codex.is_symlink())
 
     def test_uninstall_removes_a_link_to_the_copy_itself(self):
-        share = self.home / "share"
-        share.mkdir()
+        share = self.tool_copy("share")
         (share / "install.sh").write_text("")
-        (share / "SKILL.md").write_text("x")
         codex = self.dirs["codex"] / "fast-ios-device-test"
         codex.symlink_to(share)
         code, out = self.run_install("--uninstall")
         self.assertEqual(code, 0, out)
         self.assertFalse(codex.is_symlink())
 
-    def test_uninstall_removes_a_dangling_codex_link_and_keeps_a_working_clone_link(self):
+    def test_uninstall_keeps_foreign_and_dangling_links_but_removes_owned_links(self):
         codex = self.dirs["codex"] / "fast-ios-device-test"
         codex.symlink_to(self.home / "share" / "skills" / "fast-ios-device-test")
-        antigravity = self.dirs["antigravity"] / "fast-ios-device-test"
-        antigravity.symlink_to(REPO / "skills" / "fast-ios-device-test")
+        foreign = self.home / "company-ios-skills" / "iphone-duo-swiftui"
+        foreign.mkdir(parents=True)
+        (foreign / "SKILL.md").write_text("x")
+        duo = self.dirs["skills"] / "iphone-duo-swiftui"
+        duo.symlink_to(foreign)
+        owned = self.dirs["antigravity"] / "fast-ios-device-test"
+        owned.symlink_to(REPO / "skills" / "fast-ios-device-test")
         code, out = self.run_install("--uninstall")
         self.assertEqual(code, 0, out)
-        self.assertFalse(codex.is_symlink())
-        self.assertTrue(antigravity.is_symlink())
+        self.assertTrue(codex.is_symlink())
+        self.assertTrue(duo.is_symlink())
+        self.assertFalse(owned.is_symlink())
+        self.assertIn("managed elsewhere", out)
 
 
 if __name__ == "__main__":
