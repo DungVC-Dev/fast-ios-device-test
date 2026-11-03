@@ -12,11 +12,25 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import fast_evidence as evidence  # noqa: E402
-import fast_evidence_sheet as sheet  # noqa: E402
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
 
-from PIL import Image  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+if Image is not None:
+    import fast_evidence as evidence  # noqa: E402
+    import fast_evidence_sheet as sheet  # noqa: E402
+
+
+def load_tests(loader, tests, pattern):
+    if Image is not None:
+        return tests
+    return unittest.TestSuite([unittest.FunctionTestCase(_skip_without_pillow)])
+
+
+def _skip_without_pillow():
+    raise unittest.SkipTest("Pillow is optional; evidence image tests are skipped")
 
 FLOW = {"version": 1, "name": "gating-off", "expect": "no paywall on reopen",
         "actions": [{"type": "launch"}, {"type": "wait", "label": "Home"}, {"type": "screenshot", "name": "main.png"}]}

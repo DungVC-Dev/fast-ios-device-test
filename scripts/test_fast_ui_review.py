@@ -10,10 +10,24 @@ import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import fast_ui_review as review  # noqa: E402
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
 
-from PIL import Image  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+if Image is not None:
+    import fast_ui_review as review  # noqa: E402
+
+
+def load_tests(loader, tests, pattern):
+    if Image is not None:
+        return tests
+    return unittest.TestSuite([unittest.FunctionTestCase(_skip_without_pillow)])
+
+
+def _skip_without_pillow():
+    raise unittest.SkipTest("Pillow is optional; UI review image tests are skipped")
 
 
 def frame(path: Path, color: tuple[int, int, int]) -> Path:

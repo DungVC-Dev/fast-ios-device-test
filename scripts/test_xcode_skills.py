@@ -30,6 +30,12 @@ class XcodeSkillExportTests(unittest.TestCase):
         (resources / f"{skill}-ref-idiom-task.md.packaged").write_text("# Fake reference\n")
         return app
 
+    def add_liquid_glass_docs(self, app):
+        docs = app / xcode_skills.RESOURCE_SUFFIX / "AdditionalDocumentation"
+        docs.mkdir()
+        for name in xcode_skills.LIQUID_GLASS_DOCS:
+            (docs / name).write_text(f"# Apple fixture: {name}\n")
+
     def test_export_rewrites_name_and_copies_references(self):
         app = self.fake_xcode()
         output = xcode_skills.render_skill(app, "app-resizability", self.destination)
@@ -81,6 +87,41 @@ class XcodeSkillExportTests(unittest.TestCase):
     def test_default_destination_respects_claude_override(self):
         with mock.patch.dict(os.environ, {"CLAUDE_SKILLS_DIR": str(self.destination)}):
             self.assertEqual(xcode_skills.default_destination(), self.destination)
+
+    def test_liquid_glass_docs_export_as_local_skill(self):
+        app = self.fake_xcode()
+        self.add_liquid_glass_docs(app)
+        output = xcode_skills.render_docs(app, "liquid-glass", self.destination)
+        self.assertEqual(output.name, "apple-liquid-glass")
+        skill = (output / "SKILL.md").read_text()
+        self.assertIn("name: apple-liquid-glass", skill)
+        self.assertIn("Apple content, not redistributed", skill)
+        for name in xcode_skills.LIQUID_GLASS_DOCS:
+            reference = output / "references" / name
+            self.assertTrue(reference.is_file())
+            self.assertIn("Apple content, not redistributed", reference.read_text())
+        marker = (output / xcode_skills.MARKER).read_text()
+        self.assertIn('"docs": "liquid-glass"', marker)
+
+    def test_docs_cli_selects_newest_complete_xcode_and_can_remove(self):
+        old = self.fake_xcode("27.1")
+        self.add_liquid_glass_docs(old)
+        newer = self.fake_xcode("27.2")
+        self.add_liquid_glass_docs(newer)
+        incomplete = self.fake_xcode("28.0")
+        with mock.patch.object(
+            xcode_skills, "xcode_candidates", return_value=[old, newer, incomplete]
+        ):
+            self.assertEqual(xcode_skills.choose_xcode_docs("liquid-glass"), newer)
+            self.assertEqual(xcode_skills.main([
+                "--docs", "liquid-glass", "--destination", str(self.destination)
+            ]), 0)
+        output = self.destination / "apple-liquid-glass"
+        self.assertTrue(output.is_dir())
+        self.assertEqual(xcode_skills.main([
+            "--docs", "liquid-glass", "--remove", "--destination", str(self.destination)
+        ]), 0)
+        self.assertFalse(output.exists())
 
 
 if __name__ == "__main__":

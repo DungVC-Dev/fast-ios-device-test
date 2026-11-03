@@ -18,6 +18,12 @@ from pathlib import Path
 RESOURCE_SUFFIX = Path(
     "Contents/PlugIns/IDEIntelligenceChat.framework/Versions/A/Resources"
 )
+LIQUID_GLASS_DOCS = (
+    "SwiftUI-Implementing-Liquid-Glass-Design.md",
+    "UIKit-Implementing-Liquid-Glass-Design.md",
+    "WidgetKit-Implementing-Liquid-Glass-Design.md",
+    "AppKit-Implementing-Liquid-Glass-Design.md",
+)
 MARKER = ".xcode-skill-export.json"
 SKILL_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
@@ -106,6 +112,19 @@ def choose_xcode(skill: str | None, extra: list[Path] | None = None) -> Path:
     return max(candidates, key=_version_key)
 
 
+def choose_xcode_docs(docs: str, extra: list[Path] | None = None) -> Path:
+    if docs != "liquid-glass":
+        raise ExportError(f"unsupported Xcode documentation set: {docs!r}")
+    candidates = [
+        app for app in xcode_candidates(extra)
+        if all((app / RESOURCE_SUFFIX / "AdditionalDocumentation" / name).is_file()
+               for name in LIQUID_GLASS_DOCS)
+    ]
+    if not candidates:
+        raise ExportError("no Xcode installation containing all Liquid Glass documents was found")
+    return max(candidates, key=_version_key)
+
+
 def exported_name(skill: str) -> str:
     if not SKILL_NAME.fullmatch(skill):
         raise ExportError(f"invalid skill name: {skill!r}")
@@ -164,10 +183,62 @@ def render_skill(app: Path, skill: str, destination: Path) -> Path:
     return output
 
 
-def remove_skill(skill: str, destinations: list[Path]) -> list[Path]:
+def render_docs(app: Path, docs: str, destination: Path) -> Path:
+    """Export an Apple documentation set as a local-only standard Agent Skill."""
+    if docs != "liquid-glass":
+        raise ExportError(f"unsupported Xcode documentation set: {docs!r}")
+    source = app / RESOURCE_SUFFIX / "AdditionalDocumentation"
+    missing = [name for name in LIQUID_GLASS_DOCS if not (source / name).is_file()]
+    if missing:
+        raise ExportError(f"Xcode {xcode_version(app)} is missing {', '.join(missing)}")
+
+    output_name = "apple-liquid-glass"
+    output = destination / output_name
+    header = f"Exported from {app} {xcode_version(app)} — Apple content, not redistributed"
+    links = "\n".join(
+        f"- [{name.removesuffix('.md')}](references/{name})" for name in LIQUID_GLASS_DOCS
+    )
+    skill_text = (
+        "---\n"
+        f"name: {output_name}\n"
+        "description: Use Apple's locally installed Xcode guidance when implementing or "
+        "reviewing Liquid Glass across SwiftUI, UIKit, WidgetKit, or AppKit.\n"
+        "---\n\n"
+        f"> {header}\n\n"
+        "# Apple Liquid Glass guidance\n\n"
+        "Read the reference for the framework in use. These files remain local to this Mac.\n\n"
+        f"{links}\n"
+    )
+
+    destination.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=f".{output_name}-", dir=destination))
+    try:
+        references = temporary / "references"
+        references.mkdir()
+        (temporary / "SKILL.md").write_text(skill_text)
+        for name in LIQUID_GLASS_DOCS:
+            text = (source / name).read_text()
+            (references / name).write_text(f"> {header}\n\n{text}")
+        (temporary / MARKER).write_text(json.dumps({
+            "docs": docs,
+            "xcode": str(app),
+            "version": xcode_version(app),
+        }, indent=2) + "\n")
+        if output.exists() or output.is_symlink():
+            if not (output / MARKER).is_file():
+                raise ExportError(f"refusing to replace unmanaged skill folder: {output}")
+            shutil.rmtree(output)
+        temporary.replace(output)
+    except Exception:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
+    return output
+
+
+def remove_skill(skill: str, destinations: list[Path], output_name: str | None = None) -> list[Path]:
     removed = []
     for destination in destinations:
-        output = destination.expanduser() / exported_name(skill)
+        output = destination.expanduser() / (output_name or exported_name(skill))
         if not output.exists() and not output.is_symlink():
             continue
         if not (output / MARKER).is_file():
@@ -183,7 +254,9 @@ def default_destination() -> Path:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--skill", default="app-resizability", help="Xcode skill to export")
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--skill", help="Xcode skill to export (default: app-resizability)")
+    selection.add_argument("--docs", choices=("liquid-glass",), help="Xcode docs to export")
     parser.add_argument("--list", action="store_true", help="list exportable skills")
     parser.add_argument("--remove", action="store_true", help="remove this exported skill")
     parser.add_argument(
@@ -199,19 +272,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     destinations = args.destination or [default_destination()]
+    skill = args.skill or "app-resizability"
     try:
+        output_name = "apple-liquid-glass" if args.docs else exported_name(skill)
         if args.remove:
-            for path in remove_skill(args.skill, destinations):
+            for path in remove_skill(skill, destinations, output_name):
                 print(f"removed: {path}")
             return 0
-        app = choose_xcode(None if args.list else args.skill, args.xcode)
+        app = (choose_xcode_docs(args.docs, args.xcode) if args.docs
+               else choose_xcode(None if args.list else skill, args.xcode))
         if args.list:
             print(f"Xcode {xcode_version(app)} ({app})")
             for name in available_skills(app):
                 print(name)
             return 0
         for destination in destinations:
-            output = render_skill(app, args.skill, destination.expanduser())
+            output = (render_docs(app, args.docs, destination.expanduser()) if args.docs
+                      else render_skill(app, skill, destination.expanduser()))
             print(f"exported: {output}")
         return 0
     except (ExportError, OSError) as error:

@@ -13,6 +13,15 @@
   `setup.duo_orientation`, or with `--duo-orientation`. Device Hub rotates until the selected
   framebuffer dimensions match, and non-default rows use names such as `@duo-closed-landscape`.
 
+### Liquid Glass
+
+- Add a design-recognition and `LG-` test-case derivation guide covering system and custom glass,
+  accessibility, scrolling, Dynamic Type, widgets, and iPhone Duo evidence.
+- Add `xcode-skills --docs liquid-glass` to export Xcode's four framework guides into a local-only
+  `apple-liquid-glass` skill; Apple documentation is never committed or packaged.
+- Make the Pillow-dependent evidence and review test modules skip cleanly when Pillow is absent,
+  so full unittest discovery remains usable with only Python's standard library.
+
 ## 2.1.1 — 2026-11-03
 
 - README: restored the per-agent plugin install steps (Codex, Antigravity, Gemini CLI, Claude Code)

@@ -7,6 +7,11 @@ description: Adapt a SwiftUI iOS app (any deployment target) to iPhone Duo follo
 
 A field-tested workflow: audit → fix with a small set of reusable components → verify every pose on the simulator. Built from Apple's iPhone Duo HIG, the "Preparing your app for iPhone Duo" overview and talks 111461–111466 (digest in `reference/apple-guidance.md`), plus the traps hit while shipping a real TCA app.
 
+When a Duo design uses Liquid Glass, derive its legibility, accessibility, scroll-edge, and
+outer/inner-display cases with the fast test skill's
+[Liquid Glass guide](../fast-ios-device-test/references/liquid-glass.md). For code changes, also
+use the locally exported `apple-liquid-glass` skill when it is installed.
+
 For code changes, also use `apple-app-resizability` when that locally exported Xcode skill is
 installed. It contains Apple's current guidance and is intentionally not redistributed here.
 

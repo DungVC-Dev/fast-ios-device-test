@@ -7,6 +7,8 @@ description: Use when asked to run, verify, re-test, or record an iOS screen or 
 
 For iPhone Duo code changes, also use `apple-app-resizability` when that locally exported Xcode
 skill is installed; use the bundled `iphone-duo-swiftui` skill for fold-aware SwiftUI patterns.
+For Liquid Glass code changes, also use `apple-liquid-glass` when that local Xcode export is
+installed; this repo ships only the test derivation guide, never Apple's source documentation.
 
 Before the first run, confirm that `fastSimulatorTest` and `fastDeviceTest` are on `PATH`. If they
 are missing, use the bundled `fast-ios-device-test-setup` skill or run `npx fast-ios-device-test`
@@ -29,6 +31,7 @@ PATH copies. A missing baguette is expected unless CarPlay support is needed and
 | Change that sheet (order, captions, a shot) | edit `source/sheet.json` there, then `fastEvidenceSheet <it>` — "Evidence sheet" in [references/usage.md](references/usage.md) |
 | Physical iPhone | read [references/device.md](references/device.md) first |
 | CarPlay (Simulator.app or Apple CarPlay Simulator + iPhone) | `fastCarPlayTest`; read [references/carplay.md](references/carplay.md) first. It reuses the phone engines and safely drives/captures the separate car surface |
+| Design or screen with Liquid Glass | identify the glass and derive the first `LG-` cases with [references/liquid-glass.md](references/liquid-glass.md) |
 | Another Mac app, Apple Watch | out of reach of the engines: say so at once. Do not drive it with `osascript`, `cliclick`, `screencapture` or a hand-written XCUITest unless the user asks for that |
 
 Never point both tools at one simulator: Xcode reinstalls the app over the fresh install.

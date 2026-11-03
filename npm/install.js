@@ -3,7 +3,7 @@
 // npx fast-ios-device-test update              upgrade to the latest version, then each agent's plugin
 // npx fast-ios-device-test update-tools        pin and install latest AXe + baguette releases
 // npx fast-ios-device-test update-axe|update-baguette   update one pinned tool
-// npx fast-ios-device-test xcode-skills [--list|--skill <name>|--remove]
+// npx fast-ios-device-test xcode-skills [--list|--skill <name>|--docs liquid-glass|--remove]
 // npx fast-ios-device-test --check [--device <name>]   what is there and what is missing
 // npx fast-ios-device-test --uninstall         remove the tool (caches and build output stay)
 // npx fast-ios-device-test clean [--project <root>] [--maps] [--yes]   delete caches and test builds
