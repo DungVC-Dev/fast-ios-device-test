@@ -855,7 +855,9 @@ def save_trail(report: dict[str, Any]) -> None:
 def save_screenshots(response: dict[str, Any], artifacts: Path) -> list[str]:
     saved = []
     for shot in response.pop("screenshots", []) or []:
-        path = artifacts / f"{shot['name']}.png"
+        # Flows name shots like the Simulator engine ("general.png"); never write "general.png.png".
+        name = str(shot["name"])
+        path = artifacts / (name if name.lower().endswith(".png") else f"{name}.png")
         path.write_bytes(base64.b64decode(shot["png"]))
         saved.append(str(path))
     return saved
