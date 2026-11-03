@@ -3273,8 +3273,16 @@ def main() -> int:
             if previous_ui:
                 journal("ui", dict(previous_ui))
             set_preferences(udid, bundle_id, setup.get("preferences", {}))
+            # A non-default orientation must be measured against the target app: the app left
+            # open by an earlier run may support a different set of orientations. Establish the
+            # pose's default first so recording still includes launch, then rotate after launch.
+            deferred_duo_orientation = bool(
+                duo_pose and duo_orientation_value != DUO_DEFAULT_ORIENTATION[duo_pose]
+            )
             if duo_pose:
-                set_duo_pose(udid, duo_pose, duo_orientation_value)
+                set_duo_pose(
+                    udid, duo_pose, None if deferred_duo_orientation else duo_orientation_value
+                )
             if recorder:
                 recorder.start()
             launch = ["xcrun", "simctl", "launch", udid, bundle_id]
@@ -3286,6 +3294,8 @@ def main() -> int:
             if TRAIL is not None:
                 TRAIL.gesture({"type": "launch"})
             command(launch)
+            if deferred_duo_orientation:
+                set_duo_pose(udid, duo_pose, duo_orientation_value)
 
         optional_prompt_labels = setup.get("optional_permission_labels", [])
         defaults = {"settle": True} if setup.get("settle_after_actions") else {}
@@ -3457,8 +3467,17 @@ def teardown(
                 command(["xcrun", "simctl", "spawn", udid, "defaults", "delete", bundle_id, key], check=False)
 
 
+def cli_main() -> int:
+    """Turn configuration and environment errors raised before a run into the normal CLI line."""
+    try:
+        return main()
+    except (FastUIError, OSError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired) as error:
+        print(f"FAIL error={error}", file=sys.stderr)
+        return 1
+
+
 if __name__ == "__main__":
     try:
-        raise SystemExit(main())
+        raise SystemExit(cli_main())
     finally:
         print_notice()
