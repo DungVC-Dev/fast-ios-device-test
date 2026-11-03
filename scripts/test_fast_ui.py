@@ -9,6 +9,7 @@ import importlib.util
 import io
 import itertools
 import json
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -1216,6 +1217,85 @@ class MotionTests(unittest.TestCase):
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_two_worktrees_share_the_git_common_dir_cache_key(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            common = root / "repo/.git"
+            common.mkdir(parents=True)
+            first = root / "worktree-a"
+            second = root / "worktree-b"
+            first.mkdir()
+            second.mkdir()
+            self.assertEqual(
+                fast_ui.repo_cache_key(first, common),
+                fast_ui.repo_cache_key(second, common),
+            )
+            with mock.patch.dict(fast_ui.os.environ, {"FAST_IOS_DERIVED_DATA_ROOT": str(root / "cache")}):
+                self.assertEqual(
+                    fast_ui.shared_derived_data(first, common)[0],
+                    fast_ui.shared_derived_data(second, common)[0],
+                )
+            self.assertTrue(fast_ui.repo_cache_key(first, common).startswith("repo-"))
+
+    def test_derived_data_root_env_override(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            project = root / "repo"
+            common = project / ".git"
+            common.mkdir(parents=True)
+            override = root / "custom-dd"
+            with mock.patch.dict(fast_ui.os.environ, {"FAST_IOS_DERIVED_DATA_ROOT": str(override)}):
+                derived_data, found_common = fast_ui.shared_derived_data(project, common)
+            self.assertEqual(derived_data.parent, override.resolve())
+            self.assertEqual(found_common, common.resolve())
+
+    def test_legacy_build_paths_move_to_shared_cache_without_creating_old_data(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            project = root / "repo"
+            common = project / ".git"
+            common.mkdir(parents=True)
+            old = project / "build/fast-ui-dd"
+            relative_app = Path("Build/Products/Debug-iphonesimulator/App.app")
+            spec = {
+                "project_root": str(project),
+                "derived_data": str(old),
+                "app_path": str(old / relative_app),
+                "bundle_id": "com.example.app",
+            }
+            with mock.patch.object(fast_ui, "git_common_dir", return_value=common), \
+                    mock.patch.dict(fast_ui.os.environ, {"FAST_IOS_DERIVED_DATA_ROOT": str(root / "cache")}), \
+                    contextlib.redirect_stderr(io.StringIO()) as stderr:
+                derived_data, app_path, found_common = fast_ui.build_locations(spec, root)
+            self.assertEqual(app_path, derived_data / relative_app)
+            self.assertEqual(found_common, common.resolve())
+            self.assertFalse(old.exists())
+            self.assertIn("remove derived_data/app_path", stderr.getvalue())
+
+    def test_default_cache_finds_the_built_app_by_bundle_id(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            app = root / "dd/Build/Products/Debug-iphonesimulator/App.app"
+            app.mkdir(parents=True)
+            with (app / "Info.plist").open("wb") as stream:
+                plistlib.dump({"CFBundleIdentifier": "com.example.app"}, stream)
+            self.assertEqual(
+                fast_ui.find_built_app(root / "dd", "com.example.app", "Debug"), app
+            )
+
+    def test_explicit_derived_data_override_does_not_need_git(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            custom = root / "custom-dd"
+            with mock.patch.object(fast_ui, "git_common_dir") as common:
+                derived_data, app_path, found_common = fast_ui.build_locations(
+                    {"project_root": str(root / "repo"), "derived_data": str(custom)}, root
+                )
+            common.assert_not_called()
+            self.assertEqual(derived_data, custom.resolve())
+            self.assertIsNone(app_path)
+            self.assertIsNone(found_common)
+
     def test_duo_name_selects_xcode_27_1_toolchain(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             xcode = Path(raw) / "Xcode 27.1.app"

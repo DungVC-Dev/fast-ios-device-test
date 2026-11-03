@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Disk usage
+
+- Share `fastSimulatorTest` DerivedData across every worktree of a repository under
+  `~/Library/Caches/fast-ios-device-test/dd`, with automatic app discovery, safe legacy-flow
+  redirection and `FAST_IOS_DERIVED_DATA_ROOT` / `app.derived_data` overrides.
+- Make `fastUIClean` report and remove stale repo caches, or dry-run least-recently-used trimming
+  with `--max-dd-gb N`; existing project DerivedData is never migrated or deleted automatically.
+
 ### iPhone Duo
 
 - Bundle the company `iphone-duo-swiftui` skill across Claude Code, Codex, Gemini CLI and

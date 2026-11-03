@@ -61,8 +61,6 @@ Everything the engine needs is in the flow; there is no per-project config.
     "configuration": "Debug-DEV",
     "bundle_id": "com.example.myapp.dev",
     "simulator": "<simulator UDID or unique full name>",
-    "derived_data": "/abs/MyApp/build/fast-ui-dd",
-    "app_path": "/abs/MyApp/build/fast-ui-dd/Build/Products/Debug-DEV-iphonesimulator/MyApp.app",
     "build_inputs": ["/abs/MyApp/MyApp", "/abs/MyApp/MyApp.xcodeproj/project.pbxproj"]
   },
   "setup": {
@@ -88,9 +86,12 @@ Everything the engine needs is in the flow; there is no per-project config.
   stay in the session scratchpad.
 - Absolute paths only (a flow outside the repo must name `project_root`). `simulator` is a UDID
   or unique full name from `xcrun simctl list devices available` that nobody else runs the app on.
-  `derived_data` is its own folder, never Xcode's DerivedData;
-  `app_path` is the `.app` inside it. `build_inputs` (source folders + `project.pbxproj`) drive
-  the build cache; without them every run rebuilds.
+  DerivedData defaults to `~/Library/Caches/fast-ios-device-test/dd/<repo-key>/`, shared by every
+  worktree of the git repository and outside Spotlight indexing. Set `app.derived_data` only for
+  an intentional override (`FAST_IOS_DERIVED_DATA_ROOT` overrides the shared root); the engine
+  finds the built `.app` automatically. `build_inputs` (source folders + `project.pbxproj`) drive
+  the build cache; without them every run rebuilds. A legacy `<project>/build/fast-ui-dd` value is
+  redirected safely with a note; the tool never deletes that old data automatically.
 - Selector keys on `wait`, `wait_absent`, `assert_absent`, `tap_first`, `tap_label`, `scroll_to`
   and every gesture, control and assertion action: `label` (exact), `label_contains`, `id`
   (accessibilityIdentifier), `value` (a switch's "1"/"0", a field's text), `element_type`,

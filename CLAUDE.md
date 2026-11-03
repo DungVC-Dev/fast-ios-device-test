@@ -22,6 +22,9 @@ Antigravity, a Gemini CLI extension, and a release zip. macOS only; needs Xcode 
   including iPhone Duo outer/inner displays, orientations and Device Hub poses on Xcode 27.1.
   Agents use the `duo` action for in-flow display/orientation changes and `--duo-pose` rows for
   one-framebuffer-per-pose recordings; they never drive Device Hub directly.
+  App builds default to one DerivedData cache per git common dir under
+  `~/Library/Caches/fast-ios-device-test/dd`, shared across worktrees; `fastUIClean` reports stale
+  caches and can dry-run an LRU size cap.
 - `/fastDeviceTest` runs the same flows on a physical iPhone through a cached, auto-signed
   XCUITest runner (`device-runner/`), including Settings, Shortcuts and SpringBoard.
 - `fastCarPlayTest` runs mixed phone + CarPlay flows on Simulator.app through `baguette`, or on

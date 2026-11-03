@@ -49,9 +49,12 @@ Refresh the cached app once before fanning flows out to several simulators:
 scripts/fast_ui.py /absolute/path/to/any-flow.json --build-only   # prints READY
 ```
 
-The app is built once per DerivedData, not per simulator: the fingerprint
-excludes the simulator UDID, and a file lock in DerivedData serializes
-concurrent builds. Flows running in parallel on different simulators should
+The app is built once per repository, not per simulator or worktree. DerivedData defaults to
+`~/Library/Caches/fast-ios-device-test/dd/<repo-name>-<git-common-dir-hash>/`; the fingerprint
+excludes the simulator UDID, and a file lock in that shared directory serializes concurrent
+builds. `FAST_IOS_DERIVED_DATA_ROOT` changes the shared root; `app.derived_data` remains an explicit
+per-flow override. The engine finds the built `.app` by bundle ID, so normal flows omit `app_path`.
+Flows running in parallel on different simulators should
 all pass `--reuse-app`. Artifacts land in
 `build/fast-ui/<task>/<timestamp>-<udid8>-<pid>/`, so parallel runs never
 overwrite each other.
@@ -582,7 +585,8 @@ outcome step. Nothing else is filed: `do`, `--build-only`, other failures.
 - **Flows**: keep a ticket's flows in `source/flows/` of its folder.
   `fastEvidenceSheet --folder <project_root>` prints `FOLDER path=… flows=…` and creates that
   folder; outside git it fails and says to set `FAST_EVIDENCE_TICKET`. A flow there is outside
-  the repo, so it names `app.project_root` (and `derived_data`, `app_path`) as absolute paths.
+  the repo, so it names `app.project_root` as an absolute path. The shared DerivedData and built
+  app are derived from that root.
 - The folder is the user's to attach and delete after the merge; the tool never uploads.
 
 ## Evidence sheet for a PR (`fastEvidenceSheet`)
@@ -703,6 +707,8 @@ fastUIMap clear com.apple.Preferences        # or: fastUIMap clear --all
 - `FAST_UI_LOCK_WAIT`: seconds a run waits for a busy simulator (0: fail at once).
 - `FAST_UI_LOCK_DIR`: where the per-simulator locks and journals live
   (`~/Library/Caches/fast-ui/locks`).
+- `FAST_IOS_DERIVED_DATA_ROOT`: shared Simulator build cache root
+  (`~/Library/Caches/fast-ios-device-test/dd`).
 - `FAST_DEVICE_ROOT`: artifacts root for `fastDeviceTest`.
 - `FAST_EVIDENCE`: `0` files no evidence. `FAST_EVIDENCE_DIR`: where evidence folders go
   (`~/Desktop`). `FAST_EVIDENCE_TICKET` / `FAST_EVIDENCE_PROJECT`: name the folder when the
@@ -720,12 +726,19 @@ fastUIMap clear com.apple.Preferences        # or: fastUIMap clear --all
 
 ## Cache model
 
-The engine also stores its app-build fingerprint inside the configured
-DerivedData directory. It never compares source timestamps with the `.app`
+The engine stores its app-build fingerprint, build lock and repo metadata inside the shared or
+explicitly configured DerivedData directory. Every git worktree resolves the same cache key from
+the real path of `git rev-parse --git-common-dir`. It never compares source timestamps with the `.app`
 directory timestamp, because incremental Xcode builds can preserve an older
 output timestamp and otherwise trigger the same build forever. If inputs change
 during a build, no new fingerprint is committed and the next invocation safely
 rebuilds once more.
+
+Legacy flows that name `<project>/build/fast-ui-dd` keep working: when their `app_path` is also
+inside that old default, the engine maps both paths to the shared cache and recommends removing
+the keys. It does not delete the old directory. `fastUIClean` reports shared-cache sizes, lists
+entries whose git common dir vanished, and `--max-dd-gb N` adds least-recently-used entries until
+the remaining live cache fits the cap; both are dry-runs without `--yes`.
 
 ## Troubleshooting
 

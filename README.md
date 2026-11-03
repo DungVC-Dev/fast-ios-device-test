@@ -326,6 +326,20 @@ variants you ask for.
 ## FAQ
 
 <details>
+<summary><strong>Where does Simulator DerivedData go?</strong></summary>
+
+`fastSimulatorTest` shares one cache across all worktrees of a repository under
+`~/Library/Caches/fast-ios-device-test/dd/<repo-key>/`, outside the checkout and Spotlight's normal
+indexing. Flows normally omit `derived_data` and `app_path`; set `app.derived_data` only when an
+explicit location is required, or `FAST_IOS_DERIVED_DATA_ROOT` to move the shared root. A legacy
+`build/fast-ui-dd` flow is redirected when safe and its existing data is never deleted automatically.
+
+`fastUIClean` lists stale shared caches whose repository is gone. Add `--max-dd-gb N` to select
+least-recently-used repo caches above a cap, inspect the reported sizes, then add `--yes` to delete.
+
+</details>
+
+<details>
 <summary><strong>Do I have to write the JSON flow?</strong></summary>
 
 No. Describe the check to your agent. The JSON shown below each command is the repeatable artifact
@@ -405,6 +419,7 @@ local Xcode without redistributing it.
 | `FAST_IOS_BAGUETTE_DIR` | Managed `baguette` installation directory |
 | `FAST_IOS_BIN_DIR` | Launcher and managed-tool wrapper directory |
 | `FAST_IOS_INSTALL_DIR` | Runtime installation directory |
+| `FAST_IOS_DERIVED_DATA_ROOT` | Shared per-repository Simulator DerivedData root |
 | `FAST_IOS_NO_UPDATE_CHECK=1` | Disable background package and tool update checks |
 | `DUO_XCODE` | Override the Xcode 27.1 application used for iPhone Duo |
 

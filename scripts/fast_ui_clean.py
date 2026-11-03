@@ -8,6 +8,8 @@ itself stays installed; `install.sh --uninstall` removes it).
     fastUIClean --project <root>     also that project's runs and test builds (build/fast-ui,
                                      build/fast-ui-dd, build/fast-device-tests)
     fastUIClean --maps --yes         also the screen maps (~/Library/Caches/fast-ui-map)
+    fastUIClean --max-dd-gb 20       list stale/LRU shared DerivedData above a 20 GB cap
+    fastUIClean --max-dd-gb 20 --yes delete those shared DerivedData repo caches
     fastUIClean --project <root> --scope current [--task <name>] --yes
                                      only the runs of the current task (default: the latest run's)
     fastUIClean --project <root> --scope others --yes
@@ -49,6 +51,12 @@ def device_cache() -> Path:
 
 def helper_cache() -> Path:
     return CACHES / "fast-ios-device-test"
+
+
+def derived_data_cache() -> Path:
+    return Path(
+        os.environ.get("FAST_IOS_DERIVED_DATA_ROOT") or helper_cache() / "dd"
+    ).expanduser().resolve()
 
 
 def size_of(path: Path) -> int:
@@ -105,6 +113,7 @@ def runner_serving() -> bool:
 RUN_ROOTS = ("build/fast-ui", "build/fast-device")
 BUILD_DIRS = ("build/fast-ui-dd", "build/fast-device-tests")
 SCOPES = ("all", "current", "others")
+DD_METADATA = ".fastui-repo.json"
 
 
 def task_of(folder: Path) -> str:
@@ -136,7 +145,60 @@ def task_targets(project: Path, scope: str, task: str) -> list[Path]:
     return [folder for folder in task_folders(project) if (task_of(folder) == task) == (scope == "current")]
 
 
-def targets(project: Path | None, maps: bool) -> tuple[list[Path], list[str]]:
+def helper_targets() -> list[Path]:
+    root = helper_cache()
+    if not root.is_dir():
+        return [root] if root.exists() else []
+    dd = derived_data_cache()
+    return [child for child in root.iterdir() if child.name != "dd" and child.resolve() != dd]
+
+
+def dd_metadata(path: Path) -> dict[str, object] | None:
+    try:
+        payload = json.loads((path / DD_METADATA).read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) and isinstance(payload.get("common_dir"), str) else None
+    except (OSError, ValueError):
+        return None
+
+
+def shared_dd_targets(max_gb: float | None) -> tuple[list[Path], list[str], int, int]:
+    root = derived_data_cache()
+    entries = [path for path in root.iterdir() if path.is_dir()] if root.is_dir() else []
+    sizes = {path: size_of(path) for path in entries}
+    remove: list[Path] = []
+    skipped: list[str] = []
+    live: list[Path] = []
+    for path in entries:
+        metadata = dd_metadata(path)
+        if metadata is None:
+            skipped.append(f"{path} (shared DerivedData has no repo metadata)")
+            continue
+        if not Path(str(metadata["common_dir"])).exists():
+            if held(path / ".fastui-build.lock"):
+                skipped.append(f"{path} (its build lock is held)")
+            else:
+                remove.append(path)
+        else:
+            live.append(path)
+    if max_gb is not None:
+        cap = int(max_gb * 1024 ** 3)
+        remaining = sum(sizes[path] for path in live)
+        ordered = sorted(
+            live,
+            key=lambda path: (path / DD_METADATA).stat().st_mtime,
+        )
+        for path in ordered:
+            if remaining <= cap:
+                break
+            if held(path / ".fastui-build.lock"):
+                skipped.append(f"{path} (LRU candidate but its build lock is held)")
+                continue
+            remove.append(path)
+            remaining -= sizes[path]
+    return remove, skipped, len(entries), sum(sizes.values())
+
+
+def targets(project: Path | None, maps: bool, max_dd_gb: float | None = None) -> tuple[list[Path], list[str], int, int]:
     """What to delete, and what is skipped with the reason."""
     remove: list[Path] = []
     skipped: list[str] = []
@@ -155,8 +217,10 @@ def targets(project: Path | None, maps: bool) -> tuple[list[Path], list[str]]:
             skipped.append(f"{device_cache()} (an iPhone runner is serving: `fastDeviceTest stop --device <d>` first)")
         else:
             remove.append(device_cache())
-    if helper_cache().exists():
-        remove.append(helper_cache())
+    remove += helper_targets()
+    dd_remove, dd_skipped, dd_count, dd_size = shared_dd_targets(max_dd_gb)
+    remove += dd_remove
+    skipped += dd_skipped
     remove += sorted(Path(tempfile.gettempdir()).glob("fast-ui-session-*"))
     if maps and map_dir().exists():
         remove.append(map_dir())
@@ -171,7 +235,7 @@ def targets(project: Path | None, maps: bool) -> tuple[list[Path], list[str]]:
                 skipped.append(f"{path} (a flow is running; its run folder is being written)")
             else:
                 remove.append(path)
-    return remove, skipped
+    return remove, skipped, dd_count, dd_size
 
 
 def ask_scope(project: Path, task: str | None) -> str | None:
@@ -205,12 +269,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--scope", choices=SCOPES,
                         help="all (default): everything; current: the current task's runs; others: every other task's runs")
     parser.add_argument("--task", help="The current task (flow name); default: the task of the latest run")
+    parser.add_argument("--max-dd-gb", type=float, metavar="N",
+                        help="Trim least-recently-used shared repo DerivedData until it is at most N GB")
     args = parser.parse_args(argv)
     project = args.project.expanduser().resolve() if args.project else None
     if project is not None and not project.is_dir():
         print(f"FAIL error=no such project root: {project}", file=sys.stderr)
         return 1
     scope = args.scope
+    if args.max_dd_gb is not None and args.max_dd_gb < 0:
+        parser.error("--max-dd-gb must be zero or greater")
     asked = scope is None and project is not None and sys.stdin.isatty()
     if asked:
         scope = ask_scope(project, args.task)
@@ -218,11 +286,12 @@ def main(argv: list[str] | None = None) -> int:
             return 0
     scope = scope or "all"
     if scope == "all":
-        remove, skipped = targets(project, args.maps)
+        remove, skipped, dd_count, dd_size = targets(project, args.maps, args.max_dd_gb)
     else:
         if project is None:
             print(f"FAIL error=--scope {scope} needs --project <root>", file=sys.stderr)
             return 1
+        dd_count, dd_size = 0, 0
         task = args.task or current_task(project)
         if task is None:
             print(f"FAIL error=no runs under {project}/build/fast-ui or build/fast-device", file=sys.stderr)
@@ -244,6 +313,9 @@ def main(argv: list[str] | None = None) -> int:
         if not args.yes:
             print("CANCELLED")
             return 0
+    if scope == "all":
+        cap = f" cap={args.max_dd_gb:g}G" if args.max_dd_gb is not None else ""
+        print(f"DD-CACHE repos={dd_count} size={human(dd_size)} root={derived_data_cache()}{cap}")
     total = 0
     for path in remove:
         size = size_of(path)
