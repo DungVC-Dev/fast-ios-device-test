@@ -64,9 +64,9 @@ User-facing docs: `README.md` (English), `GUIDE.md` (Vietnamese, for testers), `
 | `scripts/setup_repo_rules.sh` | Dry-run/apply GitHub rebase-only rules, required CI checks and npm environment |
 | `commands/` | Slash commands `fastSimulatorTest`, `fastDeviceTest`, `fastCarPlayTest`, `fastUIReview` |
 | `agents/ui-explorer.md` | Haiku subagent for long step-by-step searches (experimental) |
-| `install.sh` | Installer: copy/link/check/uninstall, pinned-tool flags and `--xcode-skills` export |
-| `npm/install.js` | `npx` entry: install, clean, updates and `xcode-skills`; refuses `--link` |
-| `scripts/fast_update.py` | Installed/latest npm and pinned/installed/latest tool status; daily caches respect `FAST_IOS_NO_UPDATE_CHECK=1` |
+| `install.sh` | Installer: copy/link/check/uninstall, pinned-tool flags and `--xcode-skills`; normal copies enable daily auto-update, `--link` does not |
+| `npm/install.js` | `npx` entry: install, clean, updates, `auto-update on|off|status` and `xcode-skills`; refuses `--link` |
+| `scripts/fast_update.py`, `scripts/fast_auto_update.py` | Daily notices/clone checks plus the patch/minor-only launchd updater; all fast* engines share its exclusion lock |
 | `.claude-plugin/` | Plugin + marketplace manifests |
 | `plugin.json`, `.agents/plugins/` | Portable Codex plugin manifest + repo marketplace catalog |
 | `.antigravity-plugin/`, `gemini-extension.json` | Antigravity plugin manifest + Gemini CLI extension manifest |

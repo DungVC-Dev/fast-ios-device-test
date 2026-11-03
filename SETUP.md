@@ -31,8 +31,10 @@ Expected: a path inside an `Xcode.app` and `Xcode 26.x` or `27.x`. If it prints
 npx fast-ios-device-test
 ```
 
-Expected: `link: …` lines, `engine self-test: OK` and `done.` To upgrade later:
-`npx fast-ios-device-test update` (also updates the Codex and Claude Code plugins). No
+Expected: `link: …` lines, `engine self-test: OK`,
+`auto-update: on (daily; turn off: npx fast-ios-device-test auto-update off)` and `done.` To
+upgrade immediately later, run `npx fast-ios-device-test update`; it also updates installed Codex,
+Claude Code, Antigravity and Gemini plugins. No
 Node.js (`npx: command not found`), or the user wants to edit the tool: clone instead:
 
 ```bash
@@ -43,6 +45,13 @@ git clone https://github.com/DungVC-Dev/fast-ios-device-test.git ~/fast-ios-devi
 Already cloned: run
 `git -C ~/fast-ios-device-test pull` and the same `install.sh --link`. Without git: download the
 release zip, unzip it, run its `install.sh` (no flag).
+
+A normal install enables a per-user daily launchd job. It automatically applies patch/minor
+versions, reports a new major for manual review, skips when a fast* run is active, and rotates
+`~/Library/Logs/fast-ios-device-test-update.log` near 1 MB. Manage it with
+`npx fast-ios-device-test auto-update on|off|status`; `FAST_IOS_NO_AUTO_UPDATE=1` skips enabling it.
+`FAST_IOS_NO_UPDATE_CHECK=1` disables every network check. A `--link` clone does not enable the job
+unless explicitly asked, and an enabled job only logs the clone's git pull advice.
 
 The installer needs no Homebrew: it verifies `vendor/tools.json`, installs required AXe and
 attempts optional arm64 baguette under `~/.local/share`, creates wrappers in `~/.local/bin`, and
@@ -70,7 +79,7 @@ installer does not do that:
 |---|---|
 | Codex | `codex plugin marketplace add DungVC-Dev/fast-ios-device-test` then `codex plugin add fast-ios-device-test@fast-ios-device-test` |
 | Antigravity | `agy plugin install https://github.com/DungVC-Dev/fast-ios-device-test` |
-| Gemini CLI | `gemini extensions install https://github.com/DungVC-Dev/fast-ios-device-test` |
+| Gemini CLI | `gemini extensions install https://github.com/DungVC-Dev/fast-ios-device-test --auto-update` |
 
 ## 3. Check
 
@@ -80,7 +89,7 @@ npx fast-ios-device-test --check      # or ~/fast-ios-device-test/install.sh --c
 
 Expected last line: `CHECK OK`. The `axe-pin=` line shows the pinned, local and latest release
 (cached for one day); `FAST_IOS_NO_UPDATE_CHECK=1` disables the latest lookup. `CHECK missing: …`
-names what to fix:
+names what to fix. The `auto-update:` line reports on/off and the last daily result:
 
 | Missing | Fix |
 |---|---|

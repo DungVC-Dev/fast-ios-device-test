@@ -3,7 +3,8 @@
 # the slash commands and the launchers into Claude Code + PATH.
 # `install.sh --link`  links this folder in place instead of copying (for editing).
 # `--install-tools` installs the pinned AXe + baguette; per-tool install/update flags are also
-# available. `--uninstall` removes what install.sh put in place.
+# available. A plain install enables the daily launchd updater unless FAST_IOS_NO_AUTO_UPDATE=1;
+# `--link` leaves it off. `--uninstall` removes what install.sh put in place.
 # Codex and Antigravity skill links (README, "Development install") are never created here.
 # Dangling links and links into another copy of this tool are re-pointed; working foreign links
 # are preserved because another checkout or company skill repository owns them.
@@ -129,6 +130,7 @@ if [[ "$MODE" == "xcode-skills" ]]; then
 fi
 
 if [[ "$MODE" == "uninstall" ]]; then
+    python3 "$SOURCE/scripts/fast_auto_update.py" off || true
     # Only links whose target lives in a verified copy of this tool are ours to remove.
     for path in "${LINKS[@]}"; do
         [[ -L "$path" ]] || continue
@@ -203,6 +205,7 @@ if [[ "$MODE" == "check" ]]; then
     installed_root=""
     [[ -e "$BIN_DIR/fastSimulatorTest" ]] && installed_root="$(cd "$(dirname "$(link_target "$BIN_DIR/fastSimulatorTest")")/.." 2>/dev/null && pwd -P || true)"
     python3 "$SOURCE/scripts/fast_update.py" --status "${installed_root:-$SOURCE}" || true
+    python3 "$SOURCE/scripts/fast_auto_update.py" status || true
     python3 -c "import PIL" 2>/dev/null && echo "pillow=yes" || echo "pillow=no (only fastUIReview, fastEvidenceSheet and the motion action need it)"
     command -v xcodegen >/dev/null && echo "xcodegen=yes (optional)" || echo "xcodegen=no (optional: device-runner ships its xcodeproj)"
     echo "profiles=$(profile_count) development profiles (fastDeviceTest needs one that lists the iPhone)"
@@ -321,7 +324,7 @@ for entry in "${OTHER_SKILL_LINKS[@]}"; do
     link "$HERE/skills/$skill" "$path"
 done
 chmod +x "$HERE/scripts/fast_ui.py" "$HERE/scripts/fast_ui_report.py" "$HERE/scripts/fast_ui_review.py" "$HERE/scripts/fast_device.py" "$HERE/scripts/fast_carplay.py" \
-    "$HERE/scripts/fast_evidence_sheet.py" "$HERE/scripts/fast_ui_map.py" "$HERE/scripts/fast_ui_clean.py" \
+    "$HERE/scripts/fast_evidence_sheet.py" "$HERE/scripts/fast_ui_map.py" "$HERE/scripts/fast_ui_clean.py" "$HERE/scripts/fast_auto_update.py" \
     "$HERE/scripts/fast_device_test.sh" "$HERE/scripts/shims/swiftlint"
 
 case ":$PATH:" in
@@ -331,4 +334,13 @@ esac
 
 (cd "$HERE/scripts" && python3 -m unittest test_fast_ui test_fast_carplay test_fast_media test_fast_ui_map test_fast_guard >/dev/null 2>&1) && echo "engine self-test: OK" \
     || echo "engine self-test: FAILED (cd scripts && python3 -m unittest test_fast_ui test_fast_carplay test_fast_media test_fast_ui_map test_fast_guard)"
+if [[ "$MODE" == "copy" ]]; then
+    if [[ -n "${FAST_IOS_NO_AUTO_UPDATE:-}" ]]; then
+        echo "auto-update: off (FAST_IOS_NO_AUTO_UPDATE=1)"
+    else
+        python3 "$HERE/scripts/fast_auto_update.py" on "$HERE"
+    fi
+else
+    echo "auto-update: unchanged (--link clone updates with git)"
+fi
 echo "done. In Claude Code: /fastSimulatorTest <flow>, /fastDeviceTest <flow>, /fastCarPlayTest <flow>, /fastUIReview <session>"

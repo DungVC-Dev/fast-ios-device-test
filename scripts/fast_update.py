@@ -40,6 +40,11 @@ def cache_file() -> Path:
     return Path(os.environ.get("FAST_IOS_UPDATE_CACHE", default))
 
 
+def runtime_lock_file() -> Path:
+    default = Path.home() / "Library" / "Caches" / PACKAGE / "runtime.lock"
+    return Path(os.environ.get("FAST_IOS_RUNTIME_LOCK", default))
+
+
 def tool_cache_file(name: str) -> Path:
     default = Path.home() / "Library" / "Caches" / PACKAGE / f"{name}-update.json"
     return Path(os.environ.get(f"FAST_IOS_{name.upper()}_UPDATE_CACHE", default))
@@ -101,11 +106,42 @@ def is_newer(latest: str | None, current: str | None) -> bool:
 def fetch_latest(timeout: float = 3.0) -> str | None:
     if os.environ.get("FAST_IOS_LATEST_VERSION"):  # tests, or a mirror the registry cannot reach
         return os.environ["FAST_IOS_LATEST_VERSION"]
+    if os.environ.get("FAST_IOS_NO_UPDATE_CHECK") or os.environ.get("CI"):
+        return None
     try:
         with urllib.request.urlopen(REGISTRY, timeout=timeout) as response:  # noqa: S310 (fixed https URL)
             return str(json.load(response)["version"])
     except Exception:  # offline, proxy, a registry change: no notice, never an error
         return None
+
+
+def linked_clone_status(root: Path = ROOT) -> tuple[Path | None, int | None]:
+    """Fetch origin/main for a linked checkout and return how many commits it is behind.
+
+    This is called only by the detached once-a-day refresh, never on an engine's hot path.
+    """
+    if os.environ.get("FAST_IOS_NO_UPDATE_CHECK") or os.environ.get("CI"):
+        return None, None
+    try:
+        inside = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+        if inside.returncode != 0 or inside.stdout.strip() != "true":
+            return None, None
+        subprocess.run(
+            ["git", "-C", str(root), "fetch", "-q", "origin", "main"],
+            capture_output=True, text=True, timeout=20, check=False,
+        )
+        behind = subprocess.run(
+            ["git", "-C", str(root), "rev-list", "--count", "HEAD..origin/main"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+        if behind.returncode != 0:
+            return root.resolve(), None
+        return root.resolve(), int(behind.stdout.strip())
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None, None
 
 
 def fetch_latest_tool(name: str, timeout: float = 3.0) -> str | None:
@@ -196,11 +232,19 @@ def tool_binary_version(path: Path) -> str | None:
 
 def refresh() -> None:
     latest = fetch_latest()
+    clone, behind = linked_clone_status()
     with cache_lock():
         data = read_cache()
         data["checked_at"] = time.time()
         if latest:
             data["latest"] = latest
+        if clone is not None:
+            data["clone"] = str(clone)
+            if behind is not None:
+                data["clone_behind"] = behind
+        else:
+            data.pop("clone", None)
+            data.pop("clone_behind", None)
         write_cache(data)
 
 
@@ -228,6 +272,47 @@ def cache_lock():
         yield
     finally:
         if handle:
+            handle.close()
+
+
+@contextlib.contextmanager
+def runtime_lock():
+    """Shared for a fast* invocation; the daily updater takes the exclusive side."""
+    if os.environ.get("FAST_IOS_AUTO_UPDATE_RUNNING"):
+        yield
+        return
+    handle = None
+    try:
+        path = runtime_lock_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = open(path, "a")
+        fcntl.flock(handle, fcntl.LOCK_SH)
+        yield
+    finally:
+        if handle:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+            handle.close()
+
+
+@contextlib.contextmanager
+def exclusive_runtime_lock():
+    """Yield whether the updater acquired the lock; never wait on an active test run."""
+    handle = None
+    acquired = False
+    try:
+        path = runtime_lock_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = open(path, "a")
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            acquired = True
+        except BlockingIOError:
+            pass
+        yield acquired
+    finally:
+        if handle:
+            if acquired:
+                fcntl.flock(handle, fcntl.LOCK_UN)
             handle.close()
 
 
@@ -260,6 +345,20 @@ def _notice(now: float, current: str | None, spawn: bool) -> str | None:
             f"{PACKAGE}: new commands not linked ({', '.join(missing)}); "
             f"run ./install.sh --link in {clone} or npx {PACKAGE}"
         )
+    clone = data.get("clone")
+    behind = int(data.get("clone_behind") or 0)
+    if clone and behind > 0 and (
+        data.get("clone_signature") != f"{clone}:{behind}"
+        or "clone_notified_at" not in data
+        or now - float(data["clone_notified_at"]) >= DAY
+    ):
+        data["clone_signature"] = f"{clone}:{behind}"
+        data["clone_notified_at"] = now
+        write_cache(data)
+        return (
+            f"{PACKAGE}: linked clone is {behind} commit{'s' if behind != 1 else ''} behind origin/main; "
+            f"run git -C \"{clone}\" pull --rebase && \"{clone}/install.sh\" --link"
+        )
     current = current or installed_version()
     latest = data.get("latest")
     if not is_newer(latest, current):
@@ -268,7 +367,12 @@ def _notice(now: float, current: str | None, spawn: bool) -> str | None:
         return None
     data["notified_at"] = now
     write_cache(data)
-    return f"update available: {PACKAGE} {current} -> {latest} (run: npx {PACKAGE} update)"
+    current_parts, latest_parts = parse_version(current), parse_version(latest)
+    if current_parts and latest_parts and latest_parts[0] > current_parts[0]:
+        hint = f"major update; run manually: npx {PACKAGE} update"
+    else:
+        hint = f"run: npx {PACKAGE} update; auto-update: npx {PACKAGE} auto-update on"
+    return f"update available: {PACKAGE} {current} -> {latest} ({hint})"
 
 
 def print_notice() -> None:

@@ -13,6 +13,9 @@ This is a local macOS tool. Never attempt setup in a cloud or Linux sandbox.
    exact required AXe pin and, when the Mac is arm64 and GitHub is reachable, optional baguette
    into `~/.local/share/{axe,baguette}`, regardless of Homebrew or PATH copies. A baguette failure
    prints a retry command but does not block setup; only the upcoming `fastCarPlayTest` needs it.
+   A normal install also enables the daily launchd updater and prints `auto-update: on …`; it
+   applies patch/minor releases, leaves major releases for manual review, updates installed agent
+   plugins, and skips while a fast* run is active. `FAST_IOS_NO_AUTO_UPDATE=1` skips enabling it.
 3. Ensure `~/.local/bin` is on `PATH` for the current shell. Do not edit a shell profile without
    the user's approval; export it for the current command when needed.
 4. Run `npx fast-ios-device-test --check`. Setup is complete only when the last line is
@@ -25,6 +28,8 @@ This is a local macOS tool. Never attempt setup in a cloud or Linux sandbox.
    skill from the user's own Xcode only when requested with `npx fast-ios-device-test xcode-skills`
    (`--docs liquid-glass` exports `apple-liquid-glass`; `--list` shows available skills); the Apple
    content is never shipped by this project.
+   `--check` also prints the daily updater's on/off state and last result. Manage it with
+   `npx fast-ios-device-test auto-update on|off|status`; `--link` does not enable it automatically.
 5. When the user wants physical-iPhone runs, also run
    `npx fast-ios-device-test --check --device "<iPhone name or UDID>"` and follow the reported
    signing, trust, Developer Mode, or profile fix. Do not guess a device when several are present.
