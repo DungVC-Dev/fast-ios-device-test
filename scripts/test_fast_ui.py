@@ -2177,6 +2177,13 @@ class DeviceLauncherTests(unittest.TestCase):
         prepared = fast_device.prepare_flow({"version": 1, "setup": {"wait_for_idle": False, "preferences": {"a": True}}})
         self.assertFalse(prepared["setup"]["wait_for_idle"])
 
+    def test_prepare_flow_only_adds_appearance_when_requested(self) -> None:
+        import fast_device
+        plain = fast_device.prepare_flow({"version": 1, "setup": {}})
+        dark = fast_device.prepare_flow({"version": 1, "setup": {}}, appearance="dark")
+        self.assertNotIn("appearance", plain["setup"])
+        self.assertEqual(dark["setup"]["appearance"], "dark")
+
     def test_do_passes_no_idle_wait_into_the_request(self) -> None:
         import fast_device
         reply = {"status": "pass", "results": [], "labels": []}

@@ -11,6 +11,8 @@
 - Detect launchers or linked Claude slash commands missing from an existing install once a day and
   point linked-clone users back to `install.sh --link`; fix clean-host baguette resolution and make
   iPhone Duo tests independent of locally installed Xcode components.
+- Leave `XCUIDevice.appearance` untouched when a flow does not request light or dark, and never try
+  to restore XCTest's non-assignable `.unspecified` appearance value on a physical iPhone.
 
 ### CI/CD
 

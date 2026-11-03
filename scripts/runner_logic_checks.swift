@@ -21,6 +21,7 @@ struct RunnerLogicChecks {
         checkTrail()
         checkGestures()
         checkRequests()
+        checkAppearancePolicy()
         if failures > 0 { exit(1) }
         print("OK")
     }
@@ -196,5 +197,19 @@ struct RunnerLogicChecks {
         check(!Requests.endsWithRead(["type": "tap_label", "label": "A"]) && !Requests.endsWithRead(["type": "swipe"])
               && !Requests.endsWithRead(["type": "screenshot"]) && !Requests.endsWithRead([:]),
               "a gesture, a screenshot or nothing still needs the closing read")
+    }
+
+    static func checkAppearancePolicy() {
+        check(AppearancePolicy.requested(nil) == nil
+              && AppearancePolicy.requested("unspecified") == nil
+              && AppearancePolicy.requested(0) == nil,
+              "an absent or invalid appearance does not change XCUIDevice appearance")
+        check(AppearancePolicy.requested("light") == "light"
+              && AppearancePolicy.requested("dark") == "dark",
+              "only explicit light and dark appearances are applied")
+        check(!AppearancePolicy.shouldRestore(previousRawValue: 0)
+              && AppearancePolicy.shouldRestore(previousRawValue: 1)
+              && AppearancePolicy.shouldRestore(previousRawValue: 2),
+              "unspecified appearance is never assigned during restoration")
     }
 }
