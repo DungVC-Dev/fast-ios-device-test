@@ -435,6 +435,36 @@ class AutoUpdateTests(unittest.TestCase):
         self.assertEqual(invoked, [[str(npx), "--yes", "fast-ios-device-test@2.2.0", "update"]])
         self.assertEqual(json.loads(self.status.read_text())["result"], "ok")
 
+    def test_daily_job_does_nothing_when_already_up_to_date(self):
+        with mock.patch.object(fast_update, "fetch_latest", return_value="2.1.1"), \
+                mock.patch.object(fast_auto_update.subprocess, "run") as run:
+            self.assertEqual(fast_auto_update.run_daily(), 0)
+        run.assert_not_called()
+        self.assertIn("up to date", self.log.read_text())
+        self.assertEqual(json.loads(self.status.read_text())["result"], "ok")
+
+    def test_daily_job_fails_cleanly_when_the_update_hangs(self):
+        npx = self.dir / "npx"
+        npx.write_text("#!/bin/sh\nexit 0\n")
+        npx.chmod(0o755)
+        with mock.patch.object(fast_auto_update.shutil, "which", side_effect=lambda name: str(npx) if name == "npx" else shutil.which(name)), \
+                mock.patch.object(fast_update, "fetch_latest", return_value="2.2.0"), \
+                mock.patch.object(fast_auto_update.subprocess, "run",
+                                  side_effect=subprocess.TimeoutExpired("npx", fast_auto_update.UPDATE_TIMEOUT)):
+            self.assertEqual(fast_auto_update.run_daily(), 1)
+        self.assertIn("did not finish", self.log.read_text())
+        self.assertEqual(json.loads(self.status.read_text())["result"], "failed")
+
+    def test_launch_agent_path_keeps_the_folder_of_npx(self):
+        node_bin = self.dir / ".nvm/versions/node/v24/bin"
+        node_bin.mkdir(parents=True)
+        real_which = shutil.which
+        with mock.patch.object(fast_auto_update.shutil, "which",
+                               side_effect=lambda name: str(node_bin / "npx") if name == "npx" else real_which(name)):
+            path = fast_auto_update.plist(self.root)["EnvironmentVariables"]["PATH"].split(":")
+        self.assertEqual(path[0], str(node_bin))
+        self.assertIn("/usr/bin", path)
+
     def test_daily_major_update_only_writes_a_notice(self):
         with mock.patch.object(fast_update, "fetch_latest", return_value="3.0.0"), \
                 mock.patch.object(fast_auto_update.subprocess, "run") as run:

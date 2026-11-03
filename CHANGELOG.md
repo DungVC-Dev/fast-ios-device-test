@@ -4,6 +4,7 @@
 
 ### Updates
 
+- The daily updater does nothing when the installed version is already the latest, finds `npx` from nvm/fnm/volta installs, and gives up after 15 minutes instead of hanging.
 - Enable a per-user daily launchd updater on normal installs, with explicit on/off/status controls,
   patch/minor-only application, major-version notices, shared fast* run locking, small rotated logs,
   linked-clone git advice, uninstall cleanup and `FAST_IOS_NO_AUTO_UPDATE=1` opt-out.
