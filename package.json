@@ -13,6 +13,7 @@
     "commands/",
     "agents/",
     "assets/",
+    "!assets/readme/**",
     "device-runner/",
     "vendor/",
     ".agents/",
