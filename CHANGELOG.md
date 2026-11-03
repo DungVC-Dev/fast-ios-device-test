@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.3.0 — 2026-11-03
+## Unreleased
 
 ### Physical iPhone
 
