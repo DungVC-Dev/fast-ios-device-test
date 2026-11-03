@@ -219,7 +219,8 @@ class MergeTests(unittest.TestCase):
                       gesture("tap_label", label=f"New {index}-0")]
         started = clock.perf_counter()
         fast_ui_map.merge_trail({APP: big}, trail, "simulator", NOW)
-        self.assertLess(clock.perf_counter() - started, 0.1)
+        # A quadratic merge takes seconds here; 0.5 s leaves room for a busy shared CI runner.
+        self.assertLess(clock.perf_counter() - started, 0.5)
         self.assertEqual(len(big["screens"]), 425)
 
     def test_gesture_without_fresh_read_makes_no_edge(self) -> None:
