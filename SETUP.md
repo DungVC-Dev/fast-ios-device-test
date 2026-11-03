@@ -192,6 +192,34 @@ in `skills/fast-ios-device-test/references/carplay.md`.
   (skip it when `claude mcp list` already shows `xcode`).
 - Nothing is configured per project: flows carry the scheme, bundle id and simulator.
 
+## Git workflow and CI (contributors)
+
+Use a topic branch and focused commits, then rebase it on the current main before opening or
+updating one PR for the batch:
+
+```bash
+git fetch origin
+git rebase origin/main
+```
+
+The required checks are `history`, `test` and `consistency`; finish accepted work with a rebase
+merge so main stays linear. Agents do not push, merge, tag, release or publish unless the
+maintainer explicitly asks.
+
+The publish workflow targets a GitHub Environment named `npm`. A maintainer must create it and
+set a required reviewer—declaring `environment: npm` in YAML does not itself enforce approval.
+Repository administrators can preview all recommended settings without changing GitHub, then
+apply them once:
+
+```bash
+scripts/setup_repo_rules.sh --dry-run
+scripts/setup_repo_rules.sh --apply --maintainer <github-login>
+```
+
+Add `--include-admins` if branch protection should also bind administrators. The script is
+idempotent; it enables only rebase merging, deletes merged head branches, protects `main`, and
+creates or updates the reviewer-gated `npm` environment.
+
 ## Troubleshooting
 
 | Message | Cause | Fix |

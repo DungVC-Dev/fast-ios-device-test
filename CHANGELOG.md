@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### CI/CD
+
+- Add pull-request/main CI for linear rebased history, the complete macOS test/package suite,
+  provider/document consistency, npm size/content checks and live README links using Node 24 actions.
+- Gate tag publishing on the reusable CI checks, main ancestry and the reviewer-protected `npm`
+  environment; keep upstream sync linear and fall back to a PR when main cannot fast-forward.
+- Add a dry-run-by-default `scripts/setup_repo_rules.sh` for rebase-only merging, protected main,
+  required CI checks and the npm environment.
+
 ### Disk usage
 
 - Share `fastSimulatorTest` DerivedData across every worktree of a repository under

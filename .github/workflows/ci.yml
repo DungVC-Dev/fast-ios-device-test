@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  history:
+    name: history
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Require linear history rebased on main
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if git rev-list --merges origin/main..HEAD | grep -q .; then
+            echo "Pull requests must not contain merge commits."
+            echo "rebase on main: git fetch && git rebase origin/main"
+            exit 1
+          fi
+          if [ "$(git merge-base origin/main HEAD)" != "$(git rev-parse origin/main)" ]; then
+            echo "This branch is not based on the current main."
+            echo "rebase on main: git fetch && git rebase origin/main"
+            exit 1
+          fi
+      - name: Confirm pushed main is linear
+        if: github.event_name != 'pull_request'
+        run: git show -s --format='checked=%H parents=%P'
+
+  test:
+    name: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Install optional image-test dependency
+        run: python3 -m pip install pillow
+      - name: Run every Python and Swift logic test
+        run: |
+          command -v swiftc
+          swiftc --version
+          cd scripts
+          python3 -m unittest discover -p 'test_*.py'
+      - name: Check shell syntax and warnings
+        run: |
+          bash -n install.sh release.sh make-zip.sh
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck -S warning install.sh release.sh make-zip.sh || echo "::warning::shellcheck found existing warning-level issues"
+          else
+            echo "shellcheck unavailable; skipped"
+          fi
+      - name: Build provider packages
+        run: python3 scripts/package_marketplaces.py
+      - name: Check npm package contents and size
+        run: |
+          npm pack --dry-run --json > "$RUNNER_TEMP/npm-pack.json"
+          python3 - "$RUNNER_TEMP/npm-pack.json" <<'PY'
+          import json, pathlib, sys
+          package = json.loads(pathlib.Path(sys.argv[1]).read_text())[0]
+          size = int(package["size"])
+          print(f"npm packed size: {size} bytes ({size / 1024 / 1024:.2f} MiB)")
+          if size > 12 * 1024 * 1024:
+              raise SystemExit("npm package exceeds the 12 MiB budget")
+          paths = [entry["path"] for entry in package["files"]]
+          bad = [path for path in paths if path.startswith(("assets/readme/", "build/"))]
+          if bad:
+              raise SystemExit("npm package contains excluded files: " + ", ".join(bad))
+          PY
+
+  consistency:
+    name: consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Check provider versions
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          files = [
+              "package.json", "plugin.json", ".claude-plugin/plugin.json",
+              ".antigravity-plugin/plugin.json", "gemini-extension.json",
+          ]
+          versions = {name: json.loads(pathlib.Path(name).read_text())["version"] for name in files}
+          print("versions:", versions)
+          if len(set(versions.values())) != 1:
+              raise SystemExit("provider manifest versions differ")
+          PY
+      - name: Require an Unreleased changelog for product changes
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if git diff --name-only origin/main...HEAD | grep -Eq '^(scripts/|skills/|commands/|agents/|npm/|install\.sh$)'; then
+            grep -q '^## Unreleased$' CHANGELOG.md || {
+              echo "Product changes require a ## Unreleased section in CHANGELOG.md"
+              exit 1
+            }
+          fi
+      - name: Keep AGENTS and CLAUDE facts identical
+        run: |
+          sed -n '/^## Project overview/,$p' AGENTS.md > /tmp/agents-facts.md
+          sed -n '/^## Project overview/,$p' CLAUDE.md > /tmp/claude-facts.md
+          diff -u /tmp/agents-facts.md /tmp/claude-facts.md
+      - name: Check absolute README links
+        run: |
+          python3 - <<'PY' > /tmp/readme-urls.txt
+          import pathlib, re
+          text = pathlib.Path("README.md").read_text()
+          urls = sorted(set(re.findall(r'https://(?:raw\.githubusercontent\.com|github\.com)/[^\s)>"\'`]+', text)))
+          print("\n".join(urls))
+          PY
+          while IFS= read -r url; do
+            [ -n "$url" ] || continue
+            echo "HEAD $url"
+            curl -LIfsS --retry 3 --retry-all-errors --connect-timeout 15 --max-time 60 "$url" >/dev/null
+          done < /tmp/readme-urls.txt
