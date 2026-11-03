@@ -3,8 +3,8 @@
 
 The engines call `print_notice()` after a run. It never blocks and never installs anything:
 it reads a small cache, starts a detached refresh at most once a day, and prints one line to
-stderr at most once a day when npm has a newer version. `FAST_IOS_NO_UPDATE_CHECK=1` (or `CI`)
-turns it off.
+stderr at most once a day when npm has a newer version or an existing install lacks launchers/
+linked Claude commands. `FAST_IOS_NO_UPDATE_CHECK=1` (or `CI`) turns it off.
 
     fast_update.py --status [root]   version=<installed> latest=<npm> (asks npm now, 3 s timeout);
                                      root: the installed tool's folder (default: this one)
@@ -50,6 +50,40 @@ def installed_version(root: Path = ROOT) -> str | None:
         return str(json.loads((root / "package.json").read_text())["version"])
     except (OSError, ValueError, KeyError, TypeError):
         return None
+
+
+def expected_links(root: Path = ROOT) -> tuple[list[str], list[str]]:
+    """Read install.sh so the daily self-check cannot drift from newly shipped launchers."""
+    try:
+        script = (root / "install.sh").read_text(encoding="utf-8")
+    except OSError:
+        return [], []
+    launchers = re.findall(r'link "\$HERE/scripts/[^"]+" "\$BIN_DIR/([^"]+)"', script)
+    commands = re.findall(r'link "\$HERE/commands/[^"]+" "\$COMMANDS_DIR/([^"]+)\.md"', script)
+    return list(dict.fromkeys(launchers)), list(dict.fromkeys(commands))
+
+
+def missing_links(root: Path = ROOT) -> tuple[list[str], Path]:
+    launchers, commands = expected_links(root)
+    bin_dir = Path(os.environ.get("FAST_IOS_BIN_DIR", Path.home() / ".local/bin")).expanduser()
+    skills_dir = Path(os.environ.get("CLAUDE_SKILLS_DIR", Path.home() / ".claude/skills")).expanduser()
+    commands_dir = Path(os.environ.get("CLAUDE_COMMANDS_DIR", Path.home() / ".claude/commands")).expanduser()
+    skill = skills_dir / PACKAGE
+    # A direct source checkout is not an incomplete install. Once any launcher or the Claude
+    # skill link exists, however, compare it with every link the current install.sh ships.
+    installed = any((bin_dir / name).exists() for name in launchers) or skill.is_symlink()
+    if not installed:
+        return [], root
+    missing = [name for name in launchers if not (bin_dir / name).exists()]
+    if skill.is_symlink():
+        missing += [name for name in commands if not (commands_dir / f"{name}.md").exists()]
+        try:
+            clone = skill.resolve().parents[1]
+        except (OSError, IndexError):
+            clone = root
+    else:
+        clone = root
+    return list(dict.fromkeys(missing)), clone
 
 
 def parse_version(text: str | None) -> tuple[int, ...]:
@@ -212,6 +246,20 @@ def _notice(now: float, current: str | None, spawn: bool) -> str | None:
         write_cache(data)
         if spawn:
             start_refresh()
+    missing, clone = missing_links()
+    signature = ",".join(missing)
+    if missing and (
+        data.get("links_signature") != signature
+        or "links_notified_at" not in data
+        or now - float(data["links_notified_at"]) >= DAY
+    ):
+        data["links_signature"] = signature
+        data["links_notified_at"] = now
+        write_cache(data)
+        return (
+            f"{PACKAGE}: new commands not linked ({', '.join(missing)}); "
+            f"run ./install.sh --link in {clone} or npx {PACKAGE}"
+        )
     current = current or installed_version()
     latest = data.get("latest")
     if not is_newer(latest, current):

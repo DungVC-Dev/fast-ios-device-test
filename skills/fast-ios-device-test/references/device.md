@@ -11,6 +11,12 @@ fix for each gap ([../../../SETUP.md](../../../SETUP.md) has the whole setup).
 generic XCUITest runner once (cached in `~/Library/Caches/fast-device-test`),
 re-signs it with an existing development profile, and runs the flow on the device.
 
+Every flow and live `do`/`serve`/`lock` request first runs a sub-two-second readiness check. It
+reuses one `devicectl` result (briefly cached per UDID) and stops before install/build with exactly
+one `FAIL error=<problem>: <fix>` line when pairing, connection, Developer Mode, the developer disk
+image, Xcode/iOS compatibility, or a development profile is missing. `fastDeviceTest check` remains
+the full multi-line report.
+
 - **Signing needs no Apple ID login.** The launcher picks a non-expired
   development profile that lists the device and matches a non-revoked keychain
   identity, preferring a wildcard profile, then the fewest capabilities. It
@@ -189,3 +195,17 @@ collects diagnostics) is ended and replaced; a locked iPhone is reported in seco
   the clip (`run.mp4` on FAIL; `<task>/final[-<session>].mp4` on PASS).
 - Device must be unlocked, in Developer Mode, trusting the Mac; enable
   Settings › Developer › Enable UI Automation if iOS asks. One run per device at a time.
+
+### Troubleshooting before and during a run
+
+| Reported problem | Fix |
+|---|---|
+| Not paired/trusted or disconnected | Unlock the iPhone, tap Trust, keep USB/Wi-Fi connected; pair it once in Xcode if needed. |
+| Developer Mode off / developer disk image unavailable | Enable Settings › Privacy & Security › Developer Mode, restart, then open Xcode once with the unlocked phone connected. |
+| No development profile lists the iPhone | Sign in under Xcode Settings › Accounts and run an app on this iPhone once. |
+| UI Automation disabled | Settings › Developer › Enable UI Automation. |
+| Untrusted Developer / developer profile not trusted | Settings › General › VPN & Device Management › trust the developer. |
+| Device busy preparing or copying shared cache | Wait, keep it unlocked and connected, then retry later. |
+| iOS newer than selected Xcode | Install a matching Xcode or set `DEVELOPER_DIR` (`FAST_DEVICE_DEVELOPER_DIR` also selects the preflight/build Xcode). |
+| Developer Mode requires a passcode | Set a device passcode, enable Developer Mode, then retry. |
+| Device disconnected mid-run | Reconnect it, keep it unlocked, and rerun the same flow. |

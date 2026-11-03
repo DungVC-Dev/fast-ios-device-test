@@ -63,6 +63,49 @@ class NoticeTests(unittest.TestCase):
             with self.subTest(name=name), mock.patch.dict(os.environ, {name: "1"}):
                 self.assertIsNone(fast_update.notice(now=1001, current="2.0.3", spawn=False))
 
+    def test_missing_launcher_and_linked_skill_commands_print_once_a_day(self):
+        clone = self.dir / "clone"
+        missing = ["fastCarPlayTest", "fastUIReview"]
+        self.seed(checked_at=1000, latest="2.0.3")
+        with mock.patch.object(fast_update, "missing_links", return_value=(missing, clone)):
+            line = fast_update.notice(now=1001, current="2.0.3", spawn=False)
+            self.assertEqual(
+                line,
+                f"fast-ios-device-test: new commands not linked (fastCarPlayTest, fastUIReview); "
+                f"run ./install.sh --link in {clone} or npx fast-ios-device-test",
+            )
+            self.assertIsNone(fast_update.notice(now=1002, current="2.0.3", spawn=False))
+            self.assertIsNotNone(fast_update.notice(now=1001 + DAY, current="2.0.3", spawn=False))
+
+    def test_link_inventory_comes_from_install_sh_and_checks_commands_only_for_linked_skill(self):
+        root = self.dir / "tool"
+        root.mkdir()
+        (root / "install.sh").write_text(
+            'link "$HERE/scripts/fast_ui.py" "$BIN_DIR/fastSimulatorTest"\n'
+            'link "$HERE/scripts/fast_carplay.py" "$BIN_DIR/fastCarPlayTest"\n'
+            'link "$HERE/commands/fastSimulatorTest.md" "$COMMANDS_DIR/fastSimulatorTest.md"\n'
+            'link "$HERE/commands/fastCarPlayTest.md" "$COMMANDS_DIR/fastCarPlayTest.md"\n'
+        )
+        bin_dir = self.dir / "bin"
+        commands_dir = self.dir / "commands"
+        skills_dir = self.dir / "skills"
+        clone = self.dir / "clone"
+        (clone / "skills/fast-ios-device-test").mkdir(parents=True)
+        bin_dir.mkdir()
+        commands_dir.mkdir()
+        skills_dir.mkdir()
+        (bin_dir / "fastSimulatorTest").write_text("")
+        (commands_dir / "fastSimulatorTest.md").write_text("")
+        (skills_dir / "fast-ios-device-test").symlink_to(clone / "skills/fast-ios-device-test")
+        with mock.patch.dict(os.environ, {
+            "FAST_IOS_BIN_DIR": str(bin_dir),
+            "CLAUDE_COMMANDS_DIR": str(commands_dir),
+            "CLAUDE_SKILLS_DIR": str(skills_dir),
+        }):
+            missing, found_clone = fast_update.missing_links(root)
+        self.assertEqual(missing, ["fastCarPlayTest"])
+        self.assertEqual(found_clone, clone.resolve())
+
     def test_refresh_starts_only_when_the_cache_is_a_day_old(self):
         self.seed(checked_at=1000)
         with mock.patch.object(fast_update, "start_refresh") as start:

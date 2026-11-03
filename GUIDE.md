@@ -74,6 +74,15 @@ Kiểm tra một máy: `fastDeviceTest check --device <tên>`: báo thiếu gì 
 giữa chừng thì tool báo ngay sau vài giây: mở khoá bằng tay rồi chạy lại. Đặt Tự động khoá dài hơn
 (ví dụ 5 phút) trên máy test thì ít gặp hơn.
 
+Trước mỗi flow và lệnh `do`/`serve`/`lock`, tool tự chạy preflight nhanh (một lần gọi
+`devicectl`, cache ngắn theo UDID). Nếu máy chưa ghép đôi/tin cậy, mất kết nối, tắt Developer Mode,
+chưa mount developer disk image, iOS mới hơn Xcode, hoặc không có development profile chứa máy,
+tool dừng trước khi build/cài và chỉ in một dòng `FAIL error=<lỗi>: <cách sửa>`.
+`fastDeviceTest check` vẫn là báo cáo đầy đủ. Lỗi lúc chạy cũng chỉ rõ cách xử lý: bật
+Settings › Developer › Enable UI Automation; trust developer ở Settings › General › VPN & Device
+Management; chờ Xcode chuẩn bị/copy shared cache; dùng Xcode khớp iOS; đặt passcode nếu Developer
+Mode yêu cầu; hoặc cắm lại máy nếu bị ngắt giữa chừng.
+
 ## Lệnh
 
 | Lệnh | Dùng khi |

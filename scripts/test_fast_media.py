@@ -210,6 +210,7 @@ class DeviceRecordingTests(unittest.TestCase):
             flow.write_text(json.dumps({"version": 1, "name": "f", "app": {"project_root": raw}, "actions": []}))
             device = {"udid": "00008120-AAAA", "name": "Test iPhone", "os": "26.6", "connected": True}
             with mock.patch.object(fast_device, "resolve_device", return_value=device), \
+                    mock.patch.object(fast_device, "preflight_device"), \
                     mock.patch.object(fast_device, "server_alive", return_value=True), \
                     mock.patch.object(fast_device, "run_one_shot") as one_shot:
                 with self.assertRaisesRegex(fast_device.FastDeviceError, "--record needs a one-shot run"):

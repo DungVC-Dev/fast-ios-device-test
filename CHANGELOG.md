@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Physical iPhone
+
+- Run a fast, briefly cached one-`devicectl` readiness gate before every physical-iPhone flow and
+  live request, while keeping `fastDeviceTest check` as the complete pairing/Xcode/signing report.
+- Turn UI Automation, developer trust, device preparation/shared-cache, Xcode/iOS, passcode,
+  lock and mid-run disconnect logs into concise errors with the exact next fix.
+- Detect launchers or linked Claude slash commands missing from an existing install once a day and
+  point linked-clone users back to `install.sh --link`; fix clean-host baguette resolution and make
+  iPhone Duo tests independent of locally installed Xcode components.
+
 ### CI/CD
 
 - Add pull-request/main CI for linear rebased history, the complete macOS test/package suite,
