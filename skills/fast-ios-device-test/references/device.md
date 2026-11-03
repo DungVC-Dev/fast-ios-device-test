@@ -255,13 +255,27 @@ bad connection or a hot phone, and write the result per condition (the CARFACE
     destination back, and tell the user they can type again. Never type text and never press
     Return or shortcuts in Xcode: whatever is focused is somebody's source file. Note the level in
     the case's result (`THERM-01 Serious`).
-  - Agents doing this through GUI automation without computer use: a Mac often runs two Xcodes. `tell application
-    "Xcode"`, `process "Xcode"` and plain keystrokes can reach the other one and type into its
-    editor. Address Xcode by path (`tell application "/path/to/Xcode.app"`), set the destination
-    with `set active run destination of workspace document "<X>.xcodeproj" to run destination
-    "<device name>" of …`, click the menu on `first application process whose unix id is <pid>`
-    after checking it is frontmost, and never send typed text or Return. Tell the user before
-    bringing Xcode to the front, and run `git status` in the other open projects afterwards.
+  - Without computer use (checked on Xcode 27.1 with Xcode 26.6 also running, iPhone 15 Plus):
+    - **Address Xcode by process id through the Accessibility API**
+      (`AXUIElementCreateApplication(pid)`; a few lines of Swift), never by name. System Events
+      turns `first application process whose unix id is <pid>` back into `application process
+      "Xcode"`, which is whichever Xcode came first: the other one.
+    - Find the pid with `ps -axo pid,command | grep 'Xcode.*/MacOS/Xcode$'`, and check that the
+      pid's windows include the project.
+    - The run destination can be set by AppleScript, `set active run destination of workspace
+      document "<X>.xcodeproj" to (first run destination of … whose name is "<device>")` sent to
+      `application "/path/to/Xcode.app"`. Reading it back fails (`missing value`): read the
+      toolbar pop-up's `AXValue` instead.
+    - The conditions list loads only when the menu is really open, with that Xcode frontmost;
+      until then it shows `Getting available conditions...`. Activate the pid, raise the
+      project window, `AXPress` the `Debug` menu bar item, then `Induce Device Conditions`, wait
+      about 3 s, then `AXPress` `Thermal State` › `Serious`. Reopen the menu and read
+      `AXMenuItemMarkChar` (✓); the item is then titled `Thermal State (Active)`. To stop,
+      press the same level under `Thermal State (Active)`, and check that no ✓ is left.
+    - Network Link in that menu uses its own names (`3G Network - average`, `Very poor
+      network`…); the `network_condition` step is the tested way for the network.
+    - Send no keys at all, ask the user to keep off the keyboard while Xcode is in front, give
+      the front back to their app afterwards, and run `git status` in the open projects.
 
 #### App logs
 
