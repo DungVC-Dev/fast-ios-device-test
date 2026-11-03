@@ -216,10 +216,20 @@ bad connection or a hot phone, and write the result per condition (the CARFACE
 
 - **Weak network:** `{"type":"network_condition","profile":"3G"}` switches Network Link
   Conditioner on in Settings › Developer with that preset, then activates the flow's app again
-  (in `do`: the `--app` app, or `"return_to"`). Presets: `100% Loss`, `3G`, `DSL`, `Edge`,
+  (in `do`: the `--app` app, or `"return_to"`). Presets: `3G`, `DSL`, `Edge`,
   `High Latency DNS`, `LTE`, `Very Bad Network`, `Wi-Fi`, `Wi-Fi 802.11ac`; `"profile":"off"`
   switches it off.
-- **Low Power Mode:** `{"type":"low_power","on":true}` (Settings › Battery).
+  - **The profile also slows the USB link the runner answers on.** On an iPhone 15 Plus, a flow
+    that takes ~5 s took ~60 s under 3G, and a single screen read took tens of seconds. Requests
+    made while a profile is on get 3–8× their normal time on their own; keep the steps under a
+    profile few (one `wait`, one `screenshot`), and prefer `fastDeviceTest log wait` (small log
+    lines) over repeated screen reads. `100% Loss` is refused: it would cut the runner off with
+    no way left to switch it off. Use Very Bad Network, or Airplane Mode in Control Center, for
+    a dead network.
+- **Low Power Mode:** `{"type":"low_power","on":true}` (Settings › Battery). iOS switches Low
+  Power Mode off by itself on a charging iPhone above 80%, which a USB-connected test phone
+  usually is: check the switch (or the yellow battery) right before the step that needs it, and
+  expect it to go off during a long run.
 - Both are remembered per iPhone and **switched off again on their own**: at the end of the flow
   (PASS or FAIL; `setup.keep_conditions: true` keeps them), at `fastDeviceTest stop`, or with
   `fastDeviceTest conditions off --device <d> [--app <bundle id>]` after a series of `do`
@@ -284,6 +294,11 @@ Most pass criteria of a background feature live in the app's log (`song changed:
   long `timeout` is all it takes.
 
 #### Third-party apps in tests
+
+- AssistiveTouch's floating button takes taps meant for whatever is under it (the Clock
+  stopwatch's Start, for example): when a tap does nothing and the button sits on the target,
+  use `tap_point` on a free part of the target. Do not move or switch off AssistiveTouch on the
+  user's phone.
 
 - Spotify **Free** allows 6 skips per hour and a few song picks per day; after that Spotify
   rejects Next from every surface (App Remote returns `Code=-2001`, `wamp.error.not_authorized`)

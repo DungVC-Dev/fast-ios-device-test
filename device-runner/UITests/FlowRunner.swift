@@ -947,7 +947,12 @@ private extension FlowRunner {
     // Taps only when the switch is not already in the wanted state, then waits for the change.
     func setSwitch(_ action: [String: Any], on: Bool, timeout: Double, postDelay: Double) throws -> [String: Any] {
         let isSwitch: (Node) -> Bool = { ["Switch", "CheckBox"].contains($0.type) && ["0", "1"].contains($0.value) }
-        let node = try resolveNode(action, timeout: timeout, accept: isSwitch)
+        // A page that loads late (Settings › Battery draws its charts after the push) moves the
+        // switch after it is found: tap it only once two reads agree on its frame.
+        let found = try resolveNode(action, timeout: timeout, accept: isSwitch)
+        let node = try settled(found) { nodes in
+            self.sorted(nodes.filter { self.matches($0, action) && isSwitch($0) }, by: ["y", "x"]).first
+        }
         let wanted = on ? "1" : "0"
         guard node.value != wanted else { return ["toggled": false] }
         // A SwiftUI Toggle spans its row and flips only when the switch itself is hit.

@@ -518,6 +518,11 @@ def report_notes(report: dict[str, Any]) -> str:
     moving = [str(result.get("screenshot")) for result in results if result.get("stable") is False]
     if moving:
         notes += f" unsettled={','.join(moving)}"
+    for result in results:
+        if "from" in result and "to" in result:
+            # wait_change reads "label|value"; the value part is empty for most text.
+            seen = [str(result[key]).removesuffix("|") for key in ("from", "to")]
+            notes += f" changed={json.dumps(seen[0], ensure_ascii=False)}→{json.dumps(seen[1], ensure_ascii=False)}"
     skipped = [str(result.get("step")) for result in results if result.get("optional_missing")]
     if skipped:
         notes += f" skipped_optional={','.join(skipped)}"
@@ -577,9 +582,12 @@ def own_steps(report: dict[str, Any], written: list[dict[str, Any]], actions: li
             report["step_type"] = kind + (f" ({inner})" if inner != kind else "")
 
 
-def request_budget(actions: list[dict[str, Any]], base: float) -> float:
-    """Seconds a request may take: each step's timeout (6 s by default) plus its pauses."""
-    return base + sum(float(a.get("timeout", 6)) + float(a.get("seconds", 0)) for a in actions)
+def request_budget(actions: list[dict[str, Any]], base: float, udid: str | None = None) -> float:
+    """Seconds a request may take: each step's timeout (6 s by default) plus its pauses, times
+    the slowdown of a network condition that is on (it shapes the runner's USB link too)."""
+    steps = sum(float(a.get("timeout", 6)) + float(a.get("seconds", 0)) for a in actions)
+    factor = fast_conditions.slowdown(fast_conditions.load(CACHE_ROOT, udid)) if udid else 1.0
+    return (base + steps) * factor
 
 
 def restore_conditions(udid: str, return_app: str | None) -> str:
@@ -589,13 +597,25 @@ def restore_conditions(udid: str, return_app: str | None) -> str:
     if not active:
         return ""
     steps = fast_conditions.cleanup_steps(active, return_app)
-    try:
-        response = request(udid, {"op": "actions", "actions": steps, "wait_for_idle": False},
-                           timeout=request_budget(steps, 30))
-    except FastDeviceError as error:
-        return f"conditions_left_on={fast_conditions.describe(active)} ({error})"
-    if response.get("status") != "pass":
-        return f"conditions_left_on={fast_conditions.describe(active)} ({response.get('error')})"
+    problem = ""
+    # A slowed link can lose the runner mid-request: start it again and retry once.
+    for attempt in range(2):
+        try:
+            if attempt:
+                kill_runners(udid)
+                server_state_path(udid).unlink(missing_ok=True)
+                start_server(resolve_device(udid), False)
+            response = request(udid, {"op": "actions", "actions": steps, "wait_for_idle": False},
+                               timeout=request_budget(steps, 30, udid))
+        except FastDeviceError as error:
+            problem = str(error)
+            continue
+        if response.get("status") == "pass":
+            problem = ""
+            break
+        problem = str(response.get("error"))
+    if problem:
+        return f"conditions_left_on={fast_conditions.describe(active)} ({problem})"
     fast_conditions.remember(CACHE_ROOT, udid, {"network": None, "low_power": None})
     return f"conditions_restored={fast_conditions.describe(active)}"
 
@@ -794,7 +814,8 @@ def runtime_failure(text: str) -> str | None:
 
 def server_alive(udid: str) -> bool:
     try:
-        return request(udid, {"op": "ping"}, timeout=3).get("pong") is True
+        slow = fast_conditions.slowdown(fast_conditions.load(CACHE_ROOT, udid))
+        return request(udid, {"op": "ping"}, timeout=3 * slow).get("pong") is True
     except (OSError, FastDeviceError, json.JSONDecodeError):
         return False
 
@@ -846,7 +867,8 @@ def start_server(device: dict[str, Any], rebuild: bool) -> None:
         "pid": process.pid, "address": tunnel_address(udid), "port": SERVER_PORT, "log": str(log),
         "device": {key: value for key, value in device.items() if key not in {"serving", "details", "developer_dir"}},
     }))
-    deadline = time.perf_counter() + 120
+    wait = 120 * fast_conditions.slowdown(fast_conditions.load(CACHE_ROOT, udid))
+    deadline = time.perf_counter() + wait
     while time.perf_counter() < deadline:
         log_text = log.read_text(errors="replace")
         failure = runtime_failure(log_text)
@@ -861,7 +883,7 @@ def start_server(device: dict[str, Any], rebuild: bool) -> None:
             return
         time.sleep(1)
     end_runner(udid)
-    raise FastDeviceError(f"runner did not answer on port {SERVER_PORT} within 120s; log {log}")
+    raise FastDeviceError(f"runner did not answer on port {SERVER_PORT} within {wait:.0f}s; log {log}")
 
 
 def left_behind(udid: str, pgrep_output: str) -> bool:
@@ -1064,7 +1086,7 @@ def run_flow(args: argparse.Namespace) -> int:
     try:
         if server_alive(udid):
             mode = "server"
-            budget = request_budget(prepared["actions"], 60)
+            budget = request_budget(prepared["actions"], 60, udid)
             report = request(udid, {"op": "flow", "flow": prepared}, timeout=budget)
             report["screenshots"] = save_screenshots(report, artifacts)
         else:
@@ -1272,7 +1294,7 @@ def run_command(argv: list[str]) -> int:
         conditions = fast_conditions.requested(written)
         if conditions:
             fast_conditions.remember(CACHE_ROOT, udid, conditions)
-        timeout = request_budget(actions, 30)
+        timeout = request_budget(actions, 30, udid)
         extra: dict[str, Any] = {} if args.idle_wait else {"wait_for_idle": False}
         if args.prompt_labels:
             extra["optional_permission_labels"] = parse_prompt_labels(args.prompt_labels)

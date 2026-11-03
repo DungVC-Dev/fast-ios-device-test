@@ -20,6 +20,13 @@ NETWORK_PROFILES = (
     "100% Loss", "3G", "DSL", "Edge", "High Latency DNS", "LTE", "Very Bad Network", "Wi-Fi", "Wi-Fi 802.11ac",
 )
 CONDITION_TYPES = ("network_condition", "low_power")
+# Network Link Conditioner shapes the USB link to the Mac too (the CoreDevice tunnel the runner
+# answers on): on an iPhone 15 Plus a full-screen read took tens of seconds under 3G. Requests
+# made while a profile is on get this much more time; 100% Loss would cut the runner off, with
+# no way left to switch it off again, so it is refused.
+SLOWDOWN = {"Edge": 8, "Very Bad Network": 8, "3G": 5, "High Latency DNS": 2}
+REFUSED = {"100% Loss": "100% Loss also cuts the USB link the runner answers on, so nothing could switch it off "
+                        "again; test a dead network with Airplane Mode or Very Bad Network instead"}
 OFF_WORDS = ("off", "none", "")
 
 
@@ -30,10 +37,14 @@ def _settings(step: dict[str, Any]) -> dict[str, Any]:
 def _open_page(row: str, page_marker: dict[str, Any], parent: str | None = None) -> list[dict[str, Any]]:
     """Open Settings › [parent ›] row. Settings may reopen on the page it was left on, so each
     navigation step is optional and the last step waits for something only that page shows."""
-    steps = [_settings({"type": "launch"})]
+    # The start page draws its account banners after launch and moves every row down: tap a row
+    # only after that (seen on an iPhone 15 Plus, iOS 26.6.1, where a tap landed on Bluetooth).
+    steps = [_settings({"type": "launch"}), _settings({"type": "pause", "seconds": 1.5})]
     for label in ([parent] if parent else []) + [row]:
         steps += [
-            _settings({"type": "scroll_to", "label": label, "optional": True, "max_swipes": 8}),
+            # Scroll the row into the upper half: near the bottom it sits under Settings'
+            # floating search bar and a tap there opens search instead (iOS 26).
+            _settings({"type": "scroll_to", "label": label, "frame": {"max_y": 450}, "optional": True, "max_swipes": 8}),
             _settings({"type": "tap_label", "label": label, "optional": True}),
         ]
     steps.append(_settings({"type": "wait", **page_marker, "timeout": 6}))
@@ -46,6 +57,8 @@ def network_value(action: dict[str, Any]) -> str:
         return "off"
     for profile in NETWORK_PROFILES:
         if profile.lower() == value.lower():
+            if profile in REFUSED:
+                raise ValueError(f"network_condition {profile}: {REFUSED[profile]}")
             return profile
     raise ValueError(
         f"network_condition profile '{value}' is not a Network Link Conditioner preset; use one of "
@@ -76,7 +89,14 @@ def network_steps(profile: str) -> list[dict[str, Any]]:
 
 def low_power_steps(on: bool) -> list[dict[str, Any]]:
     marker = {"label": "Low Power Mode", "element_type": "Switch"}
-    return _open_page("Battery", marker) + [_settings({"type": "set_switch", **marker, "on": on})]
+    # Battery draws its charge and usage cards after the push and moves the switch down, off
+    # the screen on an iPhone 15 Plus (iOS 26.6.1): wait for that, then scroll back to it.
+    title = {"label": "Battery", "element_type": "StaticText", "frame": {"max_y": 140}}
+    return _open_page("Battery", title) + [
+        _settings({"type": "pause", "seconds": 1.5}),
+        _settings({"type": "scroll_to", **marker, "max_swipes": 6}),
+        _settings({"type": "set_switch", **marker, "on": on}),
+    ]
 
 
 def expand(actions: list[dict[str, Any]], return_app: str | None) -> tuple[list[dict[str, Any]], list[int]]:
@@ -144,6 +164,12 @@ def remember(cache_root: Path, udid: str, change: dict[str, Any]) -> dict[str, A
     else:
         path.unlink(missing_ok=True)
     return state
+
+
+def slowdown(state: dict[str, Any]) -> float:
+    """How much longer a runner request may take while this state is on."""
+    profile = state.get("network")
+    return float(SLOWDOWN.get(profile, 3)) if profile else 1.0
 
 
 def describe(state: dict[str, Any]) -> str:
