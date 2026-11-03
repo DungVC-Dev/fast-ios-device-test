@@ -16,6 +16,12 @@
   Play button or a third-party upsell. `wait_change` waits, minutes if needed, until a label or
   value changes.
 - When `tap_label` misses, the error names the element types that text has on screen.
+- Network Link Conditioner also slows the USB link to the runner, so requests made while a
+  profile is on get 3–8× more time. `100% Loss` is refused, because nothing could switch it off
+  again. Switching conditions off retries once with a fresh runner.
+- `set_switch` waits for the switch to stop moving before it taps. The `low_power` step allows
+  for Settings › Battery drawing late, and Settings' start page now gets time to finish loading
+  before a row is tapped.
 - `do --labels changed|none` shortens the report. `do` no longer writes screenshots and
   `step-NN-ui.json` into the current directory: they go to a cache folder unless `--out` says
   otherwise. `serve --install <app>` installs before starting the runner.

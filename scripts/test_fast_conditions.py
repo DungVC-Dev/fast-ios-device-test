@@ -29,6 +29,7 @@ class ConditionTests(unittest.TestCase):
     def test_network_steps_open_the_page_tolerantly_then_pick_the_cell_and_switch(self) -> None:
         steps = fast_conditions.network_steps("Edge")
         self.assertEqual(steps[0], {"type": "launch", "app": "com.apple.Preferences"})
+        self.assertEqual(steps[1]["type"], "pause")
         navigation = [step for step in steps if step["type"] in ("scroll_to", "tap_label") and step.get("optional")]
         self.assertEqual([step["label"] for step in navigation],
                          ["Developer", "Developer", "Network Link Conditioner", "Network Link Conditioner"])
@@ -39,6 +40,17 @@ class ConditionTests(unittest.TestCase):
         off = fast_conditions.network_steps("off")
         self.assertFalse(any(step.get("element_type") == "Cell" for step in off))
         self.assertIs(off[-1]["on"], False)
+
+    def test_100_percent_loss_is_refused_because_it_cuts_the_runner_off(self) -> None:
+        with self.assertRaisesRegex(ValueError, "cuts the USB link"):
+            fast_conditions.network_value({"profile": "100% Loss"})
+
+    def test_slowdown_grows_with_the_profile(self) -> None:
+        self.assertEqual(fast_conditions.slowdown({}), 1.0)
+        self.assertEqual(fast_conditions.slowdown({"low_power": True}), 1.0)
+        self.assertEqual(fast_conditions.slowdown({"network": "3G"}), 5.0)
+        self.assertEqual(fast_conditions.slowdown({"network": "Edge"}), 8.0)
+        self.assertEqual(fast_conditions.slowdown({"network": "LTE"}), 3.0)
 
     def test_low_power_accepts_booleans_and_words(self) -> None:
         self.assertTrue(fast_conditions.low_power_value({"on": True}))

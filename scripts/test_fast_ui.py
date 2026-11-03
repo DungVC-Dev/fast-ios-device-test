@@ -2283,17 +2283,29 @@ class DeviceLauncherTests(unittest.TestCase):
         self.assertEqual(json.loads((self.cache / "conditions-U.json").read_text()), {"network": "3G"})
 
     def test_do_reports_a_failing_expanded_step_by_the_step_written(self) -> None:
-        reply = {"status": "fail", "step": 5, "error": "timed out", "results": [{"step": 3, "optional_missing": True}],
+        reply = {"status": "fail", "step": 6, "error": "timed out", "results": [{"step": 4, "optional_missing": True}],
                  "labels": []}
         _, out = self.run_do('[{"type":"wait","label":"A"},{"type":"low_power","on":true}]', reply=reply)
         self.assertIn("step=2 type=low_power (wait)", out)
         # Skipped navigation inside the expansion is the expansion's business, not a skipped step.
         self.assertNotIn("skipped_optional", out)
 
+    def test_do_gives_requests_more_time_while_a_network_profile_is_on(self) -> None:
+        request, _ = self.run_do('{"type":"wait","label":"A"}')
+        normal = request.call_args.kwargs["timeout"]
+        (self.cache / "conditions-U.json").write_text('{"network": "3G"}')
+        request, _ = self.run_do('{"type":"wait","label":"A"}')
+        self.assertEqual(request.call_args.kwargs["timeout"], normal * 5)
+
     def test_do_refuses_an_unknown_network_profile(self) -> None:
         import fast_device
         with self.assertRaisesRegex(fast_device.FastDeviceError, "Very Bad Network"):
             self.run_do('{"type":"network_condition","profile":"5G"}')
+
+    def test_do_names_what_wait_change_saw(self) -> None:
+        reply = {"status": "pass", "labels": [], "results": [{"step": 1, "from": "0 seconds|", "to": "2 seconds|"}]}
+        _, out = self.run_do('[{"type":"wait_change","id":"t","timeout":60}]', reply=reply)
+        self.assertIn('changed="0 seconds"→"2 seconds"', out)
 
     def test_do_names_skipped_optional_steps(self) -> None:
         reply = {"status": "pass", "labels": [],
@@ -2334,7 +2346,7 @@ class DeviceLauncherTests(unittest.TestCase):
 
     def test_flow_switches_conditions_off_after_a_failure(self) -> None:
         import fast_device
-        flow_report = {"status": "fail", "step": "08_set_switch", "error": "switch did not turn on", "results": []}
+        flow_report = {"status": "fail", "step": "09_set_switch", "error": "switch did not turn on", "results": []}
         replies = [flow_report, {"status": "pass", "results": [], "labels": []}]
         out, err = io.StringIO(), io.StringIO()
         with tempfile.TemporaryDirectory() as raw:
