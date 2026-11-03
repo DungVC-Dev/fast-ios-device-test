@@ -6,7 +6,7 @@ project facts below their intro; when you change a fact, change it in both. `GEM
 (Antigravity CLI) holds only Antigravity notes, because Antigravity also loads `AGENTS.md`.
 
 The slash commands (`/fastSimulatorTest`, `/fastDeviceTest`, `/fastCarPlayTest`, `/fastUIReview`), the
-`fast-ios-device-test` and `iphone-duo-swiftui` skills, and the `ui-explorer` subagent are what this repo *ships*. After
+`fast-ios-device-test`, `fast-ios-device-test-setup`, and `iphone-duo-swiftui` skills, and the `ui-explorer` subagent are what this repo *ships*. After
 `./install.sh --link`, edits to them apply at once; restart Claude Code only to pick up a new or
 renamed command, skill or subagent. Apple skill text is never committed: `scripts/xcode_skills.py`
 exports it from a local Xcode on explicit request.
@@ -55,6 +55,7 @@ User-facing docs: `README.md` (English), `GUIDE.md` (Vietnamese, for testers), `
 | `scripts/fastUnitTest`, `scripts/fast_device_test.sh`, `scripts/fastUnitTest.command.md.disabled` | Experimental on-device XCTest runner; not installed as a command |
 | `bin/` | Repo-local symlinks to `scripts/` for the plugin install. `install.sh` does not use them: it links `scripts/*.py` into `~/.local/bin` itself |
 | `skills/fast-ios-device-test/` | The skill (`SKILL.md` + `references/device.md`, `review.md`, `usage.md`): how an agent *uses* the tool |
+| `skills/fast-ios-device-test-setup/` | Setup and environment verification skill (`SKILL.md`) |
 | `skills/iphone-duo-swiftui/` | Bundled company skill and reusable SwiftUI components for iPhone Duo |
 | `scripts/xcode_skills.py` | Exports Apple agent skills from a local Xcode; Apple text never enters the repo/package |
 | `commands/` | Slash commands `fastSimulatorTest`, `fastDeviceTest`, `fastCarPlayTest`, `fastUIReview` |

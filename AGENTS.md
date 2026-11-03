@@ -8,11 +8,11 @@ project facts below their intro; when you change a fact, change it in both. `GEM
 The slash commands in `commands/` and the `ui-explorer` subagent in `agents/` are written for
 Claude Code; Codex does not load them. Run the engines directly instead (`scripts/fast_ui.py`,
 `scripts/fast_device.py`, or the launchers in `~/.local/bin`).
-`skills/fast-ios-device-test/SKILL.md` and `skills/iphone-duo-swiftui/SKILL.md` are standard Agent
-Skills: Codex picks them up when they are linked into `~/.codex/skills/` (see README, "Use with
-Codex or Antigravity CLI"); otherwise read them directly. Where a skill mentions a subagent, do
-the steps yourself. Apple skill text is never committed: `scripts/xcode_skills.py` exports it from
-a local Xcode on explicit request.
+`skills/fast-ios-device-test/SKILL.md`, `skills/fast-ios-device-test-setup/SKILL.md`, and
+`skills/iphone-duo-swiftui/SKILL.md` are standard Agent Skills: Codex picks them up when they are
+linked into `~/.codex/skills/` (see README, "Connect your agent"); otherwise read them directly.
+Where a skill mentions a subagent, do the steps yourself. Apple skill text is never committed:
+`scripts/xcode_skills.py` exports it from a local Xcode on explicit request.
 
 ## Project overview
 
@@ -58,6 +58,7 @@ User-facing docs: `README.md` (English), `GUIDE.md` (Vietnamese, for testers), `
 | `scripts/fastUnitTest`, `scripts/fast_device_test.sh`, `scripts/fastUnitTest.command.md.disabled` | Experimental on-device XCTest runner; not installed as a command |
 | `bin/` | Repo-local symlinks to `scripts/` for the plugin install. `install.sh` does not use them: it links `scripts/*.py` into `~/.local/bin` itself |
 | `skills/fast-ios-device-test/` | The skill (`SKILL.md` + `references/device.md`, `review.md`, `usage.md`): how an agent *uses* the tool |
+| `skills/fast-ios-device-test-setup/` | Setup and environment verification skill (`SKILL.md`) |
 | `skills/iphone-duo-swiftui/` | Bundled company skill and reusable SwiftUI components for iPhone Duo |
 | `scripts/xcode_skills.py` | Exports Apple agent skills from a local Xcode; Apple text never enters the repo/package |
 | `commands/` | Slash commands `fastSimulatorTest`, `fastDeviceTest`, `fastCarPlayTest`, `fastUIReview` |

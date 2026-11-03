@@ -160,4 +160,6 @@ details:
 - [WidgetKit: Optimizing for accented rendering and Liquid Glass](https://developer.apple.com/documentation/WidgetKit/optimizing-your-widget-for-accented-rendering-mode-and-liquid-glass)
 
 If `apple-liquid-glass` has been exported from the local Xcode, read its framework-specific
-references for code changes. Apple text stays in that local skill and is not shipped by this repo.
+references for code changes. Export it from local Xcode using
+`npx fast-ios-device-test xcode-skills --docs liquid-glass`. Apple text stays in that local skill
+and is not shipped by this repo.

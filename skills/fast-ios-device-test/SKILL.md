@@ -1,6 +1,6 @@
 ---
 name: fast-ios-device-test
-description: Use when asked to run, verify, re-test, or record an iOS screen or flow quickly on Simulator or a physical iPhone, including a matrix of several cases or devices, or a system app such as Settings. Not for release, archive, or full-suite runs.
+description: Use when asked to run, verify, re-test, or record an iOS screen or flow quickly on Simulator, iPhone Duo, CarPlay, or a physical iPhone, including a matrix of several cases or devices, or a system app such as Settings. Not for release, archive, or full-suite runs.
 ---
 
 # Fast iOS Device Test
@@ -157,9 +157,11 @@ launch) and print one PASS/FAIL line with the visible labels after the actions.
   Send, Sign Out…) in an array is refused unless it says `"confirm": true`.
 - Between steps, one line of reasoning; turn a path that worked into a flow for reruns.
 - A screen visited before: `fastUIMap <bundle id> --path-to <screen>` gives the whole way as one
-  guarded request. A search of about six steps or more: hand it to the `ui-explorer` subagent
-  (Haiku, `FAST_GUARD_SINGLE=1`, returns the guarded request) and decide only the hard steps
-  yourself — experimental, check its result before relying on it.
+  guarded request. A search of about six steps or more: in Claude Code, hand it to the `ui-explorer`
+  subagent (Haiku, `FAST_GUARD_SINGLE=1`, returns the guarded request) and decide only the hard steps
+  yourself — experimental, check its result before relying on it. In Gemini CLI, Antigravity, or
+  Codex, perform the steps yourself directly with `fastSimulatorTest do` / `fastDeviceTest do`, or
+  invoke your agent's subagent capability.
 
 ### Timing rules
 
@@ -210,8 +212,8 @@ re-encode the clip at review quality (H.264, 960 px, ~1–2 MB for 20 s).
 
 Build once: `fastSimulatorTest <any-flow.json> --build-only` → `READY`; then every run passes
 `--reuse-app`. One simulator and up to about 5 flows: run them here, one after another.
-2+ simulators or more flows: fan out, one `sonnet` agent per booted simulator, all in one
-message, each with its flow paths, UDID, the command
+2+ simulators or more flows: fan out (one subagent, worker, or Claude sonnet agent per booted
+simulator, or run them sequentially), each with its flow paths, UDID, the command
 `fastSimulatorTest <flow> --reuse-app --session <name> [--record]`, the two-rerun cap and
 "return only the PASS/FAIL lines"; never two agents on one simulator. Collate with
 `fastUIReport --root <artifacts-root> --session <name>` and paste its table. Variants:
