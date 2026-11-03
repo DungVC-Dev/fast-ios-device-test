@@ -27,8 +27,8 @@
 
 <table>
   <tr>
-    <td align="center" width="34%"><img src="https://raw.githubusercontent.com/DungVC-Dev/fast-ios-device-test/672db5ba22f38faf7152bc1742fd43952cb1ef6f/assets/readme/settings-simulator.png" width="220" alt="Settings on an iPhone Simulator after a passing fastSimulatorTest run"></td>
-    <td align="center" width="66%"><img src="https://raw.githubusercontent.com/DungVC-Dev/fast-ios-device-test/672db5ba22f38faf7152bc1742fd43952cb1ef6f/assets/readme/carplay-simulator.jpg" width="520" alt="CarPlay home screen in a real Simulator run"></td>
+    <td align="center" width="34%"><img src="assets/readme/settings-simulator.png" width="220" alt="Settings on an iPhone Simulator after a passing fastSimulatorTest run"></td>
+    <td align="center" width="66%"><img src="assets/readme/carplay-simulator.jpg" width="520" alt="CarPlay home screen in a real Simulator run"></td>
   </tr>
   <tr>
     <td align="center"><strong>Simulator</strong><br><code>PASS</code> Settings in 9.5s</td>
