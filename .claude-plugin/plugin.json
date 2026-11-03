@@ -1,6 +1,6 @@
 {
   "name": "fast-ios-device-test",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "Fast iOS verification for Claude Code: /fastSimulatorTest drives Simulator UI flows, including iPhone Duo outer/inner displays and poses; the bundled iphone-duo-swiftui skill guides fold-aware code changes; /fastDeviceTest runs flows on a physical iPhone; /fastCarPlayTest combines either phone surface with Simulator.app or Apple's CarPlay Simulator. Includes recordings, fan-out, video review, screen maps and captioned PR evidence.",
   "author": {
     "name": "DungVC"
