@@ -235,7 +235,17 @@ bad connection or a hot phone, and write the result per condition (the CARFACE
   applies to the scheme's **Active Run Destination**, so select the test iPhone there first; the
   submenu then reads `Thermal State (Active)`. To stop it, pick the same profile again; the menu
   shows the change only after a few seconds. Put the run destination back afterwards.
-  - Agents doing this through GUI automation: a Mac often runs two Xcodes. `tell application
+  - **Preferred: computer use** (the Claude desktop app's screen control). Tell the user first
+    that Xcode is coming to the front and to stop typing until you say so. Then, with clicks only
+    and a screenshot after each: pick the Xcode window that holds the test project (check its
+    title, since there may be two Xcodes), set the run destination to the test iPhone, open
+    Debug › Induce Device Conditions › Thermal State (Active) and click the level. Check the
+    level on a screenshot of the menu, run the flow, then come back and click the same level to
+    stop it. Confirm on a screenshot that the menu has no checked level any more, put the old run
+    destination back, and tell the user they can type again. Never type text and never press
+    Return or shortcuts in Xcode: whatever is focused is somebody's source file. Note the level in
+    the case's result (`THERM-01 Serious`).
+  - Agents doing this through GUI automation without computer use: a Mac often runs two Xcodes. `tell application
     "Xcode"`, `process "Xcode"` and plain keystrokes can reach the other one and type into its
     editor. Address Xcode by path (`tell application "/path/to/Xcode.app"`), set the destination
     with `set active run destination of workspace document "<X>.xcodeproj" to run destination
