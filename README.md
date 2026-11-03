@@ -53,6 +53,34 @@ From a clone, use `./install.sh --check`. A missing `baguette` is reported but d
 check; install it later with
 `./install.sh --install-baguette` when CarPlay testing is needed.
 
+## Add it to your agent
+
+The runtime above gives you the engines and launchers. The plugin teaches your agent how to use
+them. Pick your agent:
+
+| Agent | Install | Then |
+|---|---|---|
+| **Codex** | `codex plugin marketplace add DungVC-Dev/fast-ios-device-test`<br>`codex plugin add fast-ios-device-test@fast-ios-device-test` | Restart Codex |
+| **Antigravity** | `agy plugin install https://github.com/DungVC-Dev/fast-ios-device-test` | `agy plugin list`, restart Antigravity |
+| **Gemini CLI** | `gemini extensions install https://github.com/DungVC-Dev/fast-ios-device-test` | Restart Gemini CLI |
+| **Claude Code** | `/plugin marketplace add DungVC-Dev/fast-ios-device-test`<br>`/plugin install fast-ios-device-test@fast-ios-device-test` | Optional, see below |
+
+> [!NOTE]
+> **Claude Code needs no plugin.** `npx fast-ios-device-test` already links the skill, the slash
+> commands and the subagent into `~/.claude`. Add the plugin only if you want to manage it with
+> `/plugin`; with both, Claude Code lists the skill and the commands twice.
+
+<details>
+<summary>Store status</summary>
+
+Codex repository-marketplace, Antigravity GitHub-plugin and Gemini CLI direct installs work now.
+The public Codex directory listing and the curated Antigravity listing
+(`agy plugin install fast-ios-device-test@antigravity-plugins-official`) are submission-ready but
+not live yet. When they are, install from Codex `/plugins` (search **Fast iOS Device Test**) or
+Antigravity **Customizations → Marketplace**.
+
+</details>
+
 ## How a run works
 
 ```mermaid
