@@ -4,6 +4,8 @@
 
 - README: restored the per-agent plugin install steps (Codex, Antigravity, Gemini CLI, Claude Code)
   that the 2.1.0 README rewrite dropped.
+- README leads with how people actually use it: slash commands and plain requests to the agent;
+  the flow JSON and engine options move under "Under the hood".
 
 ## 2.1.0 — 2026-11-03
 

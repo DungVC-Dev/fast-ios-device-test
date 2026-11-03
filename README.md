@@ -20,15 +20,29 @@
   </p>
 </div>
 
-## Pick your command
+## How you use it
 
-| Test target | Command | Example |
-|---|---|---|
-| Simulator | `/fastSimulatorTest` or `fastSimulatorTest` | `fastSimulatorTest flow.json --record` |
-| Physical iPhone | `/fastDeviceTest` or `fastDeviceTest` | `fastDeviceTest flow.json --device "My iPhone"` |
-| iPhone Duo | `fastSimulatorTest --duo-pose` | `fastSimulatorTest flow.json --duo-pose open` |
-| CarPlay | `/fastCarPlayTest` or `fastCarPlayTest` | `fastCarPlayTest run flow.json --target sim --display widescreen` |
-| Review | `/fastUIReview`, `fastUIReview`, `fastUIReport` | `fastUIReport --root ./build/fast-ui --session smoke` |
+You talk to your agent. The agent writes the flow, runs the engine and reports back. You do not
+type `flow.json` commands yourself.
+
+**Slash commands** (Claude Code):
+
+| You want to… | Type in Claude Code |
+|---|---|
+| Check a screen on Simulator | `/fastSimulatorTest the Settings screen opens General and shows About` |
+| Check it on a real iPhone | `/fastDeviceTest login flow on my iPhone, record a video` |
+| Check iPhone Duo | `/fastSimulatorTest Home screen on iPhone Duo, closed and open` |
+| Check CarPlay | `/fastCarPlayTest lyrics widget shows on the CarPlay screen, small display too` |
+| Review recordings | `/fastUIReview last session` |
+
+**Any agent** (Claude Code, Codex, Antigravity, Gemini CLI): just ask in plain words. The
+`fast-ios-device-test` skill picks it up.
+
+> *"Test the paywall on Simulator in dark mode and record it."*
+> *"Kiểm tra màn Settings trên iPhone thật, quay video giúp tôi."*
+> *"Run the CarPlay browse case CPB-01 on the CarPlay Simulator."*
+
+You get one PASS/FAIL line per case, screenshots, an optional video and the cause of any failure.
 
 ## Install in 30 seconds
 
@@ -100,7 +114,12 @@ flowchart LR
 Flows are versioned JSON. Each engine prints one result line and stores screenshots, metrics, and
 failure evidence under the flow's artifact root.
 
-## Simulator: `fastSimulatorTest`
+## Under the hood
+
+What follows is what the agent runs for you: the flow format and the engine options. Read it to
+write or debug a flow by hand, or to script the engines in CI.
+
+### Simulator: `fastSimulatorTest`
 
 Use a preinstalled app such as Settings, or replace the `app` block with your Xcode project details.
 
@@ -137,7 +156,7 @@ PASS task=<name> total=<seconds>s build=<yes|skip> artifacts=<file-url>
 FAIL task=<name> step=<step> total=<seconds>s error=<reason> artifacts=<file-url>
 ```
 
-## Physical iPhone: `fastDeviceTest`
+### Physical iPhone: `fastDeviceTest`
 
 The same action vocabulary runs through a cached, auto-signed XCUITest runner.
 
@@ -170,7 +189,7 @@ PASS task=<name> device=<device> mode=<mode> total=<seconds>s artifacts=<file-ur
 FAIL task=<name> device=<device> mode=<mode> step=<step> error=<reason> artifacts=<file-url>
 ```
 
-## iPhone Duo: display and pose
+### iPhone Duo: display and pose
 
 Xcode 27.1 and Device Hub expose separate outer and inner framebuffers. A `duo` action changes the
 pose and selects the matching display: `closed` uses the outer display; `open`, `book`, and
@@ -199,7 +218,7 @@ pose and selects the matching display: `closed` uses the outer display; `open`, 
 Use `"display": "outer"` or `"inner"` on a screenshot when explicit selection is useful.
 For reviewable recordings, run one fixed pose at a time with `--duo-pose` and a shared `--session`.
 
-## CarPlay: `fastCarPlayTest`
+### CarPlay: `fastCarPlayTest`
 
 CarPlay flows mix phone actions with actions marked `"surface": "car"`. Simulator setup is allowed
 only on a disposable `agent-tmp-*` simulator or an explicit `--udid`.
@@ -241,7 +260,7 @@ VOID task=<name> error=<reason> target=<sim|hardware> total=<seconds>s artifacts
 FAIL task=<name> step=<step> error=<reason> target=<sim|hardware> total=<seconds>s artifacts=<file-url>
 ```
 
-## Review: `fastUIReview` and `fastUIReport`
+### Review: `fastUIReview` and `fastUIReport`
 
 Record related runs under one session, then build contact sheets or a compact result matrix.
 
@@ -253,7 +272,7 @@ fastUIReport --root ./build/fast-ui --session smoke
 `fastUIReview` requires Pillow and reads recorded `final-<session>.mp4` files. `fastUIReport` reads
 `metrics.json` and prints each flow × target cell as `PASS <seconds>s` or `FAIL <seconds>s @<step>`.
 
-## Variants and matrices
+### Variants and matrices
 
 Keep one variant choice per run. Reuse the same session name so the report joins the results.
 
