@@ -1,5 +1,19 @@
 import Foundation
 
+// XCUIDevice rejects assigning `.unspecified` (raw value 0) even though it may report that
+// value before a test changes appearance. Keep this logic independent of XCTest so it can be
+// checked on the Mac with the rest of the runner's pure logic.
+enum AppearancePolicy {
+    static func requested(_ value: Any?) -> String? {
+        guard let value = value as? String, value == "light" || value == "dark" else { return nil }
+        return value
+    }
+
+    static func shouldRestore(previousRawValue: Int) -> Bool {
+        previousRawValue != 0
+    }
+}
+
 // What a `do` request needs at its end.
 enum Requests {
     // A last step that reads the tree (a wait, a dump, an `expect`, a scroll that found its

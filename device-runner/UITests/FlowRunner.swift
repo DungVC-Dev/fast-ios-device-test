@@ -192,8 +192,14 @@ private extension FlowRunner {
         var results: [[String: Any]] = []
         var step = "launch"
         let setup = flow["setup"] as? [String: Any] ?? [:]
-        let previousAppearance = XCUIDevice.shared.appearance
-        defer { XCUIDevice.shared.appearance = previousAppearance }
+        let requestedAppearance = AppearancePolicy.requested(setup["appearance"])
+        let previousAppearance = requestedAppearance == nil ? nil : XCUIDevice.shared.appearance
+        defer {
+            if let previousAppearance,
+               AppearancePolicy.shouldRestore(previousRawValue: previousAppearance.rawValue) {
+                XCUIDevice.shared.appearance = previousAppearance
+            }
+        }
         orientationChanged = false
         defer { if orientationChanged { XCUIDevice.shared.orientation = .portrait } }
         let skipIdle = (setup["wait_for_idle"] as? Bool) == false
@@ -203,7 +209,7 @@ private extension FlowRunner {
             let app = flow["app"] as? [String: Any] ?? [:]
             guard let bundleID = app["bundle_id"] as? String else { throw Failure(message: "missing app.bundle_id") }
             promptEntries = setup["optional_permission_labels"] as? [Any] ?? []
-            switch setup["appearance"] as? String {
+            switch requestedAppearance {
             case "dark": XCUIDevice.shared.appearance = .dark
             case "light": XCUIDevice.shared.appearance = .light
             default: break
