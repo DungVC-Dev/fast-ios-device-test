@@ -114,14 +114,29 @@ flowchart LR
 Flows are versioned JSON. Each engine prints one result line and stores screenshots, metrics, and
 failure evidence under the flow's artifact root.
 
-## Under the hood
+## What each command does
 
-What follows is what the agent runs for you: the flow format and the engine options. Read it to
-write or debug a flow by hand, or to script the engines in CI.
+Each command works the same way: you describe the behavior, the agent writes a JSON flow, runs it,
+and answers with one result line per case plus the evidence.
 
-### Simulator: `fastSimulatorTest`
+### `/fastSimulatorTest`: Simulator
 
-Use a preinstalled app such as Settings, or replace the `app` block with your Xcode project details.
+```text
+/fastSimulatorTest Settings opens General and shows About, in dark mode, record it
+```
+
+The agent builds the app once, drives the Simulator through AXe and replies:
+
+```text
+PASS task=settings-general@dark total=9.9s build=skip artifacts=file:///…/settings-general@dark/
+```
+
+A failure names the step and the cause (`FAIL … step=03_wait error=…`) next to a screenshot and the
+screen labels it saw. Ask for *dark mode*, *larger text* or *record it* in plain words; the agent
+maps them to `--appearance`, `--content-size` and `--record`.
+
+<details>
+<summary>Flow the agent writes</summary>
 
 ```json
 {
@@ -141,24 +156,24 @@ Use a preinstalled app such as Settings, or replace the `app` block with your Xc
 }
 ```
 
-```bash
-fastSimulatorTest flow.json
-```
+Run by hand: `fastSimulatorTest flow.json [--record] [--session <name>] [--appearance light|dark] [--content-size <size>]`. Step by step: `fastSimulatorTest start | do | labels | save`.
+</details>
 
-Key options: `--record`, `--session <name>`, `--appearance light|dark`,
-`--content-size <size>`, and `--duo-pose closed|open|book|tabletop`. For live exploration, use
-`fastSimulatorTest start`, `do`, `labels`, and `save`.
-
-The output shape comes directly from the engine:
+### `/fastDeviceTest`: physical iPhone
 
 ```text
-PASS task=<name> total=<seconds>s build=<yes|skip> artifacts=<file-url>
-FAIL task=<name> step=<step> total=<seconds>s error=<reason> artifacts=<file-url>
+/fastDeviceTest login works on my iPhone, record a video
 ```
 
-### Physical iPhone: `fastDeviceTest`
+Same flows, run on the cabled iPhone by a cached, auto-signed XCUITest runner. Settings, Shortcuts
+and SpringBoard work too.
 
-The same action vocabulary runs through a cached, auto-signed XCUITest runner.
+```text
+PASS task=login device=My iPhone mode=server total=14.2s artifacts=file:///…/login/
+```
+
+<details>
+<summary>Flow the agent writes</summary>
 
 ```json
 {
@@ -177,23 +192,21 @@ The same action vocabulary runs through a cached, auto-signed XCUITest runner.
 }
 ```
 
-```bash
-fastDeviceTest flow.json --device "My iPhone"
-```
+Run by hand: `fastDeviceTest flow.json --device <name-or-udid> [--install <app>] [--record] [--session <name>]`.
+</details>
 
-Key options: `--device <name-or-udid>`, `--install <app>`, `--record`, `--session <name>`,
-`--appearance light|dark`, and `--content-size <size>`. Recording uses a one-shot XCTest run.
+### iPhone Duo
 
 ```text
-PASS task=<name> device=<device> mode=<mode> total=<seconds>s artifacts=<file-url>
-FAIL task=<name> device=<device> mode=<mode> step=<step> error=<reason> artifacts=<file-url>
+/fastSimulatorTest the Home screen on iPhone Duo, closed and open
 ```
 
-### iPhone Duo: display and pose
+The agent drives Device Hub (Xcode 27.1): `closed` shows the outer display, `open`, `book` and
+`tabletop` the inner one, and each screenshot comes from the display in use. One result row per
+pose (`@duo-closed`, `@duo-open`).
 
-Xcode 27.1 and Device Hub expose separate outer and inner framebuffers. A `duo` action changes the
-pose and selects the matching display: `closed` uses the outer display; `open`, `book`, and
-`tabletop` use the inner display.
+<details>
+<summary>Flow the agent writes</summary>
 
 ```json
 {
@@ -215,13 +228,29 @@ pose and selects the matching display: `closed` uses the outer display; `open`, 
 }
 ```
 
-Use `"display": "outer"` or `"inner"` on a screenshot when explicit selection is useful.
-For reviewable recordings, run one fixed pose at a time with `--duo-pose` and a shared `--session`.
+Run by hand: `fastSimulatorTest flow.json --duo-pose closed|open|book|tabletop`.
+</details>
 
-### CarPlay: `fastCarPlayTest`
+### `/fastCarPlayTest`: CarPlay
 
-CarPlay flows mix phone actions with actions marked `"surface": "car"`. Simulator setup is allowed
-only on a disposable `agent-tmp-*` simulator or an explicit `--udid`.
+```text
+/fastCarPlayTest the lyrics widget shows on the CarPlay screen
+/fastCarPlayTest same check on the small 800×480 display
+/fastCarPlayTest CPR-01 on the CarPlay Simulator with my iPhone
+```
+
+- **Simulator**: Xcode's CarPlay window on a throwaway `agent-tmp-*` simulator, driven by baguette.
+  Widescreen 1920×720 by default; ask for the *small* (800×480) or *HD* display when you need it.
+  One size per run.
+- **Hardware**: Apple's CarPlay Simulator with your iPhone on USB, including connect/disconnect
+  cases. An "Automaker UI" screen means CarPlay was not connected: the case is `VOID`, not `FAIL`.
+
+```text
+PASS task=lyrics-widget target=sim total=17.5s artifacts=file:///…/lyrics-widget/
+```
+
+<details>
+<summary>Flow the agent writes</summary>
 
 ```json
 {
@@ -245,48 +274,23 @@ only on a disposable `agent-tmp-*` simulator or an explicit `--udid`.
 }
 ```
 
-```bash
-fastCarPlayTest doctor --target sim --display widescreen
-fastCarPlayTest run flow.json --target sim --display widescreen
-```
+Run by hand: `fastCarPlayTest doctor --target sim|hardware` and `fastCarPlayTest run flow.json --target sim|hardware [--display widescreen|standard|hd|WxH@S] [--udid|--device] [--record]` (`--record`: hardware only).
+</details>
 
-Use `--target sim|hardware`; select `--display widescreen|standard|hd|WxH@S`; choose a target with
-`--udid` or `--device`. `--record` is available for hardware only. Automaker UI is a valid `VOID`,
-not a false failure.
+### `/fastUIReview`: review and report
 
 ```text
-PASS task=<name> target=<sim|hardware> total=<seconds>s artifacts=<file-url>
-VOID task=<name> error=<reason> target=<sim|hardware> total=<seconds>s artifacts=<file-url>
-FAIL task=<name> step=<step> error=<reason> target=<sim|hardware> total=<seconds>s artifacts=<file-url>
+/fastUIReview last session
 ```
 
-### Review: `fastUIReview` and `fastUIReport`
+Contact sheets of every recorded case (needs Pillow), and a PASS/FAIL table across flows, variants
+and devices from `fastUIReport`.
 
-Record related runs under one session, then build contact sheets or a compact result matrix.
+### Several cases at once
 
-```bash
-fastUIReview --root ./build/fast-ui --session smoke
-fastUIReport --root ./build/fast-ui --session smoke
-```
-
-`fastUIReview` requires Pillow and reads recorded `final-<session>.mp4` files. `fastUIReport` reads
-`metrics.json` and prints each flow × target cell as `PASS <seconds>s` or `FAIL <seconds>s @<step>`.
-
-### Variants and matrices
-
-Keep one variant choice per run. Reuse the same session name so the report joins the results.
-
-```bash
-fastSimulatorTest flow.json --appearance light --session release-check
-fastSimulatorTest flow.json --appearance dark --session release-check
-fastSimulatorTest flow.json --content-size accessibility-extra-large --session release-check
-fastSimulatorTest flow.json --duo-pose closed --session release-check
-fastSimulatorTest flow.json --duo-pose open --session release-check
-fastUIReport --root ./build/fast-ui --session release-check
-```
-
-Task names receive variant suffixes such as `@dark`, `@ax-xl`, and `@duo-open`. Each run changes
-only its selected target and restores UI state during teardown.
+Ask for them in one message: *"check this screen in light and dark, normal and largest text"*.
+The agent runs one variant per run in a shared session and answers with one table. It adds only the
+variants you ask for.
 
 ## Reference
 
