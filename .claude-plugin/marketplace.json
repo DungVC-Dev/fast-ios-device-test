@@ -7,7 +7,7 @@
     {
       "name": "fast-ios-device-test",
       "source": "./",
-      "description": "/fastSimulatorTest (Simulator flows, iPhone Duo outer/inner poses and per-pose recordings, fan-out), /fastDeviceTest (physical iPhone), /fastCarPlayTest (mixed phone + CarPlay), /fastUIReview, fastUIMap and captioned PR evidence"
+      "description": "/fastSimulatorTest (Simulator flows, iPhone Duo outer/inner poses and per-pose recordings, fan-out), bundled iPhone Duo SwiftUI guidance, /fastDeviceTest (physical iPhone), /fastCarPlayTest (mixed phone + CarPlay), /fastUIReview, fastUIMap and captioned PR evidence"
     }
   ],
   "description": "Fast iOS verification commands for Claude Code (Simulator, physical iPhone and CarPlay)."

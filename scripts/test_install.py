@@ -11,6 +11,7 @@ import subprocess
 import tarfile
 import tempfile
 import unittest
+import plistlib
 from pathlib import Path
 from unittest import mock
 
@@ -63,6 +64,7 @@ class InstallCheckTests(unittest.TestCase):
         for name in LAUNCHERS:
             (self.dirs["bin"] / name).symlink_to(REPO / "scripts" / "fast_ui.py")
         (self.dirs["skills"] / "fast-ios-device-test").symlink_to(REPO / "skills" / "fast-ios-device-test")
+        (self.dirs["skills"] / "iphone-duo-swiftui").symlink_to(REPO / "skills" / "iphone-duo-swiftui")
         (self.dirs["agents"] / "ui-explorer.md").symlink_to(REPO / "agents" / "ui-explorer.md")
         if include_baguette:
             self.fake_tool("baguette")
@@ -97,21 +99,24 @@ class InstallCheckTests(unittest.TestCase):
         self.link_everything()
         (self.dirs["codex"] / "fast-ios-device-test").symlink_to(self.home / "old-clone")
         _, out = self.run_install("--check")
-        self.assertIn("codex skill (broken link)", self.missing_line(out))
-        self.assertIn("codex=broken skill link", out)
+        self.assertIn("codex fast-ios-device-test (broken link)", self.missing_line(out))
+        self.assertIn("codex=broken fast-ios-device-test link", out)
 
     def test_check_reports_an_empty_codex_plugin_cache(self):
         self.link_everything()
         cache = self.home / "codex-home" / "plugins" / "cache" / "fast-ios-device-test"
         cache.mkdir(parents=True)
         _, out = self.run_install("--check")
-        self.assertIn("codex skill (empty plugin)", self.missing_line(out))
-        skill = cache / "fast-ios-device-test" / "2.0.2" / "skills" / "fast-ios-device-test"
-        skill.mkdir(parents=True)
-        (skill / "SKILL.md").write_text("---\nname: fast-ios-device-test\n---\n")
+        self.assertIn("codex fast-ios-device-test (empty plugin)", self.missing_line(out))
+        skills = cache / "fast-ios-device-test" / "2.0.2" / "skills"
+        for name in ("fast-ios-device-test", "iphone-duo-swiftui"):
+            skill = skills / name
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text(f"---\nname: {name}\n---\n")
         _, out = self.run_install("--check")
-        self.assertIn("codex=plugin", out)
-        self.assertNotIn("codex skill", self.missing_line(out))
+        self.assertIn("codex=fast-ios-device-test plugin", out)
+        self.assertIn("codex=iphone-duo-swiftui plugin", out)
+        self.assertNotIn("codex", self.missing_line(out))
 
     def test_check_rejects_a_plugin_cache_holding_only_the_setup_skill(self):
         self.link_everything()
@@ -120,18 +125,20 @@ class InstallCheckTests(unittest.TestCase):
         setup.mkdir(parents=True)
         (setup / "SKILL.md").write_text("---\nname: fast-ios-device-test-setup\n---\n")
         _, out = self.run_install("--check")
-        self.assertIn("codex skill (empty plugin)", self.missing_line(out))
+        self.assertIn("codex fast-ios-device-test (empty plugin)", self.missing_line(out))
 
     def test_check_reports_the_antigravity_plugin(self):
         self.link_everything()
         plugin = self.home / "agy-plugins" / "fast-ios-device-test"
         plugin.mkdir(parents=True)
         _, out = self.run_install("--check")
-        self.assertIn("antigravity skill (empty plugin)", self.missing_line(out))
-        (plugin / "skills" / "fast-ios-device-test").mkdir(parents=True)
-        (plugin / "skills" / "fast-ios-device-test" / "SKILL.md").write_text("x")
+        self.assertIn("antigravity fast-ios-device-test (empty plugin)", self.missing_line(out))
+        for name in ("fast-ios-device-test", "iphone-duo-swiftui"):
+            (plugin / "skills" / name).mkdir(parents=True)
+            (plugin / "skills" / name / "SKILL.md").write_text("x")
         _, out = self.run_install("--check")
-        self.assertIn("antigravity=plugin", out)
+        self.assertIn("antigravity=fast-ios-device-test plugin", out)
+        self.assertIn("antigravity=iphone-duo-swiftui plugin", out)
         self.assertNotIn("antigravity", self.missing_line(out))
 
     def test_default_antigravity_dir_is_the_one_agy_reads(self):
@@ -274,13 +281,15 @@ class InstallCheckTests(unittest.TestCase):
         self.assertNotIn("codex", out)
         (self.dirs["codex"] / "fast-ios-device-test").symlink_to(REPO / "skills" / "fast-ios-device-test")
         _, out = self.run_install("--check")
-        self.assertIn("codex=skill link", out)
+        self.assertIn("codex=fast-ios-device-test link", out)
         self.assertNotIn("codex", self.missing_line(out))
 
     @unittest.skipUnless(shutil.which("xcodebuild"), "install needs Xcode")
     def test_link_install_repairs_only_a_dangling_other_agent_link(self):
         codex = self.dirs["codex"] / "fast-ios-device-test"
         codex.symlink_to(self.home / "deleted" / "custom-skill-dir")
+        codex_duo = self.dirs["codex"] / "iphone-duo-swiftui"
+        codex_duo.symlink_to(self.home / "deleted" / "iphone-duo-swiftui")
         elsewhere = self.home / "my-clone" / "skills" / "fast-ios-device-test"
         elsewhere.mkdir(parents=True)
         antigravity = self.dirs["antigravity"] / "fast-ios-device-test"
@@ -289,7 +298,44 @@ class InstallCheckTests(unittest.TestCase):
         code, out = self.run_install("--link")
         self.assertEqual(code, 0, out)
         self.assertEqual(Path(os.readlink(codex)), REPO / "skills" / "fast-ios-device-test")
+        self.assertEqual(Path(os.readlink(codex_duo)), REPO / "skills" / "iphone-duo-swiftui")
         self.assertEqual(Path(os.readlink(antigravity)), elsewhere)
+        self.assertEqual(
+            Path(os.readlink(self.dirs["skills"] / "iphone-duo-swiftui")),
+            REPO / "skills" / "iphone-duo-swiftui",
+        )
+
+    def test_xcode_skill_export_uses_managed_agent_destinations_and_check_is_informational(self):
+        app = self.home / "Xcode 27.1.app"
+        resources = app / "Contents/PlugIns/IDEIntelligenceChat.framework/Versions/A/Resources"
+        resources.mkdir(parents=True)
+        with (app / "Contents/Info.plist").open("wb") as stream:
+            plistlib.dump({"CFBundleShortVersionString": "27.1"}, stream)
+        (resources / "app-resizability.idechatprompttemplate").write_text(
+            "---\nname: app-resizability\ndescription: Fixture.\n---\n# Fixture\n"
+        )
+        self.link_everything()
+        (self.dirs["codex"] / "fast-ios-device-test").symlink_to(
+            REPO / "skills" / "fast-ios-device-test"
+        )
+        self.env["FAST_IOS_XCODE_PATHS"] = str(app)
+        code, out = self.run_install("--xcode-skills")
+        self.assertEqual(code, 0, out)
+        self.assertTrue((self.dirs["skills"] / "apple-app-resizability" / "SKILL.md").is_file())
+        self.assertTrue((self.dirs["codex"] / "apple-app-resizability" / "SKILL.md").is_file())
+        self.assertFalse((self.dirs["antigravity"] / "apple-app-resizability").exists())
+        self.fake_tool("axe")
+        code, out = self.run_install("--check")
+        self.assertEqual(code, 0, out)
+        self.assertIn("xcode-skill=apple-app-resizability", out)
+
+    def test_xcode_skills_remove_is_forwarded_by_installer(self):
+        exported = self.dirs["skills"] / "apple-app-resizability"
+        exported.mkdir()
+        (exported / ".xcode-skill-export.json").write_text("{}")
+        code, out = self.run_install("--xcode-skills", "--remove")
+        self.assertEqual(code, 0, out)
+        self.assertFalse(exported.exists())
 
     @unittest.skipUnless(shutil.which("xcodebuild"), "install needs Xcode")
     def test_plain_install_refuses_to_delete_a_clone_in_the_install_folder(self):

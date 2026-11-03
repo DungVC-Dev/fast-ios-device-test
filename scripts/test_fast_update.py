@@ -287,6 +287,20 @@ class NpmUpdateTests(unittest.TestCase):
             f"bash {REPO / 'install.sh'} --update-tools",
         ])
 
+    def test_xcode_skills_dispatches_options_to_the_installer(self):
+        bash = self.stubs / "bash"
+        bash.write_text(f'#!/bin/sh\necho "bash $*" >> "{self.log}"\n')
+        bash.chmod(0o755)
+        ran = subprocess.run(
+            ["node", str(REPO / "npm" / "install.js"), "xcode-skills", "--list"],
+            capture_output=True, text=True, env=self.env, timeout=30,
+        )
+        self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+        self.assertEqual(
+            self.log.read_text().splitlines(),
+            [f"bash {REPO / 'install.sh'} --xcode-skills --list"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

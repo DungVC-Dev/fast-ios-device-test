@@ -46,8 +46,14 @@ release zip, unzip it, run its `install.sh` (no flag).
 
 The installer needs no Homebrew: it verifies `vendor/tools.json`, installs required AXe and
 attempts optional arm64 baguette under `~/.local/share`, creates wrappers in `~/.local/bin`, and
-links the skill into `~/.claude/skills`, the slash commands into `~/.claude/commands`, the `ui-explorer`
+links both bundled skills into `~/.claude/skills`, the slash commands into `~/.claude/commands`, the `ui-explorer`
 subagent into `~/.claude/agents` and the launchers into `~/.local/bin`.
+
+For iPhone Duo code changes, optionally export Apple's current app-resizability skill from the
+locally installed Xcode: `npx fast-ios-device-test xcode-skills`. Apple content stays under the
+agent skill directories and is not shipped by this project. Use `xcode-skills --list`,
+`--skill <name>`, and `--remove` to manage other Xcode skills. `--check` reports exports for
+information only.
 
 The tools have a locked-dependency update path: `npx fast-ios-device-test update-tools`, or
 `./install.sh --update-tools` in a clone (per-tool variants also exist). It verifies downloaded
@@ -80,11 +86,11 @@ names what to fix:
 |---|---|
 | `xcode` | step 1 |
 | `axe-<pinned version>`, `baguette-<pinned version>` or wrapper | rerun the matching `install.sh --install-…` (or `--install-tools`) |
-| a launcher, `skill`, `ui-explorer agent` | rerun `install.sh --link` |
+| a launcher, `skill`, `iphone-duo-swiftui skill`, `ui-explorer agent` | rerun `install.sh --link` |
 | `… (broken link)`: a link whose clone was moved or deleted (a `broken link:` line names it) | rerun `install.sh --link` from the clone you keep |
-| `codex skill (broken link)` | rerun `install.sh --link` (it re-points a dangling Codex or Antigravity link), or relink by hand (README, "Development install") |
-| `codex skill (empty plugin)` | `codex plugin add fast-ios-device-test@fast-ios-device-test`, then restart Codex |
-| `antigravity skill (empty plugin)` | `agy plugin install https://github.com/DungVC-Dev/fast-ios-device-test`, then restart Antigravity |
+| `codex <skill> (broken link)` | rerun `install.sh --link` (it re-points a dangling Codex or Antigravity link), or relink by hand (README, "Development install") |
+| `codex <skill> (empty plugin)` | `codex plugin add fast-ios-device-test@fast-ios-device-test`, then restart Codex |
+| `antigravity <skill> (empty plugin)` | `agy plugin install https://github.com/DungVC-Dev/fast-ios-device-test`, then restart Antigravity |
 | `~/.local/bin` not on PATH (a `note:` line) | add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc`, open a new shell |
 
 `pillow=no` and `xcodegen=no` are fine: only video review needs Pillow; the runner project ships
@@ -92,7 +98,7 @@ ready.
 
 ## 4. Restart the agent
 
-The skill (and in Claude Code the slash commands and the subagent) loads when the agent starts.
+The skills (and in Claude Code the slash commands and the subagent) load when the agent starts.
 An agent cannot restart itself: tell the user to quit and reopen it (or start a new session),
 then continue with step 5 in that session.
 
@@ -120,6 +126,8 @@ The engine can then use `--duo-pose closed|open|book|tabletop` with optional
 `--duo-orientation portrait|landscape` (`setup.duo_orientation` in a flow), or put both values on
 the `duo` action. `book` is landscape-only and `tabletop` portrait-only because they name the
 vertical and horizontal fold respectively.
+Use the bundled `iphone-duo-swiftui` skill for code changes, together with the locally exported
+`apple-app-resizability` skill when installed.
 
 ## 6. iPhone (optional)
 

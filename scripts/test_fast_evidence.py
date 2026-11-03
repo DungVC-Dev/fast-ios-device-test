@@ -291,7 +291,7 @@ class EngineTests(Base):
                                     "app": {"bundle_id": "com.example.app", "prebuilt": True, "simulator": "SIM",
                                             "project_root": str(root)}}))
 
-        def shot(udid: str, path: Path) -> None:
+        def shot(udid: str, path: Path, display: str | None = None) -> None:
             Image.new("RGB", (1179, 2556), (200, 10, 10)).save(path)
 
         out, err = io.StringIO(), io.StringIO()

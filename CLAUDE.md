@@ -6,9 +6,10 @@ project facts below their intro; when you change a fact, change it in both. `GEM
 (Antigravity CLI) holds only Antigravity notes, because Antigravity also loads `AGENTS.md`.
 
 The slash commands (`/fastSimulatorTest`, `/fastDeviceTest`, `/fastCarPlayTest`, `/fastUIReview`), the
-`fast-ios-device-test` skill and the `ui-explorer` subagent are what this repo *ships*. After
+`fast-ios-device-test` and `iphone-duo-swiftui` skills, and the `ui-explorer` subagent are what this repo *ships*. After
 `./install.sh --link`, edits to them apply at once; restart Claude Code only to pick up a new or
-renamed command, skill or subagent.
+renamed command, skill or subagent. Apple skill text is never committed: `scripts/xcode_skills.py`
+exports it from a local Xcode on explicit request.
 
 ## Project overview
 
@@ -19,8 +20,8 @@ Antigravity, a Gemini CLI extension, and a release zip. macOS only; needs Xcode 
 - `/fastSimulatorTest` drives an app on Simulator through a JSON flow (project-managed AXe is
   pinned in `vendor/tools.json` and installed under `~/.local/share/axe`),
   including iPhone Duo outer/inner displays, orientations and Device Hub poses on Xcode 27.1.
-  Claude uses the `duo` action for in-flow display/orientation changes and `--duo-pose` rows for
-  one-framebuffer-per-pose recordings; it never drives Device Hub directly.
+  Agents use the `duo` action for in-flow display/orientation changes and `--duo-pose` rows for
+  one-framebuffer-per-pose recordings; they never drive Device Hub directly.
 - `/fastDeviceTest` runs the same flows on a physical iPhone through a cached, auto-signed
   XCUITest runner (`device-runner/`), including Settings, Shortcuts and SpringBoard.
 - `fastCarPlayTest` runs mixed phone + CarPlay flows on Simulator.app through `baguette`, or on
@@ -51,10 +52,12 @@ User-facing docs: `README.md` (English), `GUIDE.md` (Vietnamese, for testers), `
 | `scripts/fastUnitTest`, `scripts/fast_device_test.sh`, `scripts/fastUnitTest.command.md.disabled` | Experimental on-device XCTest runner; not installed as a command |
 | `bin/` | Repo-local symlinks to `scripts/` for the plugin install. `install.sh` does not use them: it links `scripts/*.py` into `~/.local/bin` itself |
 | `skills/fast-ios-device-test/` | The skill (`SKILL.md` + `references/device.md`, `review.md`, `usage.md`): how an agent *uses* the tool |
+| `skills/iphone-duo-swiftui/` | Bundled company skill and reusable SwiftUI components for iPhone Duo |
+| `scripts/xcode_skills.py` | Exports Apple agent skills from a local Xcode; Apple text never enters the repo/package |
 | `commands/` | Slash commands `fastSimulatorTest`, `fastDeviceTest`, `fastCarPlayTest`, `fastUIReview` |
 | `agents/ui-explorer.md` | Haiku subagent for long step-by-step searches (experimental) |
-| `install.sh` | Installer: copy/link/check/uninstall plus pinned-tool install/update flags |
-| `npm/install.js` | `npx` entry: install, clean, package update and managed-tool updates; refuses `--link` |
+| `install.sh` | Installer: copy/link/check/uninstall, pinned-tool flags and `--xcode-skills` export |
+| `npm/install.js` | `npx` entry: install, clean, updates and `xcode-skills`; refuses `--link` |
 | `scripts/fast_update.py` | Installed/latest npm and pinned/installed/latest tool status; daily caches respect `FAST_IOS_NO_UPDATE_CHECK=1` |
 | `.claude-plugin/` | Plugin + marketplace manifests |
 | `plugin.json`, `.agents/plugins/` | Portable Codex plugin manifest + repo marketplace catalog |
@@ -70,7 +73,7 @@ Run each in a subshell so the working directory does not change between commands
 
 ```bash
 # Tests — must pass before any commit (same set release.sh runs)
-(cd scripts && python3 -m unittest test_fast_ui test_fast_carplay test_fast_media test_fast_ui_map test_fast_guard test_fast_ui_clean test_install test_fast_update)
+(cd scripts && python3 -m unittest test_fast_ui test_fast_carplay test_fast_media test_fast_ui_map test_fast_guard test_fast_ui_clean test_install test_fast_update test_xcode_skills)
 
 # Extra tests that need Pillow (python3 -m pip install --user pillow)
 (cd scripts && python3 -m unittest test_fast_evidence test_fast_evidence_sheet test_fast_ui_review)
@@ -93,7 +96,7 @@ agy plugin validate --strict build/plugin-packages/stage/antigravity
 `./install.sh --help` **copies** the clone over `~/.local/share/fast-ios-device-test` and re-points
 the user's `~/.claude` and `~/.local/bin` links away from a `--link` clone. Read its source
 instead of probing it. Only run it with a documented flag (`--link`, `--check`, `--install-tools`,
-per-tool install/update flags, `--uninstall`) or no flag. To test the installer without
+per-tool install/update flags, `--xcode-skills`, `--uninstall`) or no flag. To test the installer without
 touching the user's setup, point it elsewhere with `FAST_IOS_INSTALL_DIR`, `FAST_IOS_BIN_DIR`,
 `FAST_IOS_AXE_DIR`, `FAST_IOS_BAGUETTE_DIR`, `CLAUDE_SKILLS_DIR`, `CLAUDE_COMMANDS_DIR`, `CLAUDE_AGENTS_DIR`, `CODEX_HOME`,
 `CODEX_SKILLS_DIR`, `CODEX_PLUGIN_CACHE` and `ANTIGRAVITY_SKILLS_DIR` (`scripts/test_install.py`

@@ -1,6 +1,6 @@
 {
   "name": "fast-ios-device-test",
   "version": "2.1.1",
-  "description": "Run fast iOS UI flows on Simulator, iPhone Duo outer/inner poses, physical iPhone and CarPlay from a local Mac.",
+  "description": "Run fast iOS UI flows on Simulator, iPhone Duo outer/inner poses, physical iPhone and CarPlay, with bundled fold-aware SwiftUI guidance.",
   "contextFileName": "GEMINI_EXTENSION.md"
 }

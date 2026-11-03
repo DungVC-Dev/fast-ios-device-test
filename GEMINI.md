@@ -13,9 +13,11 @@ loaded twice.
   Claude Code. The Antigravity source manifest is `.antigravity-plugin/plugin.json`; build its
   clean marketplace bundle with `python3 scripts/package_marketplaces.py`, then validate and install
   `build/plugin-packages/stage/antigravity`. Run the engines through launchers in `~/.local/bin`.
-- `skills/fast-ios-device-test/SKILL.md` is a standard Agent Skill. Antigravity loads it from the
+- `skills/fast-ios-device-test/SKILL.md` and `skills/iphone-duo-swiftui/SKILL.md` are standard
+  Agent Skills. Antigravity loads them from the
   plugin, or globally when it is linked into `~/.gemini/config/skills/`; Gemini CLI loads
-  it from the extension declared by `gemini-extension.json`.
+  them from the extension declared by `gemini-extension.json`. A locally exported
+  `apple-app-resizability` skill complements Duo code changes but is never packaged.
 - For iPhone Duo, run the installed `fastSimulatorTest` launcher; use `duo` flow actions for
   outer/inner display changes and `--duo-pose closed|open|book|tabletop` for fixed-framebuffer
   recording rows. Do not automate Device Hub outside the launcher. The Antigravity marketplace

@@ -8,10 +8,11 @@ project facts below their intro; when you change a fact, change it in both. `GEM
 The slash commands in `commands/` and the `ui-explorer` subagent in `agents/` are written for
 Claude Code; Codex does not load them. Run the engines directly instead (`scripts/fast_ui.py`,
 `scripts/fast_device.py`, or the launchers in `~/.local/bin`).
-`skills/fast-ios-device-test/SKILL.md` is a standard Agent Skill: Codex picks it up when it is
-linked into `~/.codex/skills/` (see README, "Use with Codex or Antigravity CLI"); otherwise read
-it directly for how a flow is written. Where it mentions a subagent, do the steps yourself.
-`install.sh` only installs into `~/.claude`.
+`skills/fast-ios-device-test/SKILL.md` and `skills/iphone-duo-swiftui/SKILL.md` are standard Agent
+Skills: Codex picks them up when they are linked into `~/.codex/skills/` (see README, "Use with
+Codex or Antigravity CLI"); otherwise read them directly. Where a skill mentions a subagent, do
+the steps yourself. Apple skill text is never committed: `scripts/xcode_skills.py` exports it from
+a local Xcode on explicit request.
 
 ## Project overview
 
@@ -54,10 +55,12 @@ User-facing docs: `README.md` (English), `GUIDE.md` (Vietnamese, for testers), `
 | `scripts/fastUnitTest`, `scripts/fast_device_test.sh`, `scripts/fastUnitTest.command.md.disabled` | Experimental on-device XCTest runner; not installed as a command |
 | `bin/` | Repo-local symlinks to `scripts/` for the plugin install. `install.sh` does not use them: it links `scripts/*.py` into `~/.local/bin` itself |
 | `skills/fast-ios-device-test/` | The skill (`SKILL.md` + `references/device.md`, `review.md`, `usage.md`): how an agent *uses* the tool |
+| `skills/iphone-duo-swiftui/` | Bundled company skill and reusable SwiftUI components for iPhone Duo |
+| `scripts/xcode_skills.py` | Exports Apple agent skills from a local Xcode; Apple text never enters the repo/package |
 | `commands/` | Slash commands `fastSimulatorTest`, `fastDeviceTest`, `fastCarPlayTest`, `fastUIReview` |
 | `agents/ui-explorer.md` | Haiku subagent for long step-by-step searches (experimental) |
-| `install.sh` | Installer: copy/link/check/uninstall plus pinned-tool install/update flags |
-| `npm/install.js` | `npx` entry: install, clean, package update and managed-tool updates; refuses `--link` |
+| `install.sh` | Installer: copy/link/check/uninstall, pinned-tool flags and `--xcode-skills` export |
+| `npm/install.js` | `npx` entry: install, clean, updates and `xcode-skills`; refuses `--link` |
 | `scripts/fast_update.py` | Installed/latest npm and pinned/installed/latest tool status; daily caches respect `FAST_IOS_NO_UPDATE_CHECK=1` |
 | `.claude-plugin/` | Plugin + marketplace manifests |
 | `plugin.json`, `.agents/plugins/` | Portable Codex plugin manifest + repo marketplace catalog |
@@ -73,7 +76,7 @@ Run each in a subshell so the working directory does not change between commands
 
 ```bash
 # Tests — must pass before any commit (same set release.sh runs)
-(cd scripts && python3 -m unittest test_fast_ui test_fast_carplay test_fast_media test_fast_ui_map test_fast_guard test_fast_ui_clean test_install test_fast_update)
+(cd scripts && python3 -m unittest test_fast_ui test_fast_carplay test_fast_media test_fast_ui_map test_fast_guard test_fast_ui_clean test_install test_fast_update test_xcode_skills)
 
 # Extra tests that need Pillow (python3 -m pip install --user pillow)
 (cd scripts && python3 -m unittest test_fast_evidence test_fast_evidence_sheet test_fast_ui_review)
@@ -96,7 +99,7 @@ agy plugin validate --strict build/plugin-packages/stage/antigravity
 `./install.sh --help` **copies** the clone over `~/.local/share/fast-ios-device-test` and re-points
 the user's `~/.claude` and `~/.local/bin` links away from a `--link` clone. Read its source
 instead of probing it. Only run it with a documented flag (`--link`, `--check`, `--install-tools`,
-per-tool install/update flags, `--uninstall`) or no flag. To test the installer without
+per-tool install/update flags, `--xcode-skills`, `--uninstall`) or no flag. To test the installer without
 touching the user's setup, point it elsewhere with `FAST_IOS_INSTALL_DIR`, `FAST_IOS_BIN_DIR`,
 `FAST_IOS_AXE_DIR`, `FAST_IOS_BAGUETTE_DIR`, `CLAUDE_SKILLS_DIR`, `CLAUDE_COMMANDS_DIR`, `CLAUDE_AGENTS_DIR`, `CODEX_HOME`,
 `CODEX_SKILLS_DIR`, `CODEX_PLUGIN_CACHE` and `ANTIGRAVITY_SKILLS_DIR` (`scripts/test_install.py`
