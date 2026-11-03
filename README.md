@@ -1,11 +1,10 @@
 <div align="center">
-  <img src="assets/fast-ios-device-test.png" width="176" alt="fast-ios-device-test logo">
+  <img src="https://raw.githubusercontent.com/DungVC-Dev/fast-ios-device-test/main/assets/fast-ios-device-test.png" width="176" alt="fast-ios-device-test logo">
   <h1>fast-ios-device-test</h1>
   <p><strong>Tell your coding agent what to verify. Get a PASS/FAIL and evidence you can review.</strong></p>
 
   <p>
     <a href="https://www.npmjs.com/package/fast-ios-device-test"><img alt="npm version" src="https://img.shields.io/npm/v/fast-ios-device-test?style=flat-square&logo=npm&color=CB3837"></a>
-    <a href="https://www.npmjs.com/package/fast-ios-device-test"><img alt="npm downloads" src="https://img.shields.io/npm/dm/fast-ios-device-test?style=flat-square&logo=npm&color=CB3837"></a>
     <img alt="macOS" src="https://img.shields.io/badge/macOS-only-111111?style=flat-square&logo=apple">
     <img alt="Xcode 26 or 27" src="https://img.shields.io/badge/Xcode-26%20%7C%2027-147EFB?style=flat-square&logo=xcode&logoColor=white">
     <a href="#license-and-credits"><img alt="License and credits" src="https://img.shields.io/badge/license-see%20credits-6E7781?style=flat-square"></a>
@@ -27,8 +26,8 @@
 
 <table>
   <tr>
-    <td align="center" width="34%"><img src="assets/readme/settings-simulator.png" width="220" alt="Settings on an iPhone Simulator after a passing fastSimulatorTest run"></td>
-    <td align="center" width="66%"><img src="assets/readme/carplay-simulator.jpg" width="520" alt="CarPlay home screen in a real Simulator run"></td>
+    <td align="center" width="34%"><img src="https://raw.githubusercontent.com/DungVC-Dev/fast-ios-device-test/672db5ba22f38faf7152bc1742fd43952cb1ef6f/assets/readme/settings-simulator.png" width="220" alt="Settings on an iPhone Simulator after a passing fastSimulatorTest run"></td>
+    <td align="center" width="66%"><img src="https://raw.githubusercontent.com/DungVC-Dev/fast-ios-device-test/672db5ba22f38faf7152bc1742fd43952cb1ef6f/assets/readme/carplay-simulator.jpg" width="520" alt="CarPlay home screen in a real Simulator run"></td>
   </tr>
   <tr>
     <td align="center"><strong>Simulator</strong><br><code>PASS</code> Settings in 9.5s</td>
