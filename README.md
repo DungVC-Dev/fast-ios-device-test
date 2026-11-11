@@ -354,6 +354,8 @@ explicit location is required, or `FAST_IOS_DERIVED_DATA_ROOT` to move the share
 
 `fastUIClean` lists stale shared caches whose repository is gone. Add `--max-dd-gb N` to select
 least-recently-used repo caches above a cap, inspect the reported sizes, then add `--yes` to delete.
+When a test task is done, the agent asks once whether to clear the cache, quoting the size, and
+runs `fastUIClean --yes` only on a yes.
 
 </details>
 

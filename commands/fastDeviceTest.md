@@ -26,3 +26,7 @@ as a pass criterion → the `network_condition` / `low_power` steps and `--app-l
 conditions off again on their own.
 
 Return the PASS/FAIL line and one cause per FAIL, with artifact links. Remove temporary flows.
+
+After the report, ask the user once whether to clear the test cache: quote the size
+`fastUIClean --project <root>` lists, and run it with `--yes` only on a yes (the skill's
+"When the work is done").

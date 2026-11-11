@@ -102,7 +102,7 @@ Mode yêu cầu; hoặc cắm lại máy nếu bị ngắt giữa chừng.
 | `/fastUIReview <session>` | Xem lại video đã quay |
 | (tự động) | Mỗi lần chạy flow PASS, và lần `--before` fail đúng bước kiểm tra, được chép ra `~/Desktop/<project> <ticket>/`: ảnh ghép có chú thích, video nén, ảnh lẻ trong `source/`. Merge PR xong thì tự xoá folder đó |
 | `fastEvidenceSheet <spec.json>` | Dựng lại ảnh ghép sau khi sửa `source/sheet.json` (đổi thứ tự, chú thích, ảnh) |
-| `fastUIClean [--project <root>] [--maps] [--max-dd-gb N] [--yes]` | Liệt kê dung lượng rồi (với `--yes`) xoá cache fast UI: runner iPhone, helper, lock, session, output của project và DerivedData của repo đã mất; `--max-dd-gb N` chọn thêm cache repo ít dùng nhất vượt giới hạn. Không đụng evidence trên Desktop, bỏ qua thứ đang chạy |
+| `fastUIClean [--project <root>] [--maps] [--max-dd-gb N] [--yes]` | Liệt kê dung lượng rồi (với `--yes`) xoá cache fast UI: runner iPhone, helper, lock, session, output của project và DerivedData của repo đã mất; `--max-dd-gb N` chọn thêm cache repo ít dùng nhất vượt giới hạn. Không đụng evidence trên Desktop, bỏ qua thứ đang chạy. Xong việc, agent tự hỏi một lần có muốn xoá cache không (kèm dung lượng), chỉ xoá khi bạn đồng ý |
 | `fastUIMap <bundle id> [--find <chữ> \| --path-to <màn>]` | Bản đồ màn hình các lần chạy trước đã ghi: selector, đường đi; `--path-to` in sẵn một lệnh đi thẳng tới màn đó |
 | `fastDeviceTest check --device <tên>` | Kiểm tra một iPhone trước khi chạy |
 | `fastCarPlayTest doctor --target sim\|hardware` | Kiểm tra bộ CarPlay, chỉ đọc và báo cách sửa |

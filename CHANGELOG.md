@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- When a test task is done, agents now ask once whether to clear the test cache. They quote
+  the size `fastUIClean --project <root>` lists and delete only on a yes.
+
 ## 2.2.1 — 2026-11-03
 
 ### Physical iPhone

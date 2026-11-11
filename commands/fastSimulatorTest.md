@@ -47,3 +47,7 @@ spare one Xcode is running the app on).
 
 Return the PASS/FAIL lines (a flow × simulator table when fanned out) and one concise cause
 per FAIL, with artifact links. Remove temporary flows; never edit the engine for one screen.
+
+After the report, ask the user once whether to clear the test cache: quote the size
+`fastUIClean --project <root>` lists, and run it with `--yes` only on a yes (the skill's
+"When the work is done").
