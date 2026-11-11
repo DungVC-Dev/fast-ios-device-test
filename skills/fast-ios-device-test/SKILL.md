@@ -198,6 +198,16 @@ URL: relay it as a markdown link.
 - Simulator: `fastSimulatorTest shutdown` shuts down every booted simulator;
   `--simulator <udid>` only that one. Spare one Xcode is running the app on unless the user is
   done with it too.
+- Then, after the final report, ask the user once whether to clear the test cache. First run
+  `fastUIClean --project <root>` (it only lists) and quote its `DRY-RUN … size=` total in the
+  question. Yes → `fastUIClean --project <root> --yes`; no → leave it. Say what goes: the
+  project's runs (the artifact links just reported stop working), the iPhone runner build (the
+  next iPhone run rebuilds it, ~1–2 min) and stale helpers; Desktop evidence stays.
+  "Done" means the reply that closes the user's request: every flow asked for has run, no
+  fix-and-rerun is pending, and the device was freed (`lock` / `shutdown` above) or the user said
+  they are finished. Not after each flow, not on a FAIL you are about to fix and rerun, and
+  never from a subagent or a fanned-out row (the agent that reports to the user asks). Once the
+  user says no, do not ask again in that session.
 
 ## Evidence, not just selectors
 
