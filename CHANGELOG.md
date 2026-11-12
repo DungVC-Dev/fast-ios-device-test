@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.2.2 — 2026-11-12
 
 - `fastDeviceTest` and CarPlay hardware runs pick a USB-connected iPhone before one reached over
   Wi-Fi. A Wi-Fi-only phone still runs (the fallback when nothing is plugged in, or named with
