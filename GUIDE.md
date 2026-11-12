@@ -73,7 +73,8 @@ zip ở trang [Releases](https://github.com/DungVC-Dev/fast-ios-device-test/rele
 
 Mỗi máy cần (chủ máy bật một lần):
 
-- Mở khoá và cắm vào Mac (hoặc chung Wi‑Fi sau khi đã ghép đôi), đã bấm "Tin cậy máy tính này".
+- Mở khoá và cắm dây USB vào Mac, đã bấm "Tin cậy máy tính này". Máy cắm dây luôn được ưu tiên;
+  máy chỉ nối qua Wi‑Fi (đã ghép đôi) vẫn chạy được khi gấp, chậm hơn và có cảnh báo.
 - Cài đặt › Quyền riêng tư & Bảo mật › Chế độ nhà phát triển: bật.
 - Có development profile chứa máy đó: thường chỉ cần đăng nhập Xcode và chạy một app bất kỳ lên
   máy một lần. Tool không cần đăng nhập Apple ID.

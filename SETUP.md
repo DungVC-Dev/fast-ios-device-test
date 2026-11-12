@@ -148,7 +148,7 @@ Use the bundled `iphone-duo-swiftui` skill for code changes, together with the l
 
 Prerequisites on the iPhone, which only its owner can set:
 
-- Unlocked, connected by cable (or on the same Wi‑Fi after pairing), and "Trust This Computer"
+- Unlocked, connected by USB cable (Wi‑Fi after pairing works as a slower fallback), and "Trust This Computer"
   accepted.
 - Settings › Privacy & Security › Developer Mode on (the iPhone restarts).
 - A development profile that lists this iPhone, with its certificate in the Mac's keychain:
@@ -234,7 +234,8 @@ creates or updates the reviewer-gated `npm` environment.
 | Message | Cause | Fix |
 |---|---|---|
 | `is locked: unlock it and run again` | the iPhone locked itself | unlock it by hand and rerun; a longer Auto-Lock (Settings › Display & Brightness) on a test phone makes it rarer |
-| `is not connected; unlock it and plug it in …` | cable, Wi‑Fi or lock | reconnect, unlock, then `fastDeviceTest check` |
+| `is not connected; unlock it and plug it in …` | cable or lock | reconnect, unlock, then `fastDeviceTest check` |
+| `WARN … connected over Wi-Fi, not USB` | phone reached only over the network; the run goes on, slower | plug it in with a cable when you can |
 | `no usable development profile for device …` | no profile lists this iPhone, or the identity is revoked | step 6, or set `FAST_DEVICE_PROFILE=<uuid>` |
 | `no installed Xcode supports iOS …` | the iPhone's iOS is newer than every installed Xcode | install a newer Xcode |
 | `is busy: another runner holds it` | another agent or session serves that iPhone | use another iPhone; never `stop` a runner you did not start |

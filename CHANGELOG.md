@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `fastDeviceTest` and CarPlay hardware runs pick a USB-connected iPhone before one reached over
+  Wi-Fi. A Wi-Fi-only phone still runs (the fallback when nothing is plugged in, or named with
+  `--device`) with a `WARN … connected over Wi-Fi` line; `fastDeviceTest check` prints `wired=`.
 - When a test task is done, agents now ask once whether to clear the test cache. They quote
   the size `fastUIClean --project <root>` lists and delete only on a yes.
 

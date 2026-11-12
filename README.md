@@ -209,7 +209,8 @@ Run by hand: `fastSimulatorTest flow.json --record --session <name>`. Step by st
 /fastDeviceTest login works on my iPhone, record a video
 ```
 
-Same flows, run on the cabled iPhone by a cached, auto-signed XCUITest runner. Settings, Shortcuts
+Same flows, run on the cabled iPhone by a cached, auto-signed XCUITest runner. A USB-connected
+iPhone is picked first; one reached only over Wi-Fi still works, slower, with a warning. Settings, Shortcuts
 and SpringBoard work too.
 
 ```text
