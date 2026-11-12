@@ -2185,6 +2185,41 @@ class DeviceLauncherTests(unittest.TestCase):
         self.assertNotIn("nodes", results[0])
         self.assertEqual(results[0]["path"], saved[0])
 
+    def test_a_usb_iphone_is_picked_before_one_on_wi_fi(self) -> None:
+        import fast_device
+        def listed(udid, transport, tunnel="connected"):
+            return {"hardwareProperties": {"udid": udid, "reality": "physical", "platform": "iOS"},
+                    "connectionProperties": {"pairingState": "paired", "tunnelState": tunnel, "transportType": transport},
+                    "deviceProperties": {"name": f"Phone {udid}", "osVersionNumber": "26.6"}}
+
+        def fake_run(devices):
+            def run(arguments, **_kwargs):
+                Path(arguments[arguments.index("--json-output") + 1]).write_text(json.dumps({"result": {"devices": devices}}))
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            return run
+
+        with mock.patch.object(fast_device, "run", side_effect=fake_run([listed("W", "localNetwork"), listed("U", "wired")])):
+            self.assertEqual(fast_device.resolve_device(None)["udid"], "U")
+            self.assertEqual(fast_device.resolve_device("Phone W")["udid"], "W")
+        with mock.patch.object(fast_device, "run", side_effect=fake_run([listed("W", "localNetwork")])):
+            self.assertEqual(fast_device.resolve_device(None)["udid"], "W")
+        with mock.patch.object(fast_device, "run", side_effect=fake_run([listed("W", "localNetwork"), listed("X", "localNetwork")])), \
+                self.assertRaisesRegex(fast_device.FastDeviceError, r"2 connected \(Wi-Fi\) iPhones"):
+            fast_device.resolve_device(None)
+
+    def test_preflight_on_wi_fi_warns_but_goes_on(self) -> None:
+        import fast_device
+        details = json.loads(json.dumps(self.GOOD_DETAILS))
+        details["connectionProperties"]["transportType"] = "localNetwork"
+        device = {"udid": "U", "name": "tester", "os": "26.7.1", "connected": True}
+        with mock.patch.object(fast_device, "fast_device_details", return_value=details), \
+                mock.patch.object(fast_device, "developer_dir_for", return_value="/Xcode"), \
+                mock.patch.object(fast_device, "signing_profile_lists_device", return_value=True), \
+                mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            fast_device.preflight_device(device)
+        self.assertIn("WARN tester: connected over Wi-Fi, not USB", err.getvalue())
+        self.assertIsNone(fast_device.wifi_note(self.GOOD_DETAILS))
+
     def test_resolve_device_matches_partial_name_only_when_unique(self) -> None:
         import fast_device
         devices = [{"udid": "A", "name": "iPhone - Blue - 27", "os": "27.0", "connected": True},

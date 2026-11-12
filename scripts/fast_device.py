@@ -75,6 +75,8 @@ def physical_devices() -> list[dict[str, Any]]:
             "name": device["deviceProperties"].get("name"),
             "os": device["deviceProperties"].get("osVersionNumber") or "0",
             "connected": device["connectionProperties"].get("tunnelState") == "connected",
+            # "wired" (USB) or "localNetwork" (Wi-Fi): a cabled iPhone is picked first.
+            "transport": device["connectionProperties"].get("transportType"),
             # `list devices` already carries the same readiness fields as `device info details`.
             # Reusing them keeps a normal run to one preflight devicectl call.
             "details": {
@@ -129,10 +131,15 @@ def pick_device(requested: str | None, devices: list[dict[str, Any]]) -> dict[st
             raise FastDeviceError(f"device '{requested}' matches {len(partial)} iPhones: {names}; pass the full name or UDID")
         raise FastDeviceError(f"device '{requested}' not found; known: {[d['name'] for d in devices]}")
     connected = [device for device in devices if device["connected"]]
-    if len(connected) == 1:
-        return connected[0]
-    names = [f"{d['name']} ({d['udid']}, iOS {d['os']})" for d in connected]
-    raise FastDeviceError(f"pass --device: {len(connected)} connected iPhones {names}")
+    # A build, install or runner over Wi-Fi is slower and can drop mid-run, so a cabled iPhone
+    # wins; a phone on Wi-Fi only is the fallback when nothing is plugged in.
+    wired = [device for device in connected if device.get("transport") == "wired"]
+    pool = wired or connected
+    if len(pool) == 1:
+        return pool[0]
+    names = [f"{d['name']} ({d['udid']}, iOS {d['os']})" for d in pool]
+    kind = "USB-connected" if wired else "connected (Wi-Fi)"
+    raise FastDeviceError(f"pass --device: {len(pool)} {kind} iPhones {names}")
 
 
 def device_details(udid: str) -> dict[str, Any]:
@@ -175,12 +182,20 @@ def readiness_checks(details: dict[str, Any]) -> tuple[tuple[str, bool, str], ..
         ("paired", connection.get("pairingState") == "paired",
          "unlock the iPhone, tap Trust for this Mac, or pair it in Xcode › Window › Devices and Simulators"),
         ("connected", connection.get("tunnelState") == "connected",
-         "plug the iPhone in (or join this Mac's Wi-Fi) and unlock it"),
+         "plug the iPhone in with a USB cable (or join this Mac's Wi-Fi) and unlock it"),
         ("developer-mode", properties.get("developerModeStatus") == "enabled",
          "Settings › Privacy & Security › Developer Mode on, then restart the iPhone"),
         ("ddi", properties.get("ddiServicesAvailable") is True,
          "open Xcode with the iPhone connected and unlocked once, so it mounts the developer disk image"),
     )
+
+
+def wifi_note(details: dict[str, Any]) -> str | None:
+    """A warning, never a refusal: Wi-Fi works when no cable is at hand, only slower."""
+    connection = details.get("connectionProperties", {})
+    if connection.get("tunnelState") != "connected" or connection.get("transportType") == "wired":
+        return None
+    return "connected over Wi-Fi, not USB: builds and runs are slower and can drop; plug in a cable when you can"
 
 
 def signing_profile_lists_device(udid: str) -> bool:
@@ -218,6 +233,9 @@ def preflight_device(device: dict[str, Any]) -> None:
     os_version = str(properties.get("osVersionNumber") or device.get("os", ""))
     device["os"] = os_version
     device["connected"] = True
+    note = wifi_note(details)
+    if note:
+        print(f"WARN {device.get('name')}: {note}", file=sys.stderr)
     try:
         device["developer_dir"] = developer_dir_for(os_version)
     except FastDeviceError as error:
@@ -242,6 +260,8 @@ def check_device(device: dict[str, Any]) -> int:
         fixes.append(f"details: {error}")
     connection = details.get("connectionProperties", {})
     print(f"device={device['name']} udid={udid} ios={device.get('os')} transport={connection.get('transportType', '?')}")
+    if connection.get("tunnelState") == "connected":
+        print(f"wired={'yes' if connection.get('transportType') == 'wired' else 'no (Wi-Fi: works, slower)'}")
     for name, ok, fix in readiness_checks(details):
         print(f"{name.replace('-', '_')}={'yes' if ok and name != 'developer-mode' else 'enabled' if ok else 'no'}")
         if not ok:

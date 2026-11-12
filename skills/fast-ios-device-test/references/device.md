@@ -325,7 +325,8 @@ Most pass criteria of a background feature live in the app's log (`song changed:
 
 | Reported problem | Fix |
 |---|---|
-| Not paired/trusted or disconnected | Unlock the iPhone, tap Trust, keep USB/Wi-Fi connected; pair it once in Xcode if needed. |
+| Not paired/trusted or disconnected | Unlock the iPhone, tap Trust, keep the USB cable in; pair it once in Xcode if needed. |
+| `WARN … connected over Wi-Fi, not USB` | A warning, not a failure: the run goes on, slower, and can drop mid-run. Without `--device` a cabled iPhone is always picked first; Wi-Fi is the fallback when none is plugged in. If a Wi-Fi run drops, ask the user to plug the phone in rather than rerunning. |
 | Developer Mode off / developer disk image unavailable | Enable Settings › Privacy & Security › Developer Mode, restart, then open Xcode once with the unlocked phone connected. |
 | No development profile lists the iPhone | Sign in under Xcode Settings › Accounts and run an app on this iPhone once. |
 | UI Automation disabled | Settings › Developer › Enable UI Automation. |
