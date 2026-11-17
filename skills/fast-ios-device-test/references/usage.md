@@ -170,8 +170,8 @@ Supported actions:
 - `press_button`: `home` (it does not close an open Control Center; `edge_swipe` `bottom` does;
   on the iPhone the next steps act on SpringBoard until an action names another `app`);
   `siri` (on the iPhone with the request as `text`, which the screen map never keeps);
-  `lock` on the Simulator only (a locked iPhone needs its passcode, so it locks only at the end,
-  with `fastDeviceTest lock`; a second `lock` wakes the
+  `lock` on the Simulator only (a locked iPhone needs its passcode, so it is locked only outside a
+  flow, with `fastDeviceTest lock` when the user agrees; a second `lock` wakes the
   Simulator on its lock screen and `edge_swipe` `bottom` unlocks it); `volume_up` /
   `volume_down` on the iPhone only.
 - `set_slider`: the slider matched by `id` or `label` (required on both engines) to `value` from
@@ -390,7 +390,14 @@ success selector. This keeps paywalls and other gates in flow data rather than
 feature-specific Python.
 
 Scalar preferences support booleans, numbers, and strings; `null` removes the key before
-launch (`{"seenChristmasPopupVersion": null}` shows a once-only popup again). On an iPhone
+launch (`{"seenChristmasPopupVersion": null}` shows a once-only popup again). On a kept install
+the app's own preferences plist wins over the simulator's user domain, so the engine stops the
+app and changes the key in both (with `setup.relaunch: false` it does not stop the app). It
+first journals what the app's plist held for each seeded key; after the run (or when the next
+run repairs a killed one) that value is put back, typed, and a key the app did not have is removed
+again. `--keep-state` keeps the seeded values. The app's plist is never written when it cannot
+be read, and `fastSimulatorTest session start` (which has no teardown) seeds only the user
+domain, so nothing that cannot be restored is overwritten. On an iPhone
 `null` is refused: preferences there are launch arguments, which can override a key but not
 remove it, so give the value the app reads as unset. For a Codable value
 stored as JSON `Data` in UserDefaults, use `{"$json_data": {...}}`; the runner
@@ -449,10 +456,14 @@ Prebuilt app: `"app": {"bundle_id": "…", "prebuilt": true, "simulator": "<UDID
 "project_root": "<dir>"}` drives whatever is installed on the simulator (a system app such as
 `com.apple.Preferences`, a build Xcode installed) without `project`, `derived_data` or
 `app_path`. `fresh_install` then defaults to false; set it true only together with an
-`app_path` to reinstall. With `fresh_install: false` and an app the run builds (or an
-`app_path`), the engine compares that .app with the installed one (executable, Debug dylib,
-signed resources) and installs over it, data kept, when they differ: `NOTE installed the
-current build … (data kept)`. An unchanged build is not reinstalled. Start such a flow with `{"type": "launch"}`.
+`app_path` to reinstall; with `fresh_install: false` a prebuilt app is driven exactly as
+installed, even when `app_path` differs.
+
+A built app with `fresh_install: false` keeps its data but never runs a stale build: the engine
+compares the .app it just built (or reused) with the installed one (executable, Debug dylib,
+signed resource list; every file when the build is unsigned) and installs over it, data kept,
+only when they differ (`NOTE installed the current build … over the older one (data kept)`, or
+`NOTE installed …: it was not on the simulator`). An unchanged build is not reinstalled. Start such a flow with `{"type": "launch"}`.
 
 If an `axe` call fails with a SimulatorKit/PrivateFrameworks error, the selected Xcode may need a
 newer AXe. `install.sh --check` compares the version pinned in `vendor/tools.json` with the local
@@ -479,7 +490,7 @@ fastDeviceTest flow.json --device "My iPhone"          # via the runner, ~5 s
 fastDeviceTest do '{"type":"tap_label","label":"Continue"}' --device <d>   # ~1 s
 fastDeviceTest do '{"type":"screenshot","name":"now"}' --device <d> --out <dir>
 fastDeviceTest stop --device <d>
-fastDeviceTest lock --device <d>                       # end of the work: stop + lock the screen
+fastDeviceTest lock --device <d>                       # stop + lock the screen, only if the user agrees
 ```
 
 - The runner (`device-runner/`, its `.xcodeproj` committed; regenerate with `xcodegen

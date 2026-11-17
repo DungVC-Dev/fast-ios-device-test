@@ -173,9 +173,10 @@ fastDeviceTest stop --device "<name or udid>"
 ```
 
 Expected: `PASS actions=2 labels=[…]`. The first run builds and signs the runner (1–2 min);
-later requests take about 2 s. Always `stop` when done: the runner holds the iPhone. At the end
-of the work, `fastDeviceTest lock --device "<name or udid>"` stops it and locks the screen too,
-and `fastSimulatorTest shutdown` shuts down the booted simulators.
+later requests take about 2 s. Always `stop` when done: the runner holds the iPhone, and `stop`
+leaves the screen unlocked. `fastDeviceTest lock --device "<name or udid>"` stops it and locks the
+screen too; use it only when the user wants the phone locked. `fastSimulatorTest shutdown --list`
+shows the booted simulators and their running apps; `fastSimulatorTest shutdown` shuts them down.
 
 ## 6b. CarPlay (optional)
 

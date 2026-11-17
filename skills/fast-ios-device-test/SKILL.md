@@ -140,8 +140,8 @@ Everything the engine needs is in the flow; there is no per-project config.
    fake a `wait` on an impossible label to get a dump.
 4. Run `fastSimulatorTest <flow.json>`. It boots the simulator, reuses the cached app when
    build inputs are unchanged, fresh-installs (with `fresh_install: false` it installs the new build
-   over the kept app, data kept, only when the two differ), seeds `setup.preferences` (`null`
-   removes a key, e.g. a "popup seen" flag), prints one PASS/FAIL line.
+   over the kept app, data kept, only when the two differ; a prebuilt app is driven as installed),
+   seeds `setup.preferences` (`null` removes a key, e.g. a "popup seen" flag), prints one PASS/FAIL line.
 5. On FAIL the line lists `visible labels: [Add Widget (StaticText), …]` with types, says when
    the label exists under another type, and suggests close labels. Fix one selector, rerun
    with `--reuse-app`. After two reruns stop and report with the artifact link. A failing flow
@@ -196,8 +196,8 @@ URL: relay it as a markdown link.
 - iPhone: `fastDeviceTest stop --device <d>` frees the runner (the phone stops showing
   "Automation Running") without locking it. `fastDeviceTest lock --device <d>` also locks the
   screen, for a test phone kept on Auto-Lock "Never"; use it only when the user asked for it or
-  agreed, since nothing can drive the phone again until someone types its passcode. Both refuse
-  an iPhone another runner holds ("busy"). `fastDeviceTest status --device <d>` shows how long a
+  agreed, since nothing can drive the phone again until someone types its passcode. `lock`
+  refuses an iPhone another runner holds ("busy"); never `stop` a runner you did not start. `fastDeviceTest status --device <d>` shows how long a
   runner has been up (`up=3h07m`).
 - Simulator: first `fastSimulatorTest shutdown --list` (booted simulators and the non-Apple
   apps still running on them, such as one an interrupted or `--keep-state` run left holding the
@@ -210,7 +210,7 @@ URL: relay it as a markdown link.
   project's runs (the artifact links just reported stop working), the iPhone runner build (the
   next iPhone run rebuilds it, ~1–2 min) and stale helpers; Desktop evidence stays.
   "Done" means the reply that closes the user's request: every flow asked for has run, no
-  fix-and-rerun is pending, and the device was freed (`lock` / `shutdown` above) or the user said
+  fix-and-rerun is pending, and the device was freed (`stop` or `lock` / `shutdown` above) or the user said
   they are finished. Not after each flow, not on a FAIL you are about to fix and rerun, and
   never from a subagent or a fanned-out row (the agent that reports to the user asks). Once the
   user says no, do not ask again in that session.
