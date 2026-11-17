@@ -44,7 +44,7 @@ the full multi-line report.
   `launch_arguments`), `terminate`, `open_url`, and the iPhone-only `two_finger_tap`, `two_finger_drag`, `pinch`, `rotate`,
   `orientation` (see [usage.md](usage.md#gestures-keyboard-controls-assertions-and-device-state)). `motion` and `shake` are
   simulator-only; `press_button` `lock` is refused inside a flow (the next steps would wait
-  for the passcode): lock at the end with `fastDeviceTest lock`.
+  for the passcode): lock after the work with `fastDeviceTest lock`, only when the user agrees.
 - **Editing a Home Screen widget:** go home with `terminate` on the app, then
   `long_press` the widget on `com.apple.springboard` (the widget node carries the app's
   name as `id`), then tap `id`
@@ -338,5 +338,5 @@ Most pass criteria of a background feature live in the app's log (`song changed:
 | iOS newer than selected Xcode | Install a matching Xcode or set `DEVELOPER_DIR` (`FAST_DEVICE_DEVELOPER_DIR` also selects the preflight/build Xcode). |
 | Developer Mode requires a passcode | Set a device passcode, enable Developer Mode, then retry. |
 | Device disconnected mid-run | Reconnect it, keep it unlocked, and rerun the same flow. |
-| Device `unavailable`, or `CoreDeviceError 4016`, mid-session | The iPhone was locked or the cable pulled. Tell the user at once (unlock it, plug it in); do not retry in a loop. |
-| Xcode signs with the wrong one of two profiles with the same name (an old and a new "… NSE Profile") | Pick profiles by UUID, not name: `FAST_DEVICE_PROFILE=<uuid>` for the runner, the UUID (not the name) in each target's `PROVISIONING_PROFILE_SPECIFIER` for your own `xcodebuild`, and ask the user to delete the stale one from `~/Library/Developer/Xcode/UserData/Provisioning Profiles` (or `~/Library/MobileDevice/Provisioning Profiles`). |
+| Device `unavailable`, or a `CoreDeviceError` (4016 was seen) right after the iPhone was locked or unplugged | Tell the user at once (unlock it, plug it in, keep it unlocked); do not retry in a loop. |
+| Xcode signs with the wrong one of two profiles with the same name (an old and a new "… NSE Profile") | Pick profiles by UUID, not name: `FAST_DEVICE_PROFILE=<uuid>` for the runner (it matches the profile's file name, which Xcode writes as `<UUID>.mobileprovision`; a full path also works), the UUID (not the name) in each target's `PROVISIONING_PROFILE_SPECIFIER` for your own `xcodebuild`, and ask the user to delete the stale one from `~/Library/Developer/Xcode/UserData/Provisioning Profiles` (or `~/Library/MobileDevice/Provisioning Profiles`). |

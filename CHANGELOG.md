@@ -6,10 +6,17 @@
   kept running the app already on the simulator, so screenshots could show the old build. It
   compares the new .app with the installed one and installs over it (data kept) only when they
   differ, printing `NOTE installed the current build … (data kept)`. A session `start` does the
-  same.
+  same. A prebuilt app is still driven as installed.
 - `setup.preferences` accepts `null` on Simulator to remove a key before launch, for example
   to show a once-only popup again. On an iPhone, `null` fails with a clear message, because
   preferences there are launch arguments that cannot remove a key.
+- Seeded preferences now reach an app on a kept install. The app's own preferences plist used to
+  win over the seeded value, so a flag the app had written itself (a popup marked as seen)
+  stayed. The engine now stops the app and writes the key to both places. After the run, or
+  when the next run repairs a killed one, it puts the app's previous value back and removes
+  keys the app did not have.
+- The unit tests no longer compile video helpers into `~/Library/Caches/fast-ios-device-test`;
+  they use a temporary folder.
 - `fastSimulatorTest shutdown --list` lists the booted simulators and the non-Apple apps still
   running on them, without shutting anything down.
 - `fastDeviceTest status` shows when a serving runner started and how long it has been up.
