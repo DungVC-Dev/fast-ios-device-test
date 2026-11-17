@@ -15,6 +15,7 @@
     "assets/",
     "!assets/readme/**",
     "device-runner/",
+    "amplitude-tracking-test/",
     "vendor/",
     ".agents/",
     ".antigravity-plugin/",

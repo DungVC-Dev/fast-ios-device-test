@@ -30,6 +30,8 @@ class MarketplacePackageTests(unittest.TestCase):
                     self.assertIn("skills/iphone-duo-swiftui/SKILL.md", names)
                     self.assertIn("skills/iphone-duo-swiftui/scripts/duo-sim.sh", names)
                     self.assertFalse(any(name.startswith("skills/apple-app-resizability/") for name in names))
+                    # Its scripts and runner are not in these packages, so the skill stays out too.
+                    self.assertFalse(any(name.startswith("skills/amplitude-tracking-test/") for name in names))
                     self.assertIn("assets/fast-ios-device-test.png", names)
                     self.assertFalse(any(name.startswith(".agents/") for name in names))
                     self.assertFalse(any(name.startswith(".claude-plugin/") for name in names))

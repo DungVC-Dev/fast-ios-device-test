@@ -5,8 +5,8 @@ Guidance for Claude Code working in this repository.
 project facts below their intro; when you change a fact, change it in both. `GEMINI.md`
 (Antigravity CLI) holds only Antigravity notes, because Antigravity also loads `AGENTS.md`.
 
-The slash commands (`/fastSimulatorTest`, `/fastDeviceTest`, `/fastCarPlayTest`, `/fastUIReview`), the
-`fast-ios-device-test`, `fast-ios-device-test-setup`, and `iphone-duo-swiftui` skills, and the `ui-explorer` subagent are what this repo *ships*. After
+The slash commands (`/fastSimulatorTest`, `/fastDeviceTest`, `/fastCarPlayTest`, `/fastUIReview`, `/testAmplitude`), the
+`fast-ios-device-test`, `fast-ios-device-test-setup`, `iphone-duo-swiftui` and `amplitude-tracking-test` skills, and the `ui-explorer` subagent are what this repo *ships*. After
 `./install.sh --link`, edits to them apply at once; restart Claude Code only to pick up a new or
 renamed command, skill or subagent. Apple skill text is never committed: `scripts/xcode_skills.py`
 exports it from a local Xcode on explicit request.
@@ -32,6 +32,11 @@ Antigravity, a Gemini CLI extension, and a release zip. macOS only; needs Xcode 
 - `/fastUIReview` builds contact sheets from recorded runs. Other launchers: `fastUIMap`,
   `fastEvidenceSheet`, `fastUIClean`, `fastUIReport`, and `fastUITest` (legacy alias of
   `fastSimulatorTest`).
+- `/testAmplitude` (Claude Code only) checks Amplitude events against a tracking-plan xlsx. It is
+  self-contained in `amplitude-tracking-test/` with its own Simulator and iPhone runners, which keep
+  their own cache, port, process name and bundle id apart from `fastDeviceTest`'s. It needs
+  openpyxl and Pillow. The package ships no app's flows and no company or app names
+  (`scripts/test_amplitude_tracking.py` checks that).
 
 User-facing docs: `README.md` (English), `GUIDE.md` (Vietnamese, for testers), `SETUP.md`
 (step-by-step setup an agent can follow), `CHANGELOG.md`.
@@ -45,6 +50,7 @@ User-facing docs: `README.md` (English), `GUIDE.md` (Vietnamese, for testers), `
 | `scripts/fast_device.py` | Physical-iPhone engine |
 | `scripts/fast_carplay.py` | Mixed phone + CarPlay engine (`doctor`, display presets, sim/hardware) |
 | `device-runner/` | XCUITest runner app. The `.xcodeproj` is committed; after editing `project.yml` run `cd device-runner && xcodegen generate` |
+| `amplitude-tracking-test/` | `/testAmplitude` scripts, its own runner (generated with xcodegen at run time) and `GUIDE.md`; skill in `skills/amplitude-tracking-test/`, command in `commands/testAmplitude.md`. Not in the Codex/Antigravity/Gemini packages |
 | `scripts/fast_guard.py` | Checks `do` requests (destructive steps, shapes) for both engines |
 | `scripts/fast_media.py` | Video re-encode, one-final-clip rule |
 | `scripts/fast_evidence.py`, `scripts/fast_evidence_sheet.py` | PR evidence folder on the Desktop, captioned sheet |

@@ -46,6 +46,8 @@ esac
 LINKS=(
     "$SKILLS_DIR/fast-ios-device-test"
     "$SKILLS_DIR/iphone-duo-swiftui"
+    "$SKILLS_DIR/amplitude-tracking-test"
+    "$COMMANDS_DIR/testAmplitude.md"
     "$COMMANDS_DIR/fastSimulatorTest.md" "$COMMANDS_DIR/fastDeviceTest.md" "$COMMANDS_DIR/fastCarPlayTest.md" "$COMMANDS_DIR/fastUIReview.md"
     "$AGENTS_DIR/ui-explorer.md"
     "$BIN_DIR/fastSimulatorTest" "$BIN_DIR/fastUITest" "$BIN_DIR/fastDeviceTest" "$BIN_DIR/fastCarPlayTest" "$BIN_DIR/fastUIReport"
@@ -207,7 +209,8 @@ if [[ "$MODE" == "check" ]]; then
     python3 "$SOURCE/scripts/fast_update.py" --status "${installed_root:-$SOURCE}" || true
     python3 "$SOURCE/scripts/fast_auto_update.py" status || true
     python3 -c "import PIL" 2>/dev/null && echo "pillow=yes" || echo "pillow=no (only fastUIReview, fastEvidenceSheet and the motion action need it)"
-    command -v xcodegen >/dev/null && echo "xcodegen=yes (optional)" || echo "xcodegen=no (optional: device-runner ships its xcodeproj)"
+    python3 -c "import openpyxl" 2>/dev/null && echo "openpyxl=yes" || echo "openpyxl=no (only /testAmplitude needs it: python3 -m pip install --user openpyxl)"
+    command -v xcodegen >/dev/null && echo "xcodegen=yes (optional)" || echo "xcodegen=no (optional: device-runner ships its xcodeproj; /testAmplitude iPhone runs need it)"
     echo "profiles=$(profile_count) development profiles (fastDeviceTest needs one that lists the iPhone)"
     # `-L` alone is true for a link whose target was deleted (a moved or removed clone).
     need_link() {
@@ -221,6 +224,7 @@ if [[ "$MODE" == "check" ]]; then
     done
     need_link "$SKILLS_DIR/fast-ios-device-test" skill show
     need_link "$SKILLS_DIR/iphone-duo-swiftui" "iphone-duo-swiftui skill" show
+    need_link "$SKILLS_DIR/amplitude-tracking-test" "amplitude-tracking-test skill" show
     need_link "$AGENTS_DIR/ui-explorer.md" "ui-explorer agent"
     # Codex and Antigravity are optional; a broken install of either is not.
     for entry in "${OTHER_SKILL_LINKS[@]}"; do
@@ -303,6 +307,8 @@ python3 -c "import PIL" 2>/dev/null || python3 -m pip install --user pillow >/de
 
 link "$HERE/skills/fast-ios-device-test" "$SKILLS_DIR/fast-ios-device-test"
 link "$HERE/skills/iphone-duo-swiftui" "$SKILLS_DIR/iphone-duo-swiftui"
+link "$HERE/skills/amplitude-tracking-test" "$SKILLS_DIR/amplitude-tracking-test"
+link "$HERE/commands/testAmplitude.md" "$COMMANDS_DIR/testAmplitude.md"
 link "$HERE/commands/fastSimulatorTest.md" "$COMMANDS_DIR/fastSimulatorTest.md"
 link "$HERE/commands/fastDeviceTest.md" "$COMMANDS_DIR/fastDeviceTest.md"
 link "$HERE/commands/fastCarPlayTest.md" "$COMMANDS_DIR/fastCarPlayTest.md"
@@ -325,7 +331,7 @@ for entry in "${OTHER_SKILL_LINKS[@]}"; do
 done
 chmod +x "$HERE/scripts/fast_ui.py" "$HERE/scripts/fast_ui_report.py" "$HERE/scripts/fast_ui_review.py" "$HERE/scripts/fast_device.py" "$HERE/scripts/fast_carplay.py" \
     "$HERE/scripts/fast_evidence_sheet.py" "$HERE/scripts/fast_ui_map.py" "$HERE/scripts/fast_ui_clean.py" "$HERE/scripts/fast_auto_update.py" \
-    "$HERE/scripts/fast_device_test.sh" "$HERE/scripts/shims/swiftlint"
+    "$HERE/scripts/fast_device_test.sh" "$HERE/scripts/shims/swiftlint" "$HERE"/amplitude-tracking-test/scripts/*.py
 
 case ":$PATH:" in
 *":$BIN_DIR:"*) ;;

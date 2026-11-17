@@ -18,8 +18,14 @@ def read_version() -> str:
     return json.loads((ROOT / "package.json").read_text())["version"]
 
 
+# Claude-only skills: their scripts and runner ship with the npm package and install.sh, not
+# with the marketplace packages, so a copy there could not run.
+CLAUDE_ONLY_SKILLS = ("amplitude-tracking-test",)
+
+
 def copy_shared(destination: Path) -> None:
-    shutil.copytree(ROOT / "skills", destination / "skills")
+    shutil.copytree(ROOT / "skills", destination / "skills", ignore=lambda folder, names: [
+        name for name in names if Path(folder) == ROOT / "skills" and name in CLAUDE_ONLY_SKILLS])
     shutil.copytree(ROOT / "assets", destination / "assets")
 
 
