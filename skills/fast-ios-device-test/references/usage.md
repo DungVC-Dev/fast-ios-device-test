@@ -25,6 +25,21 @@ Fastest repeat when the cached app definitely matches current source:
 scripts/fast_ui.py /absolute/path/to/task-flow.json --reuse-app
 ```
 
+Keep the app's console (stdout/stderr, for example `[TRACKING][Amplitude]` lines) as
+`<artifacts>/app.log`, named as `app_log=` on the PASS/FAIL line:
+
+```bash
+scripts/fast_ui.py /absolute/path/to/task-flow.json --app-log
+```
+
+Every `simctl launch` of `app.bundle_id` in the run appends to it: the first launch and each
+`launch` or `activate` step. The first launch always starts the app afresh (a NOTE says so when
+`relaunch: false` is ignored), because the console of an app that is already running cannot be
+attached. Other apps, and the app started another way after a `terminate` (`open_url`, a tap on its
+icon), are not captured. A failed or interrupted run keeps its log too. Full runs only, not
+`start`/`do`.
+Matching the events against a tracking plan: "Amplitude events in the same run" in `SKILL.md`.
+
 Build a new flow step by step on the live app instead of rerunning the whole flow to find
 labels (`fastSimulatorTest` takes the same verbs):
 
@@ -98,7 +113,7 @@ screenshots and videos somewhere durable, e.g. the QA report folder, and set
 `FAST_UI_KEEP_DAYS=0` there. Every run first prunes the root: run folders and
 final videos untouched for 3 days are deleted (`FAST_UI_KEEP_DAYS` overrides; `0`
 disables). `fastDeviceTest` prunes its root the same way. A PASS run filed as evidence
-(below) in the default root keeps only its `metrics.json`.
+(below) in the default root keeps only its `metrics.json` (and `app.log`, when the run kept one).
 `--session <name>` (or `FAST_UI_SESSION`) tags `metrics.json`;
 `scripts/fast_ui_report.py --root <project>/build/fast-ui --session <name>`
 (launcher `fastUIReport`) collates every tagged run into a flow × simulator
@@ -596,7 +611,7 @@ outcome step. Nothing else is filed: `do`, `--build-only`, other failures.
 - The PASS/FAIL line ends with `evidence=file://…` when the run was filed, or
   `evidence_error=…` when filing failed; the run's own result never changes.
 - A filed PASS run in the default root (`build/fast-ui`, `build/fast-device`) keeps only
-  `metrics.json`, its `video` pointing at the filed clip, so `fastUIReport`, `fastUIReview` and
+  `metrics.json` (plus `app.log` from `--app-log`, so its events can still be matched), its `video` pointing at the filed clip, so `fastUIReport`, `fastUIReview` and
   `fastEvidenceSheet` `task` cells still work. A root set with `--artifacts-root`,
   `FAST_UI_ROOT` or `FAST_DEVICE_ROOT` is copied from, never emptied.
 - `FAST_EVIDENCE=0` or `"evidence": false` in the flow files nothing (throwaway runs).
@@ -725,6 +740,10 @@ fastUIMap clear com.apple.Preferences        # or: fastUIMap clear --all
 - `FAST_UI_LOCK_WAIT`: seconds a run waits for a busy simulator (0: fail at once).
 - `FAST_UI_LOCK_DIR`: where the per-simulator locks and journals live
   (`~/Library/Caches/fast-ui/locks`).
+- `FAST_UI_APP_LOG_DIR`: where `--app-log` spools the console during a run
+  (`~/Library/Caches/fast-ui/app-log`; the simulator cannot write to `/tmp`). The file moves into
+  the run folder at the end and the spool is deleted; a spool left by a killed run is replaced by
+the next run on that simulator, and `fastUIClean` lists it.
 - `FAST_IOS_DERIVED_DATA_ROOT`: shared Simulator build cache root
   (`~/Library/Caches/fast-ios-device-test/dd`).
 - `FAST_DEVICE_ROOT`: artifacts root for `fastDeviceTest`.

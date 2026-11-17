@@ -41,6 +41,8 @@ script whose one-line summary you read; open a report only for its non-PASS rows
    Its runner has its own cache, port (8766) and bundle id, so it never touches a `fastDeviceTest`
    runner; still never run both on one iPhone at the same time.
 5. **Match** → `python3 scripts/tracking_match.py <work>/events.json <run folder> --expect <journey>.expect.json --out <journey>.report.md`
+   A run folder of `fastSimulatorTest` / `fastDeviceTest` with `--app-log` works too (its `app.log`
+   is read like `console.log`); `-` instead of `events.json` lists what fired without a plan.
    Statuses: PASS, FAIL (missing/extra keys or wrong value), MISSING (not fired), DUPLICATE
    (`once` events fired twice), EXTRA (planned but not expected here), UNPLANNED (not in the plan).
    MISSING is an app finding only when the run's labels prove the flow reached the trigger screen;

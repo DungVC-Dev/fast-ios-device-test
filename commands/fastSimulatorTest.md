@@ -12,7 +12,7 @@ in this plugin): flow format, selectors, timing rules, the two-rerun cap and whe
 The engine is:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-$HOME/.local}/bin/fastSimulatorTest" <flow.json> [--reuse-app|--build-only|--record|--session <name>|--duo-pose <pose>|--duo-orientation portrait|landscape]
+"${CLAUDE_PLUGIN_ROOT:-$HOME/.local}/bin/fastSimulatorTest" <flow.json> [--reuse-app|--build-only|--record|--app-log|--session <name>|--duo-pose <pose>|--duo-orientation portrait|landscape]
 "${CLAUDE_PLUGIN_ROOT:-$HOME/.local}/bin/fastSimulatorTest" start <draft.json> | do '<action json>' | labels | save <flow.json>
 ```
 
@@ -36,6 +36,10 @@ are refused. A non-default matrix row is named such as `@duo-closed-landscape`.
 For a recorded pose matrix, run one row per `--duo-pose closed|open|book|tabletop`, all with the
 same `--session` and `--record`: a video records one framebuffer, while a flow that switches poses
 uses screenshots. An explicit screenshot/motion may set `"display":"outer|inner"`.
+
+Before the first run, when the `amplitude-tracking-test` skill is installed, ask the user once
+whether the task also checks Amplitude events (the skill's "Amplitude events in the same run"):
+on a yes, run with `--app-log` and match the run folder with `tracking_match.py`.
 
 One requested behavior → one flow, written and run at once (no extra cases or variants the user
 did not ask for). The user listed several flows: up to about 5 on one simulator →

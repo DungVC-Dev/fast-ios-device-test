@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Match captured analytics log lines against the tracking plan and print a compact verdict table.
 
-Input: events.json (tracking_plan.py), one or more run folders or console logs, and optionally an
-expectations file listing the events each journey must fire. The model reads only the summary and
+Input: events.json (tracking_plan.py), or `-` to only list what fired, one or more run folders
+or logs, and optionally an expectations file listing the events each journey must fire. A run
+folder is searched for console.log (this tool's runs) and app.log (fastSimulatorTest /
+fastDeviceTest `--app-log`). The model reads only the summary and
 the non-PASS rows; payloads and screenshots stay on disk as evidence.
 """
 
@@ -36,7 +38,7 @@ def parse_value(raw: str):
 def read_events(paths: list[Path]) -> list[dict]:
     events = []
     for path in paths:
-        logs = sorted(path.rglob("console.log")) if path.is_dir() else [path]
+        logs = sorted([*path.rglob("console.log"), *path.rglob("app.log")]) if path.is_dir() else [path]
         for log in logs:
             for line in log.read_text(errors="ignore").splitlines():
                 match = LINE.search(line.replace('\\"', '"'))
@@ -46,18 +48,43 @@ def read_events(paths: list[Path]) -> list[dict]:
     return events
 
 
+def list_fired(captured: list[dict], out: Path) -> int:
+    """No plan: one row per fired event in firing order of first appearance, with its count."""
+    fired: dict[str, list[dict]] = {}
+    for event in captured:
+        fired.setdefault(event["event"], []).append(event)
+    lines = ["| Event | Fired | Last payload |", "| --- | --- | --- |"]
+    lines += [f"| {name} | {len(hits)}x | `{json.dumps(hits[-1]['params'], ensure_ascii=False)}` |"
+              for name, hits in fired.items()]
+    out.write_text("\n".join(lines) + "\n")
+    print(f"MATCH captured={len(captured)} distinct={len(fired)} plan=none report={out}")
+    for name, hits in fired.items():
+        print(f"  FIRED     {name} x{len(hits)}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("events", type=Path, help="events.json")
-    parser.add_argument("logs", type=Path, nargs="+", help="run folders or console.log files")
+    parser.add_argument("events", help="events.json, or - to list the fired events without a plan")
+    parser.add_argument("logs", type=Path, nargs="+", help="run folders, console.log or app.log files")
     parser.add_argument("--expect", type=Path, help='JSON: [{"event": "...", "params": {...}, "once": true}]')
     parser.add_argument("--out", type=Path, default=Path("tracking-report.md"))
     args = parser.parse_args()
-    plan = {e["name"]: e for e in json.loads(args.events.read_text())}
+    if args.events == "-" and args.expect:
+        print("MATCH error: --expect needs a plan (events.json), not -")
+        return 2
+    missing = [str(path) for path in args.logs if not path.exists()]
+    if missing:
+        print(f"MATCH error: no such run folder or log: {', '.join(missing)}")
+        return 2
     captured = read_events(args.logs)
     if not captured:
-        print("MATCH captured=0: no tracking lines in the console logs; check setup.capture_console and that the build prints them")
+        print("MATCH captured=0: no tracking lines in the logs; run with --app-log (fastSimulatorTest / "
+              "fastDeviceTest) or setup.capture_console, and check that the build prints them")
         return 1
+    if args.events == "-":
+        return list_fired(captured, args.out)
+    plan = {e["name"]: e for e in json.loads(Path(args.events).read_text())}
     fired = defaultdict(list)
     for event in captured:
         fired[event["event"]].append(event)
