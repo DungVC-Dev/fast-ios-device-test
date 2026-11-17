@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.3.0 — 2026-11-17
 
 - `fastSimulatorTest` with `fresh_install: false` now drives the build it just made. Before, it
   kept running the app already on the simulator, so screenshots could show the old build. It
