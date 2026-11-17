@@ -1367,6 +1367,45 @@ def verify_app(path: Path, bundle_id: str) -> None:
         raise FastUIError(f"bundle mismatch: expected {bundle_id}, found {actual}")
 
 
+def bundle_digest(app: Path) -> str | None:
+    """SHA-256 of the parts of an .app that change with every rebuild: the executable, the
+    Debug dylib Xcode splits the code into, and the signature's resource list (assets, JSON).
+    None when the bundle cannot be read, so the caller installs rather than trusts it."""
+    try:
+        with (app / "Info.plist").open("rb") as stream:
+            executable = plistlib.load(stream).get("CFBundleExecutable")
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        return None
+    if not isinstance(executable, str) or not (app / executable).is_file():
+        return None
+    digest = hashlib.sha256()
+    for part in (executable, f"{executable}.debug.dylib", "_CodeSignature/CodeResources"):
+        path = app / part
+        if not path.is_file():
+            continue
+        digest.update(part.encode())
+        try:
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1 << 20), b""):
+                    digest.update(chunk)
+        except OSError:
+            return None
+    return digest.hexdigest()
+
+
+def install_if_changed(udid: str, bundle_id: str, app_path: Path) -> bool:
+    """Install `app_path` over the kept install when it is missing or differs from it, so a
+    run without fresh_install never drives the previous build. `simctl install` over an
+    existing app keeps its data container. True when it installed."""
+    result = command(["xcrun", "simctl", "get_app_container", udid, bundle_id, "app"], check=False)
+    container = result.stdout.strip() if result.returncode == 0 and result.stdout else ""
+    wanted = bundle_digest(app_path)
+    if container and wanted is not None and bundle_digest(Path(container)) == wanted:
+        return False
+    command(["xcrun", "simctl", "install", udid, str(app_path)])
+    return True
+
+
 def ensure_booted(udid: str) -> None:
     # Installing into a shut-down simulator fails only after the build has
     # already spent a minute, so boot (or confirm boot) up front.
@@ -1732,6 +1771,10 @@ def build_if_needed(
 
 
 def write_preference(udid: str, domain: str, key: str, value: Any) -> None:
+    if value is None:
+        # null removes the key, so a "seen once" flag can be cleared before each run.
+        command(["xcrun", "simctl", "spawn", udid, "defaults", "delete", domain, key], check=False)
+        return
     args = ["xcrun", "simctl", "spawn", udid, "defaults", "write", domain, key]
     if isinstance(value, bool):
         args += ["-bool", "true" if value else "false"]
@@ -2861,6 +2904,8 @@ def session_main(argv: list[str]) -> int:
             command(["xcrun", "simctl", "install", udid, str(app_path)])
         else:
             command(["xcrun", "simctl", "terminate", udid, bundle_id], check=False)
+            if app_path is not None:
+                install_if_changed(udid, bundle_id, app_path)
         set_preferences(udid, bundle_id, setup.get("preferences", {}))
         if variant.get("duo_pose"):
             set_duo_pose(udid, variant["duo_pose"], variant.get("duo_orientation"))
@@ -3093,6 +3138,16 @@ def run_do(argv: list[str]) -> int:
     return 1 if failed else 0
 
 
+def running_apps(udid: str) -> list[str]:
+    """Bundle ids of the non-Apple apps running on a booted simulator, from its launchd."""
+    result = command(["xcrun", "simctl", "spawn", udid, "launchctl", "list"], check=False, timeout=20)
+    apps = set()
+    for match in re.finditer(r"UIKitApplication:([^\[\s]+)\[", result.stdout or ""):
+        if not match.group(1).startswith("com.apple."):
+            apps.add(match.group(1))
+    return sorted(apps)
+
+
 def run_shutdown(argv: list[str]) -> int:
     """`fastSimulatorTest shutdown`: at the end of the work, shut the booted simulators down so the
     Mac gets its memory back; `--simulator` limits it to one (spare one Xcode is running on)."""
@@ -3101,6 +3156,8 @@ def run_shutdown(argv: list[str]) -> int:
         description="Shut down every booted simulator, or only the one given.",
     )
     parser.add_argument("--simulator", help="UDID of the one simulator to shut down")
+    parser.add_argument("--list", action="store_true",
+                        help="Only list the booted simulators and the non-Apple apps running on them")
     args = parser.parse_args(argv)
     if args.simulator:
         select_duo_toolchain(args.simulator)
@@ -3110,6 +3167,14 @@ def run_shutdown(argv: list[str]) -> int:
     if args.simulator:
         wanted = resolve_simulator(args.simulator)
         booted = [device for device in booted if device.get("udid") == wanted]
+    if args.list:
+        # What an interrupted or --keep-state run left behind (an app holding the microphone,
+        # say), so the agent can ask before shutting down a simulator someone else is using.
+        for device in booted:
+            apps = running_apps(device["udid"])
+            print(f"BOOTED {device.get('name')} ({device['udid']}) apps={','.join(apps) or 'none'}")
+        print(f"LIST booted={len(booted)}")
+        return 0
     for device in booted:
         stop_stale_recorder(device["udid"])
         command(["xcrun", "simctl", "shutdown", device["udid"]], timeout=60)
@@ -3269,6 +3334,12 @@ def main() -> int:
                 command(["xcrun", "simctl", "install", udid, str(app_path)])
                 if keychain:
                     keychain.wait(timeout=60)
+        elif app_path is not None:
+            current_step = "install"
+            with metrics.measure(current_step):
+                if install_if_changed(udid, bundle_id, app_path):
+                    print(f"NOTE installed the current build of {bundle_id} over the kept one (data kept)",
+                          file=sys.stderr)
         current_step = "state_and_launch"
         with metrics.measure(current_step):
             apply_ui_settings(udid, variant, previous_ui)

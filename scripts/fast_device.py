@@ -486,6 +486,11 @@ def preference_arguments(preferences: dict[str, Any]) -> list[str]:
     arguments: list[str] = []
     for key, value in preferences.items():
         # Typed plist fragments: a bare `YES` arrives as a String and `object(forKey:) as? Bool` misses it.
+        if value is None:
+            raise FastDeviceError(
+                f"preference '{key}': null (remove the key) works only on Simulator; on an iPhone "
+                "preferences are launch arguments that can override a key but not remove it, so "
+                "give the value the app reads as unset (for example 0 or \"\")")
         if isinstance(value, bool):
             encoded = "<true/>" if value else "<false/>"
         elif isinstance(value, int):
@@ -832,6 +837,18 @@ def runtime_failure(text: str) -> str | None:
     return None
 
 
+def runner_age(udid: str, now: float | None = None) -> str:
+    """` since=HH:MM up=…` for a serving runner, so a status shows one left on for hours (the
+    iPhone says "Automation Running" all that time); empty for a state file without a start."""
+    try:
+        started = float(json.loads(server_state_path(udid).read_text()).get("started"))
+    except (OSError, ValueError, TypeError):
+        return ""
+    minutes = max(0, int(((now or time.time()) - started) // 60))
+    age = f"{minutes // 60}h{minutes % 60:02d}m" if minutes >= 60 else f"{minutes}m"
+    return f" since={datetime.fromtimestamp(started).strftime('%H:%M')} up={age} (stop frees it, lock also locks the screen)"
+
+
 def server_alive(udid: str) -> bool:
     try:
         slow = fast_conditions.slowdown(fast_conditions.load(CACHE_ROOT, udid))
@@ -885,6 +902,7 @@ def start_server(device: dict[str, Any], rebuild: bool) -> None:
     )
     server_state_path(udid).write_text(json.dumps({
         "pid": process.pid, "address": tunnel_address(udid), "port": SERVER_PORT, "log": str(log),
+        "started": time.time(),
         "device": {key: value for key, value in device.items() if key not in {"serving", "details", "developer_dir"}},
     }))
     wait = 120 * fast_conditions.slowdown(fast_conditions.load(CACHE_ROOT, udid))
@@ -1296,7 +1314,8 @@ def run_command(argv: list[str]) -> int:
         lock_device(device, args.rebuild_runner)
         print(f"LOCKED device={device['name']}")
     elif argv[0] == "status":
-        print(f"{'SERVING' if server_alive(udid) else 'IDLE'} device={device['name']}")
+        alive = server_alive(udid)
+        print(f"{'SERVING' if alive else 'IDLE'} device={device['name']}" + (runner_age(udid) if alive else ""))
     else:
         start_server(device, args.rebuild_runner)
         parsed = json.loads(args.action)

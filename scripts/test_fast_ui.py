@@ -1917,6 +1917,9 @@ class ShutdownTests(unittest.TestCase):
         def fake(args: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             calls.append(args)
             stdout = json.dumps(listed) if args[:3] == ["xcrun", "simctl", "list"] else ""
+            if args[2:3] == ["spawn"] and args[3] == "A":
+                stdout = ("75637\t0\tUIKitApplication:com.apple.Spotlight[2c9b][rb-legacy]\n"
+                          "80001\t0\tUIKitApplication:com.astraler.carwidgets[1a2b][rb-legacy]\n")
             return subprocess.CompletedProcess(args, 0, stdout, "")
 
         out = io.StringIO()
@@ -1935,6 +1938,13 @@ class ShutdownTests(unittest.TestCase):
         _, none = self.run_shutdown("--simulator", "Z")
         self.assertIn("SHUTDOWN none booted", none)
 
+    def test_list_names_running_apps_and_shuts_nothing_down(self) -> None:
+        shutdowns, out = self.run_shutdown("--list")
+        self.assertEqual(shutdowns, [])
+        self.assertIn("BOOTED iPhone 17 (A) apps=com.astraler.carwidgets", out)
+        self.assertIn("BOOTED iPhone 17e (B) apps=none", out)
+        self.assertIn("LIST booted=2", out)
+
     def test_shutdown_clears_persisted_duo_display(self) -> None:
         with tempfile.TemporaryDirectory() as raw, mock.patch.object(fast_ui, "LOCK_DIR", Path(raw)):
             fast_ui.persist_duo_display("A", "outer")
@@ -1950,6 +1960,104 @@ def pbxproj_with(script: str, name: str = "SwiftLint") -> str:
         "\t\tAA /* Lint */ = {\n\t\t\tisa = PBXShellScriptBuildPhase;\n"
         f"\t\t\tname = {name};\n\t\t\tshellScript = \"{escaped}\";\n\t\t}};\n"
     )
+
+
+class KeptInstallTests(unittest.TestCase):
+    """A run without fresh_install must drive the build it just made, not the one installed."""
+
+    @staticmethod
+    def make_app(root: Path, name: str, code: bytes, resources: bytes = b"r") -> Path:
+        app = root / name / "Demo.app"
+        (app / "_CodeSignature").mkdir(parents=True)
+        (app / "Info.plist").write_bytes(plistlib.dumps({"CFBundleExecutable": "Demo"}))
+        (app / "Demo").write_bytes(b"stub")
+        (app / "Demo.debug.dylib").write_bytes(code)
+        (app / "_CodeSignature" / "CodeResources").write_bytes(resources)
+        return app
+
+    def run_install(self, built: Path, container: str, returncode: int = 0) -> list[list[str]]:
+        calls: list[list[str]] = []
+
+        def fake(args, **_):
+            calls.append(args)
+            out = container if args[2] == "get_app_container" else ""
+            return subprocess.CompletedProcess(args, returncode if args[2] == "get_app_container" else 0, out, "")
+        with mock.patch.object(fast_ui, "command", side_effect=fake):
+            fast_ui.install_if_changed("SIM", "com.example.demo", built)
+        return [call for call in calls if call[2] == "install"]
+
+    def test_same_build_is_not_reinstalled(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            built = self.make_app(Path(raw), "built", b"v1")
+            installed = self.make_app(Path(raw), "installed", b"v1")
+            self.assertEqual(self.run_install(built, f"{installed}\n"), [])
+
+    def test_changed_code_or_resources_reinstall_over_the_kept_app(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            built = self.make_app(Path(raw), "built", b"v2")
+            old_code = self.make_app(Path(raw), "old-code", b"v1")
+            old_assets = self.make_app(Path(raw), "old-assets", b"v2", b"old cards")
+            for installed in (old_code, old_assets):
+                self.assertEqual(self.run_install(built, str(installed)),
+                                 [["xcrun", "simctl", "install", "SIM", str(built)]])
+
+    def test_missing_or_unreadable_install_is_installed(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            built = self.make_app(Path(raw), "built", b"v1")
+            self.assertEqual(len(self.run_install(built, "", returncode=2)), 1)
+            self.assertEqual(len(self.run_install(built, str(Path(raw) / "gone.app"))), 1)
+
+    def test_kept_install_run_installs_the_new_build(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            flow = Path(raw) / "kept.json"
+            flow.write_text(json.dumps({"version": 1, "name": "kept", "actions": [],
+                                        "setup": {"fresh_install": False},
+                                        "app": {"bundle_id": "com.example.app", "simulator": "SIM",
+                                                "project_root": raw}}))
+            built = Path(raw) / "Demo.app"
+            with mock.patch.object(fast_ui.sys, "argv", ["fastSimulatorTest", str(flow)]), \
+                    mock.patch.object(fast_ui, "resolve_simulator", return_value="SIM"), \
+                    mock.patch.object(fast_ui, "prepare_app", return_value=(built, True)), \
+                    mock.patch.object(fast_ui, "install_if_changed", return_value=True) as install, \
+                    mock.patch.object(fast_ui, "command"), mock.patch.object(fast_ui, "apply_ui_settings"), \
+                    mock.patch.object(fast_ui, "set_preferences"), mock.patch.object(fast_ui, "reset_preferences"), \
+                    mock.patch.object(fast_ui, "restore_ui_settings"), mock.patch.object(fast_ui, "record"), \
+                    mock.patch.object(fast_ui, "axe", side_effect=FakeAxe("[]")), \
+                    contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as err:
+                fast_ui.main()
+        install.assert_called_once_with("SIM", "com.example.app", built)
+        self.assertIn("NOTE installed the current build", err.getvalue())
+
+
+class RunnerAgeTests(unittest.TestCase):
+    def test_status_age_names_start_and_hours(self) -> None:
+        import fast_device
+        with tempfile.TemporaryDirectory() as raw:
+            state = Path(raw) / "server.json"
+            with mock.patch.object(fast_device, "server_state_path", return_value=state):
+                self.assertEqual(fast_device.runner_age("U"), "")
+                state.write_text(json.dumps({"pid": 1}))
+                self.assertEqual(fast_device.runner_age("U"), "")
+                state.write_text(json.dumps({"pid": 1, "started": 1000.0}))
+                age = fast_device.runner_age("U", now=1000.0 + 3 * 3600 + 7 * 60)
+                self.assertIn(" up=3h07m", age)
+                self.assertIn("since=", age)
+                self.assertIn("up=5m", fast_device.runner_age("U", now=1000.0 + 300))
+
+
+class PreferenceDeleteTests(unittest.TestCase):
+    def test_null_preference_deletes_the_key_on_simulator(self) -> None:
+        with mock.patch.object(fast_ui, "command") as command:
+            fast_ui.set_preferences("SIM", "com.example.app", {"seenPopupVersion": None, "isPremium": True})
+        self.assertEqual(command.call_args_list[0], mock.call(
+            ["xcrun", "simctl", "spawn", "SIM", "defaults", "delete", "com.example.app", "seenPopupVersion"],
+            check=False))
+        self.assertIn("-bool", command.call_args_list[1].args[0])
+
+    def test_null_preference_is_refused_on_a_device_with_the_workaround(self) -> None:
+        import fast_device
+        with self.assertRaisesRegex(fast_device.FastDeviceError, "only on Simulator.*unset"):
+            fast_device.preference_arguments({"seenPopupVersion": None})
 
 
 class LintTests(unittest.TestCase):
