@@ -252,9 +252,10 @@ def file_run(
 
 
 def tidy_run(artifacts: Path, video: Path | None) -> None:
-    """Everything of a filed PASS run but its metrics.json, and its task-level clip."""
+    """Everything of a filed PASS run but its metrics.json and app.log (the app's console, still
+    read afterwards, e.g. to match analytics events), and its task-level clip."""
     for entry in artifacts.iterdir():
-        if entry.name == "metrics.json":
+        if entry.name in ("metrics.json", "app.log"):
             continue
         if entry.is_dir() and not entry.is_symlink():
             shutil.rmtree(entry)

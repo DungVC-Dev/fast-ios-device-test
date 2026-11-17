@@ -254,6 +254,16 @@ class FilingTests(Base):
         self.assertIsNone(error)
         self.assertEqual(list(filed["shots"]), ["home"])
 
+    def test_an_emptied_pass_keeps_the_app_log(self) -> None:
+        root = repo(self.tmp)
+        run, video = make_run(root / "build/fast-ui/gating-off", "pass")
+        (run / "app.log").write_text("[TRACKING][Amplitude] event=a params=[:]\n")
+        filed, error = self.file(root, run, video)
+        self.assertIsNone(error)
+        self.assertIsNotNone(filed)
+        self.assertEqual(sorted(path.name for path in run.iterdir()), ["app.log", "metrics.json"])
+        self.assertIn("event=a", (run / "app.log").read_text())
+
     def test_a_custom_root_is_copied_from_not_emptied(self) -> None:
         root = repo(self.tmp)
         run, video = make_run(self.tmp / "qa/gating-off", "pass")
@@ -309,7 +319,10 @@ class EngineTests(Base):
             Image.new("RGB", (1179, 2556), (200, 10, 10)).save(path)
 
         out, err = io.StringIO(), io.StringIO()
+        # The run's lease and app-log spool stay in the test folder, never ~/Library/Caches.
         with mock.patch.object(fast_ui.sys, "argv", ["fastSimulatorTest", str(flow), *argv]), \
+                mock.patch.object(fast_ui, "LOCK_DIR", root / "caches/locks"), \
+                mock.patch.object(fast_ui, "APP_LOG_DIR", root / "caches/app-log"), \
                 mock.patch.object(fast_ui, "prepare_app", return_value=(None, False)), \
                 mock.patch.object(fast_ui, "command"), mock.patch.object(fast_ui, "apply_ui_settings"), \
                 mock.patch.object(fast_ui, "set_preferences"), mock.patch.object(fast_ui, "reset_preferences"), \
@@ -330,6 +343,16 @@ class EngineTests(Base):
         self.assertIn(f"evidence={folder.as_uri()}", out)
         self.assertTrue((folder / "PRJ-12.jpg").exists())
         self.assertEqual([path.name for path in run.iterdir()], ["metrics.json"])
+
+    def test_a_filed_simulator_pass_keeps_its_app_log(self) -> None:
+        root = repo(self.tmp)
+        code, out, _, run = self.run_sim(
+            root, [{"type": "wait", "label": "Go"}, {"type": "screenshot", "name": "main.png"}], "--app-log")
+        self.assertEqual(code, 0)
+        self.assertIn("evidence=", out)
+        self.assertIn(f"app_log={(run / 'app.log').as_uri()}", out)
+        self.assertEqual(sorted(path.name for path in run.iterdir()), ["app.log", "metrics.json"])
+        self.assertEqual(list((root / "caches/app-log").iterdir()), [])
 
     def test_a_simulator_before_run_files_its_failure_screen(self) -> None:
         root = repo(self.tmp)

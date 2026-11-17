@@ -124,7 +124,8 @@ Everything the engine needs is in the flow; there is no per-project config.
 1. One flow by default: the state the behavior needs, the shortest way to it, and an assertion
    of the requested outcome. A flow the user gave runs unchanged. Add cases, variants
    (appearance, text size, other devices) or a matrix only when the user lists or asks for them;
-   when the outcome to assert is unclear, ask one question. Write it as a version-1 flow in a
+   when the outcome to assert is unclear, ask one question (and the Amplitude question in
+   "Amplitude events in the same run" when it applies). Write it as a version-1 flow in a
    temporary directory (delete it afterwards, one `rm <file>` per file).
 2. App driven before → `fastUIMap <bundle id> --find <label>` first: selectors and the steps that
    reach them, from what earlier runs saw; `--path-to <screen>` prints them as one guarded `do`
@@ -147,6 +148,38 @@ Everything the engine needs is in the flow; there is no per-project config.
    with `--reuse-app`. After two reruns stop and report with the artifact link. A failing flow
    is never a reason to switch to another driver (`osascript`, `cliclick`, a hand-written
    XCUITest): report instead.
+
+## Amplitude events in the same run
+
+Only when the `amplitude-tracking-test` skill is installed (Claude Code; the Codex, Antigravity and
+Gemini packages do not ship it). Before the first run of a task, ask the user once, in their
+language, whether this task also checks Amplitude events. Skip the question when the user already
+said so, or when the task is only a screenshot or a layout check.
+
+- **Yes, against the plan**: ask for the tracking-plan `.xlsx` and which events the journey should
+  fire. Read that skill's `SKILL.md` for the script folder, run its step 1 (plan) and write
+  `<work>/<journey>.expect.json`: `[{"event": "Home Viewed", "params": {"source": "tab"}, "once": true}]`
+  (`params` and `once` are optional).
+- **Yes, list only**: no plan. Show which events fired and with which payloads.
+- **No**: run the flow as usual, without the steps below.
+
+On either yes, run the key guard (that skill's step 3) on the built app before the UI run.
+Exit 2 means the build sends to the production key: stop and tell the user, and do not run the
+flow. Exit 1 (`KEY none`) means the build sends nothing. The local log still works, so the match
+does too; say that Amplitude itself cannot confirm these events.
+
+Then add `--app-log` to `fastSimulatorTest <flow.json>` or `fastDeviceTest <flow.json>`. The run
+keeps the app's console as `<artifacts>/app.log` and names it as `app_log=` on the PASS or FAIL
+line. On Simulator, every launch of `app.bundle_id` in the run (the first launch, which then
+always restarts the app, and any `launch` or `activate` step) appends to that log. The app started
+another way after a `terminate`, for example through `open_url`, is not captured. Match that one run folder (the `artifacts=` of the line, never the artifacts root,
+which holds older runs too):
+`tracking_match.py <work>/events.json <run folder> --expect <work>/<journey>.expect.json --out <work>/<journey>.amplitude.md`,
+or `tracking_match.py - <run folder> --out <work>/<journey>.amplitude.md` to list only. Read only
+its summary and the non-PASS rows. In the report, put the table `Event | Status | Detail` under the
+UI result. A UI FAIL still has its `app.log`, but MISSING events from a run that never reached the
+screen are not app findings. A MATCH line with `captured=0` means the build does not print
+`[TRACKING][Amplitude]` lines; say so instead of reporting every event as missing.
 
 ## Step by step (exploring, or one quick check)
 

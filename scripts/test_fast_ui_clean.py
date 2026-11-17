@@ -33,7 +33,8 @@ class CleanTests(unittest.TestCase):
         for patch in patches:
             patch.start()
             self.addCleanup(patch.stop)
-        for key in ("FAST_UI_LOCK_DIR", "FAST_UI_MAP_DIR", "FAST_DEVICE_CACHE", "FAST_IOS_DERIVED_DATA_ROOT"):
+        for key in ("FAST_UI_LOCK_DIR", "FAST_UI_MAP_DIR", "FAST_DEVICE_CACHE", "FAST_IOS_DERIVED_DATA_ROOT",
+                    "FAST_UI_APP_LOG_DIR"):
             fast_ui_clean.os.environ.pop(key, None)
 
     def make(self, relative: str, text: str = "x") -> Path:
@@ -79,6 +80,19 @@ class CleanTests(unittest.TestCase):
         self.assertTrue(busy.exists())
         self.assertIn("a flow is running on BUSY", out)
         self.assertIn("killed run left DIRTY", out)
+
+    def test_a_killed_runs_app_log_spool_goes_but_a_running_one_stays(self) -> None:
+        left = self.make("fast-ui/app-log/IDLE.log", "[TRACKING] old")
+        running = self.make("fast-ui/app-log/BUSY.log", "[TRACKING] now")
+        busy = self.make("fast-ui/locks/BUSY.lock", "")
+        with busy.open("a") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            listed = self.run_clean()
+            out = self.run_clean("--yes")
+        self.assertIn(str(left), listed)
+        self.assertFalse(left.exists())
+        self.assertTrue(running.exists())
+        self.assertIn("its app log is being written", out)
 
     def test_serving_runner_keeps_the_device_cache(self) -> None:
         runner = self.make("fast-device-test/server-U.json", "{}")

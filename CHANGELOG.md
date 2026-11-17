@@ -15,8 +15,8 @@
   stayed. The engine now stops the app and writes the key to both places. After the run, or
   when the next run repairs a killed one, it puts the app's previous value back and removes
   keys the app did not have.
-- The unit tests no longer compile video helpers into `~/Library/Caches/fast-ios-device-test`;
-  they use a temporary folder.
+- The unit tests no longer compile video helpers into `~/Library/Caches/fast-ios-device-test`
+  or leave a `SIM.lock` in `~/Library/Caches/fast-ui/locks`; they use a temporary folder.
 - `fastSimulatorTest shutdown --list` lists the booted simulators and the non-Apple apps still
   running on them, without shutting anything down.
 - `fastDeviceTest status` shows when a serving runner started and how long it has been up.
@@ -33,6 +33,20 @@
   or Gemini packages. `install.sh` keeps an existing standalone `amplitude-tracking-test` install.
 - Plan parsing in that tool now cuts a property cell at `name: note` as well as `name (note)` and
   `name - note`.
+- Amplitude checks inside a normal UI test: with the `amplitude-tracking-test` skill installed,
+  agents ask once before the first `fastSimulatorTest` / `fastDeviceTest` run whether the task
+  also checks Amplitude. On a yes they guard the key, run with `--app-log` and add an
+  `Event | Status | Detail` table to the report, either against the plan or as a list of what fired.
+- `fastSimulatorTest <flow> --app-log` keeps the app's console as `<artifacts>/app.log`, named
+  as `app_log=` on the PASS/FAIL line. Every launch of the app in the run appends to it,
+  including `launch` and `activate` steps, and a failed run keeps it too. With it, the first
+  launch always restarts the app, because a running app's console cannot be attached.
+- `tracking_match.py` reads the `app.log` of those runs, and `-` instead of a plan lists the
+  events that fired with their payloads. A missing run folder is named instead of reported as
+  "no tracking lines".
+- A PASS run filed as evidence keeps its `app.log` next to `metrics.json`. Before, the tidy-up
+  deleted it, so its events could not be matched afterwards. `fastUIClean` removes an
+  `--app-log` spool left by a killed run.
 
 ## 2.2.2 — 2026-11-12
 

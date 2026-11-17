@@ -10,6 +10,7 @@ import io
 import itertools
 import json
 import plistlib
+import os
 import shutil
 import subprocess
 import sys
@@ -51,6 +52,7 @@ _LOCKS = tempfile.TemporaryDirectory()
 def setUpModule() -> None:
     # main() takes a simulator lease; keep the tests' leases out of ~/Library/Caches.
     fast_ui.LOCK_DIR = Path(_LOCKS.name)
+    fast_ui.APP_LOG_DIR = Path(_LOCKS.name) / "app-log"
 
 
 def tearDownModule() -> None:
@@ -2052,6 +2054,154 @@ class KeptInstallTests(unittest.TestCase):
         install, err, _ = self.run_kept(prebuilt=True)
         install.assert_not_called()
         self.assertNotIn("NOTE installed", err)
+
+
+class AppLogTests(unittest.TestCase):
+    """`--app-log` on Simulator: every launch of the app appends its console to one spool,
+    which ends up as <artifacts>/app.log, with or without a PASS."""
+
+    def run_flow(self, actions: list[dict], app_log: bool = True, stale: str = "",
+                 setup: dict | None = None, extra: list[str] | None = None) -> tuple[int, list, str, Path, Path]:
+        raw = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, raw, True)
+        raw = str(Path(raw).resolve())
+        spool_dir = Path(raw) / "spool"
+        flow = Path(raw) / "amp.json"
+        flow.write_text(json.dumps({"version": 1, "name": "amp", "actions": actions,
+                                    "setup": {"fresh_install": False, **(setup or {})},
+                                    "app": {"bundle_id": "com.example.app", "simulator": "SIM",
+                                            "project_root": raw, "prebuilt": True}}))
+        if stale:
+            spool_dir.mkdir()
+            (spool_dir / "SIM.log").write_text(stale)
+        launches: list = []
+
+        def fake(args, **kwargs):
+            if args[:3] == ["xcrun", "simctl", "launch"]:
+                launches.append((list(args), kwargs.get("env")))
+                for arg in args:
+                    if arg.startswith("--stdout="):
+                        with open(arg.split("=", 1)[1], "a") as log:
+                            log.write(f"[TRACKING][Amplitude] event=launch{len(launches)} params=[:]\n")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        argv = ["fastSimulatorTest", str(flow), "--artifacts", str(Path(raw) / "run")]
+        with mock.patch.object(fast_ui.sys, "argv", argv + (["--app-log"] if app_log else []) + (extra or [])), \
+                mock.patch.object(fast_ui, "APP_LOG_DIR", spool_dir), \
+                mock.patch.object(fast_ui, "resolve_simulator", return_value="SIM"), \
+                mock.patch.object(fast_ui, "prepare_app", return_value=(None, False)), \
+                mock.patch.object(fast_ui, "command", side_effect=fake), \
+                mock.patch.object(fast_ui, "apply_ui_settings"), mock.patch.object(fast_ui, "set_preferences"), \
+                mock.patch.object(fast_ui, "reset_preferences"), mock.patch.object(fast_ui, "restore_ui_settings"), \
+                mock.patch.object(fast_ui, "record"), mock.patch.object(fast_ui, "screenshot"), \
+                mock.patch.object(fast_ui, "axe", side_effect=FakeAxe("[]")), \
+                contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
+            code = fast_ui.main()
+        self.assertIsNone(fast_ui.APP_LOG)
+        return code, launches, out.getvalue() + err.getvalue(), Path(raw) / "run", spool_dir
+
+    def test_every_launch_of_the_app_appends_to_app_log(self) -> None:
+        code, launches, output, run, spool = self.run_flow([
+            {"type": "launch", "app": "com.apple.Preferences"}, {"type": "launch"},
+        ])
+        self.assertEqual(code, 0, output)
+        mine = [(args, env) for args, env in launches if "com.example.app" in args]
+        self.assertEqual(len(mine), 2)
+        for args, env in mine:
+            self.assertIn(f"--stdout={spool / 'SIM.log'}", args)
+            self.assertIn(f"--stderr={spool / 'SIM.log'}", args)
+            self.assertEqual(env["SIMCTL_CHILD_NSUnbufferedIO"], "YES")
+            self.assertEqual(env["PATH"], os.environ["PATH"])
+        self.assertIn("--terminate-running-process", mine[0][0])
+        other = next(args for args, _ in launches if "com.apple.Preferences" in args)
+        self.assertFalse(any(arg.startswith("--stdout") for arg in other))
+        log = (run / "app.log").read_text()
+        self.assertEqual(log.count("[TRACKING][Amplitude]"), 2)
+        self.assertFalse((spool / "SIM.log").exists())
+        self.assertIn(f"app_log=", output)
+        self.assertEqual(json.loads((run / "metrics.json").read_text())["app_log"], str(run / "app.log"))
+
+    def test_app_log_is_a_snapshot_the_still_running_app_cannot_extend(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            artifacts = Path(raw) / "run"
+            artifacts.mkdir()
+            with mock.patch.object(fast_ui, "APP_LOG_DIR", Path(raw) / "spool"):
+                spool = fast_ui.start_app_log("SIM", "com.example.app")
+                with spool.open("a") as app:  # the app's own handle, as simctl gives it
+                    app.write("during\n")
+                    app.flush()
+                    log = fast_ui.collect_app_log(artifacts)
+                    app.write("after the run\n")
+            self.assertEqual(log.read_text(), "during\n")
+            self.assertFalse(spool.exists())
+            self.assertIsNone(fast_ui.APP_LOG)
+
+    def test_a_failed_run_keeps_its_app_log(self) -> None:
+        code, _, output, run, spool = self.run_flow([{"type": "wait", "label": "Nope", "timeout": 0.2}])
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL task=amp", output)
+        self.assertIn("app_log=", output)
+        self.assertIn("event=launch1", (run / "app.log").read_text())
+        self.assertFalse((spool / "SIM.log").exists())
+
+    def test_a_killed_runs_spool_is_not_carried_over(self) -> None:
+        _, _, _, run, _ = self.run_flow([], stale="[TRACKING][Amplitude] event=old params=[:]\n")
+        self.assertNotIn("event=old", (run / "app.log").read_text())
+
+    def test_relaunch_false_still_restarts_the_app_to_keep_its_console(self) -> None:
+        code, launches, output, _, _ = self.run_flow([], setup={"relaunch": False})
+        self.assertEqual(code, 0, output)
+        self.assertIn("--terminate-running-process", launches[0][0])
+        self.assertIn("NOTE --app-log restarts com.example.app (relaunch: false is ignored)", output)
+        code, launches, output, _, _ = self.run_flow([], app_log=False, setup={"relaunch": False})
+        self.assertNotIn("--terminate-running-process", launches[0][0])
+        self.assertNotIn("NOTE --app-log", output)
+
+    def test_activate_is_captured_too(self) -> None:
+        code, launches, output, run, _ = self.run_flow([{"type": "terminate"}, {"type": "activate"}])
+        self.assertEqual(code, 0, output)
+        self.assertEqual(len(launches), 2)
+        self.assertTrue(any(arg.startswith("--stdout=") for arg in launches[1][0]))
+        self.assertEqual((run / "app.log").read_text().count("[TRACKING]"), 2)
+
+    def test_an_interrupted_run_keeps_its_app_log(self) -> None:
+        def stop(*_args, **_kwargs):
+            raise fast_ui.Interrupted("interrupted by SIGTERM")
+        with mock.patch.object(fast_ui, "wait_selector", side_effect=stop):
+            code, _, output, run, spool = self.run_flow([{"type": "wait", "label": "Go"}])
+        self.assertEqual(code, 130)
+        self.assertIn("event=launch1", (run / "app.log").read_text())
+        self.assertEqual(json.loads((run / "metrics.json").read_text())["app_log"], str(run / "app.log"))
+        self.assertFalse((spool / "SIM.log").exists())
+
+    def test_build_only_starts_no_spool(self) -> None:
+        code, launches, output, run, spool = self.run_flow([], extra=["--build-only"])
+        self.assertEqual(code, 0, output)
+        self.assertEqual(launches, [])
+        self.assertFalse(spool.exists())
+        self.assertFalse((run / "app.log").exists())
+
+    def test_a_spool_that_cannot_be_deleted_does_not_fail_the_run(self) -> None:
+        real_unlink = Path.unlink
+
+        def unlink(path, *args, **kwargs):
+            if path.name == "SIM.log" and path.parent.name == "spool":
+                raise PermissionError("read-only")
+            return real_unlink(path, *args, **kwargs)
+        with mock.patch.object(Path, "unlink", unlink):
+            code, _, output, run, _ = self.run_flow([])
+        self.assertEqual(code, 0, output)
+        self.assertIn("PASS task=amp", output)
+        self.assertIn("event=launch1", (run / "app.log").read_text())
+
+    def test_without_the_flag_nothing_is_captured(self) -> None:
+        code, launches, output, run, spool = self.run_flow([], app_log=False)
+        self.assertEqual(code, 0, output)
+        self.assertFalse(any(arg.startswith("--stdout") for args, _ in launches for arg in args))
+        self.assertIsNone(launches[0][1])
+        self.assertFalse((run / "app.log").exists())
+        self.assertFalse(spool.exists())
+        self.assertNotIn("app_log=", output)
 
 
 class RunnerAgeTests(unittest.TestCase):

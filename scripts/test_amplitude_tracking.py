@@ -187,7 +187,73 @@ class TrackingScriptTests(unittest.TestCase):
             result = self.run_script("tracking_match", str(root / "events.json"), str(root / "console.log"),
                                      "--out", str(root / "r.md"))
             self.assertEqual(result.returncode, 1)
+            self.assertIn("--app-log", result.stdout)
             self.assertIn("capture_console", result.stdout)
+
+
+    def fast_runs(self, root: Path) -> Path:
+        """A fastSimulatorTest run folder with --app-log: the lines are in app.log."""
+        run = root / "build/fast-ui/home/20261117-100000-SIM-1"
+        run.mkdir(parents=True)
+        (run / "metrics.json").write_text("{}")
+        (run / "app.log").write_text("\n".join([
+            'AmpDemo[123:456] unrelated',
+            '[TRACKING][Amplitude] event=Home Viewed params=["access level": "free", "count": 2, "new": true]',
+            '[TRACKING][Amplitude] event=Item Saved params=["source": "home", "item id": "42"]',
+        ]) + "\n")
+        return root / "build/fast-ui"
+
+    def test_match_reads_the_app_log_of_a_fast_ui_run(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "events.json").write_text(json.dumps(PLAN))
+            (root / "expect.json").write_text(json.dumps([
+                {"event": "Home Viewed", "params": {"access level": "free"}}, {"event": "Item Saved"},
+            ]))
+            result = self.run_script("tracking_match", str(root / "events.json"), str(self.fast_runs(root)),
+                                     "--expect", str(root / "expect.json"), "--out", str(root / "r.md"))
+            self.assertEqual(result.returncode, 1, result.stdout)
+            self.assertIn("MATCH captured=2 distinct=2", result.stdout)
+            self.assertIn("PASS=1", result.stdout)
+            self.assertIn("FAIL      Home Viewed: unplanned keys ['count', 'new']", result.stdout)
+            self.assertIn('| Item Saved | PASS |', (root / "r.md").read_text())
+
+    def test_a_wrong_expected_value_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "events.json").write_text(json.dumps(PLAN))
+            (root / "expect.json").write_text(json.dumps([{"event": "Item Saved", "params": {"source": "settings"}}]))
+            result = self.run_script("tracking_match", str(root / "events.json"), str(self.fast_runs(root)),
+                                     "--expect", str(root / "expect.json"), "--out", str(root / "r.md"))
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("FAIL      Item Saved: source='home', want 'settings'", result.stdout)
+            self.assertIn("EXTRA     Home Viewed: fired 1x", result.stdout)
+
+    def test_list_mode_needs_no_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            result = self.run_script("tracking_match", "-", str(self.fast_runs(root)), "--out", str(root / "r.md"))
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertIn("MATCH captured=2 distinct=2 plan=none", result.stdout)
+            self.assertIn("FIRED     Home Viewed x1", result.stdout)
+            report = (root / "r.md").read_text()
+            self.assertIn('| Home Viewed | 1x | `{"access level": "free", "count": 2, "new": true}` |', report)
+
+    def test_list_mode_refuses_expectations(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "expect.json").write_text("[]")
+            result = self.run_script("tracking_match", "-", str(self.fast_runs(root)), "--expect",
+                                     str(root / "expect.json"), "--out", str(root / "r.md"))
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("--expect needs a plan", result.stdout)
+
+    def test_a_missing_run_folder_is_named(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            result = self.run_script("tracking_match", "-", str(Path(raw) / "gone"), "--out", str(Path(raw) / "r.md"))
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("no such run folder or log", result.stdout)
+            self.assertFalse((Path(raw) / "r.md").exists())
 
 
 class TrackingPlanTests(unittest.TestCase):

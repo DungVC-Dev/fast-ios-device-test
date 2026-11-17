@@ -1054,6 +1054,61 @@ def raise_interrupted(signum: int, _frame: Any) -> None:
 
 
 LOCK_DIR = Path(os.environ.get("FAST_UI_LOCK_DIR") or Path.home() / "Library/Caches/fast-ui/locks")
+# The simulator writes the app's console here: it cannot write into /tmp (the simulator's own
+# /tmp), so the run spools under the user's cache and moves the file into its artifacts.
+APP_LOG_DIR = Path(os.environ.get("FAST_UI_APP_LOG_DIR") or Path.home() / "Library/Caches/fast-ui/app-log")
+# (bundle id, spool file) while a run keeps the app's console, else None.
+APP_LOG: tuple[str, Path] | None = None
+
+
+def launch_command(udid: str, app: str, arguments: list[str], terminate: bool = False) -> None:
+    """`simctl launch`; while a run keeps the app's console, the app's stdout/stderr append to
+    the spool (unbuffered, so lines land as they are printed)."""
+    launch = ["xcrun", "simctl", "launch"]
+    if terminate:
+        launch.append("--terminate-running-process")
+    env = None
+    if APP_LOG is not None and APP_LOG[0] == app:
+        launch += [f"--stdout={APP_LOG[1]}", f"--stderr={APP_LOG[1]}"]
+        env = {**os.environ, "SIMCTL_CHILD_NSUnbufferedIO": "YES"}
+    command([*launch, udid, app, *arguments], env=env)
+
+
+def start_app_log(udid: str, bundle_id: str) -> Path:
+    """Begin a fresh spool for this simulator; the lease keeps it to one run per UDID."""
+    global APP_LOG
+    spool = APP_LOG_DIR / f"{udid}.log"
+    spool.parent.mkdir(parents=True, exist_ok=True)
+    # Delete what a killed run left rather than empty it: that run's app may still hold the file
+    # open and would keep appending to it. Emptying is the fallback when it cannot be deleted.
+    try:
+        spool.unlink(missing_ok=True)
+    except OSError:
+        spool.write_bytes(b"")
+    APP_LOG = (bundle_id, spool)
+    return spool
+
+
+def collect_app_log(artifacts: Path) -> Path | None:
+    """Copy the spool into the run folder as app.log (an empty file when the app printed
+    nothing), then delete it. A copy, not a move: the app keeps running and keeps writing to
+    the file it was given, so a moved file would gain lines from after the run."""
+    global APP_LOG
+    if APP_LOG is None:
+        return None
+    spool = APP_LOG[1]
+    APP_LOG = None
+    target = artifacts / "app.log"
+    try:
+        target.write_bytes(spool.read_bytes() if spool.exists() else b"")
+    except OSError as error:
+        print(f"WARN app_log not kept: {error}", file=sys.stderr)
+        target = None
+    try:
+        spool.unlink(missing_ok=True)
+    except OSError:
+        pass  # the next run on this simulator starts a fresh spool; fastUIClean lists it
+    return target
 DISPOSABLE_PREFIXES = ("fastwf-", "fastui-")
 
 
@@ -2770,7 +2825,7 @@ def run_action(
         if not app:
             raise FastUIError(f"action {index}: activate needs 'app'")
         # `simctl launch` brings a running app to the front without restarting it.
-        command(["xcrun", "simctl", "launch", udid, app])
+        launch_command(udid, app, [])
         invalidate_hierarchy(udid)
     elif kind == "set_appearance":
         mode = required(action, "appearance", f"action {index}")
@@ -2856,7 +2911,7 @@ def run_action(
             raise FastUIError(f"action {index}: {kind} needs 'app'")
         if kind == "launch":
             arguments = [str(value) for value in action.get("launch_arguments", [])]
-            command(["xcrun", "simctl", "launch", udid, app, *arguments])
+            launch_command(udid, app, arguments)
         else:
             command(["xcrun", "simctl", "terminate", udid, app], check=False)
         invalidate_hierarchy(udid)
@@ -3091,6 +3146,11 @@ def parse_arguments() -> argparse.Namespace:
         "--before", action="store_true",
         help="This run shows the bug (e.g. on the base build): a failure at the outcome step is filed as "
         "the case's before shot (env FAST_EVIDENCE=0 files nothing)",
+    )
+    parser.add_argument(
+        "--app-log", action="store_true",
+        help="Keep the app's console (stdout/stderr) as <artifacts>/app.log, for example its "
+        "analytics log lines; covers every launch of app.bundle_id in the run",
     )
     parser.add_argument("--json", action="store_true", help="Print the complete result JSON")
     parser.add_argument("--artifacts", type=Path, help="Override the artifact directory")
@@ -3361,12 +3421,15 @@ def main() -> int:
         lease.touch("bundle_id", bundle_id)
         if setup.get("preferences"):
             lease.touch("preferences", sorted(setup["preferences"]))
+    app_log: Path | None = None
     previous_handlers = {
         sig: signal.signal(sig, raise_interrupted) for sig in (signal.SIGTERM, signal.SIGHUP)
     }
     torn_down = False
 
     try:
+        if args.app_log and lease is not None:
+            start_app_log(udid, bundle_id)
         with metrics.measure("prepare"):
             app_path, built = prepare_app(app, base, udid, args.reuse_app)
         if args.build_only:
@@ -3435,15 +3498,21 @@ def main() -> int:
                 )
             if recorder:
                 recorder.start()
-            launch = ["xcrun", "simctl", "launch", udid, bundle_id]
-            if not fresh_install and setup.get("relaunch", True):
-                # A kept install may still be running from the last run, on whatever
-                # screen it was left; `simctl launch` alone would just foreground it.
-                launch.insert(3, "--terminate-running-process")
-            launch += [str(value) for value in setup.get("launch_arguments", [])]
             if TRAIL is not None:
                 TRAIL.gesture({"type": "launch"})
-            command(launch)
+            # A kept install may still be running from the last run, on whatever screen it
+            # was left; `simctl launch` alone would just foreground it.
+            relaunch = not fresh_install and bool(setup.get("relaunch", True))
+            if APP_LOG is not None and not fresh_install and not relaunch:
+                # A running app's console cannot be attached: foregrounding it would leave
+                # app.log empty, so --app-log always starts the app afresh.
+                relaunch = True
+                print(f"NOTE --app-log restarts {bundle_id} (relaunch: false is ignored): "
+                      "the console of an app that is already running cannot be kept", file=sys.stderr)
+            launch_command(
+                udid, bundle_id, [str(value) for value in setup.get("launch_arguments", [])],
+                terminate=relaunch,
+            )
             if deferred_duo_orientation:
                 set_duo_pose(udid, duo_pose, duo_orientation_value)
 
@@ -3473,6 +3542,8 @@ def main() -> int:
         if warnings and setup.get("system_alert") == "fail":
             raise FastUIError(f"system alert covered the app: {warnings}")
 
+        # Before the video encode: the app keeps running and printing meanwhile.
+        app_log = collect_app_log(artifacts)
         if recorder:
             recorder.stop()
             video = publish_video(artifacts.parent, shrink_video(recorder.path), passed=True, session=args.session)
@@ -3486,6 +3557,7 @@ def main() -> int:
             "steps_seconds": metrics.steps, "results": results, "artifacts": str(artifacts),
             **({"step_labels": labels_per_step} if recorder else {}),
             **({"video": str(video)} if video else {}),
+            **({"app_log": str(app_log)} if app_log else {}),
         }
         (artifacts / "metrics.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         payload, video, evidence_suffix = file_evidence(payload, video)
@@ -3504,6 +3576,8 @@ def main() -> int:
                     [f"{item['system_alert_seen']} @{item['step']}" for item in warnings], ensure_ascii=False
                 )
             suffix += unsettled_note(results)
+            if app_log:
+                suffix += f" app_log={file_link(app_log)}"
             print(f"PASS task={name} total={metrics.total:.1f}s build={'yes' if built else 'skip'}{suffix} artifacts={file_link(artifacts)}{evidence_suffix}")
         return 0
     except (Interrupted, KeyboardInterrupt) as error:
@@ -3511,6 +3585,7 @@ def main() -> int:
         for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
             signal.signal(sig, signal.SIG_IGN)
         reason = str(error) or "interrupted by SIGINT"
+        app_log = collect_app_log(artifacts) or app_log
         if recorder:
             try:
                 recorder.stop()
@@ -3522,12 +3597,14 @@ def main() -> int:
             "built": built, "total_seconds": metrics.total, "steps_seconds": metrics.steps,
             "results": results, "artifacts": str(artifacts),
             **({"raw_video": str(recorder.path)} if recorder and recorder.path.exists() else {}),
+            **({"app_log": str(app_log)} if app_log else {}),
         }
         (artifacts / "metrics.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         print(f"INTERRUPTED task={name} step={current_step} total={metrics.total:.1f}s error={reason} artifacts={file_link(artifacts)}", file=sys.stderr)
         return 130
     except (FastUIError, OSError, subprocess.TimeoutExpired, ValueError, TypeError, KeyError) as error:
         failed_at = recorder.elapsed() if recorder else 0.0
+        app_log = collect_app_log(artifacts) or app_log
         if recorder:
             try:
                 recorder.stop()
@@ -3556,6 +3633,7 @@ def main() -> int:
             "results": results, "artifacts": str(artifacts),
             **({"step_labels": labels_per_step} if recorder else {}),
             **({"video": str(video)} if video else {}),
+            **({"app_log": str(app_log)} if app_log else {}),
         }
         (artifacts / "metrics.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         payload, video, evidence_suffix = file_evidence(payload, video)
@@ -3563,9 +3641,12 @@ def main() -> int:
             print(json.dumps(payload, indent=2))
         else:
             video_suffix = f" video={file_link(video)}" if video else ""
+            if app_log:
+                video_suffix += f" app_log={file_link(app_log)}"
             print(f"FAIL task={name} step={current_step} total={metrics.total:.1f}s error={error}{video_suffix} artifacts={file_link(artifacts)}{evidence_suffix}", file=sys.stderr)
         return 1
     finally:
+        collect_app_log(artifacts)
         finish_trail(args.build_only, current_step)
         # A TERM during teardown would leave half the undo done; SIGKILL still can, and
         # the journal's dirty flag covers that.

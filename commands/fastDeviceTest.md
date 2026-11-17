@@ -15,6 +15,9 @@ timing rules are in that skill's `SKILL.md`. The engine is:
 ```
 
 One requested behavior → one flow, run at once; more cases only when the user lists them.
+Before the first run, when the `amplitude-tracking-test` skill is installed, ask the user once
+whether the task also checks Amplitude events (the skill's "Amplitude events in the same run"):
+on a yes, run with `--app-log` and match the run folder with `tracking_match.py`.
 Same flow JSON as the simulator; the app must already be installed. A USB-cabled iPhone is picked
 first; one on Wi-Fi only still runs with a `WARN … connected over Wi-Fi` line (slower, can drop). Several iPhones →
 use the one the user named (a unique part of the name is enough). More than one run, or

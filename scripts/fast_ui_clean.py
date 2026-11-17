@@ -41,6 +41,10 @@ def lock_dir() -> Path:
     return Path(os.environ.get("FAST_UI_LOCK_DIR") or CACHES / "fast-ui/locks")
 
 
+def app_log_dir() -> Path:
+    return Path(os.environ.get("FAST_UI_APP_LOG_DIR") or CACHES / "fast-ui/app-log")
+
+
 def map_dir() -> Path:
     return Path(os.environ.get("FAST_UI_MAP_DIR") or CACHES / "fast-ui-map").expanduser()
 
@@ -212,6 +216,13 @@ def targets(project: Path | None, maps: bool, max_dd_gb: float | None = None) ->
             skipped.append(f"{lock} (a killed run left {lock.stem} changed; the next run there repairs it)")
         else:
             remove.append(lock)
+    # `--app-log` spools a killed run left behind; a running flow's spool is still being written.
+    busy_udids = {lock.stem for lock in busy}
+    for spool in sorted(app_log_dir().glob("*.log")) if app_log_dir().is_dir() else []:
+        if spool.stem in busy_udids:
+            skipped.append(f"{spool} (a flow is running on {spool.stem}; its app log is being written)")
+        else:
+            remove.append(spool)
     if device_cache().exists():
         if runner_serving():
             skipped.append(f"{device_cache()} (an iPhone runner is serving: `fastDeviceTest stop --device <d>` first)")

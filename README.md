@@ -348,6 +348,12 @@ DUPLICATE or UNPLANNED with its payload. It needs `python3 -m pip install --user
 It uses its own runners (`amplitude-tracking-test/`), separate from `fastDeviceTest`'s, and ships
 no app's flows.
 
+The same check fits into an ordinary UI test. With that skill installed, `/fastSimulatorTest` and
+`/fastDeviceTest` ask once before the first run whether the task also checks Amplitude. On a yes
+the run gets `--app-log`, which keeps the app's console as `app.log` (on Simulator, every launch of
+the app in the run), and the report adds an `Event | Status | Detail` table under the UI result:
+against the plan, or just the events that fired.
+
 ### Several cases at once
 
 Ask for them in one message: *"check this screen in light and dark, normal and largest text"*.
