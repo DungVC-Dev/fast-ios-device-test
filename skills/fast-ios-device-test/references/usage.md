@@ -110,6 +110,7 @@ shut-down device fails in seconds instead of after a full build.
 At the end of the work, give the Mac its memory back:
 
 ```bash
+scripts/fast_ui.py shutdown --list               # only list booted simulators + running apps
 scripts/fast_ui.py shutdown                      # every booted simulator
 scripts/fast_ui.py shutdown --simulator <udid>   # only this one
 ```
@@ -388,7 +389,10 @@ it, resolves the original anchor/target again, retries once, and requires the
 success selector. This keeps paywalls and other gates in flow data rather than
 feature-specific Python.
 
-Scalar preferences support booleans, numbers, and strings. For a Codable value
+Scalar preferences support booleans, numbers, and strings; `null` removes the key before
+launch (`{"seenChristmasPopupVersion": null}` shows a once-only popup again). On an iPhone
+`null` is refused: preferences there are launch arguments, which can override a key but not
+remove it, so give the value the app reads as unset. For a Codable value
 stored as JSON `Data` in UserDefaults, use `{"$json_data": {...}}`; the runner
 encodes that object as UTF-8 data before launch. Keep model-specific fixtures in
 the flow file, never in the engine.
@@ -445,7 +449,10 @@ Prebuilt app: `"app": {"bundle_id": "…", "prebuilt": true, "simulator": "<UDID
 "project_root": "<dir>"}` drives whatever is installed on the simulator (a system app such as
 `com.apple.Preferences`, a build Xcode installed) without `project`, `derived_data` or
 `app_path`. `fresh_install` then defaults to false; set it true only together with an
-`app_path` to reinstall. Start such a flow with `{"type": "launch"}`.
+`app_path` to reinstall. With `fresh_install: false` and an app the run builds (or an
+`app_path`), the engine compares that .app with the installed one (executable, Debug dylib,
+signed resources) and installs over it, data kept, when they differ: `NOTE installed the
+current build … (data kept)`. An unchanged build is not reinstalled. Start such a flow with `{"type": "launch"}`.
 
 If an `axe` call fails with a SimulatorKit/PrivateFrameworks error, the selected Xcode may need a
 newer AXe. `install.sh --check` compares the version pinned in `vendor/tools.json` with the local

@@ -19,8 +19,8 @@ Same flow JSON as the simulator; the app must already be installed. A USB-cabled
 first; one on Wi-Fi only still runs with a `WARN … connected over Wi-Fi` line (slower, can drop). Several iPhones →
 use the one the user named (a unique part of the name is enough). More than one run, or
 step-by-step exploration → `fastDeviceTest serve`, then flows or `fastDeviceTest do '<json>'`,
-and `fastDeviceTest stop` when done; at the end of the work `fastDeviceTest lock` instead (stops
-the runner and locks the screen). Video wanted → add `--record` to a one-shot run (not
+and `fastDeviceTest stop` when done (frees the runner, leaves the screen unlocked);
+`fastDeviceTest lock` (stops the runner and locks the screen) only when the user asked for it or agreed. Video wanted → add `--record` to a one-shot run (not
 through `serve`); the PASS line carries `video=`. Weak network, Low Power Mode or the app's log
 as a pass criterion → the `network_condition` / `low_power` steps and `--app-log` /
 `expect_log` / `fastDeviceTest log wait` ("Device conditions" in `device.md`); they switch
