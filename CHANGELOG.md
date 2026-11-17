@@ -24,6 +24,15 @@
   simulators before shutting them down, stop retrying and tell the user on `unavailable` or
   `CoreDeviceError 4016`, install an app built outside the tool with `--install` instead of
   editing `project.pbxproj`, and pick profiles that share a name by UUID.
+- New `/testAmplitude` command and `amplitude-tracking-test` skill for Claude Code. They check an
+  app's Amplitude events against a tracking-plan xlsx: a static diff with the code, a guard that
+  refuses a production key, journeys on Simulator or a cabled iPhone, and a PASS/FAIL table with
+  payloads. The tool is self-contained in `amplitude-tracking-test/` and needs openpyxl and
+  Pillow. Its iPhone runner has its own cache, port, process name and bundle id, so it never
+  rebuilds, reuses or stops a `fastDeviceTest` runner. It is not part of the Codex, Antigravity
+  or Gemini packages. `install.sh` keeps an existing standalone `amplitude-tracking-test` install.
+- Plan parsing in that tool now cuts a property cell at `name: note` as well as `name (note)` and
+  `name - note`.
 
 ## 2.2.2 — 2026-11-12
 

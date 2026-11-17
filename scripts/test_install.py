@@ -70,6 +70,7 @@ class InstallCheckTests(unittest.TestCase):
             (self.dirs["bin"] / name).symlink_to(REPO / "scripts" / "fast_ui.py")
         (self.dirs["skills"] / "fast-ios-device-test").symlink_to(REPO / "skills" / "fast-ios-device-test")
         (self.dirs["skills"] / "iphone-duo-swiftui").symlink_to(REPO / "skills" / "iphone-duo-swiftui")
+        (self.dirs["skills"] / "amplitude-tracking-test").symlink_to(REPO / "skills" / "amplitude-tracking-test")
         (self.dirs["agents"] / "ui-explorer.md").symlink_to(REPO / "agents" / "ui-explorer.md")
         if include_baguette:
             self.fake_tool("baguette")
@@ -358,6 +359,28 @@ class InstallCheckTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(Path(os.readlink(duo)), REPO / "skills" / "iphone-duo-swiftui")
         self.assertEqual(Path(os.readlink(command)), REPO / "commands" / "fastSimulatorTest.md")
+
+    def test_link_install_adds_test_amplitude_and_keeps_a_standalone_copy(self):
+        standalone = self.home / ".local" / "share" / "amplitude-tracking-test" / "skills" / "amplitude-tracking-test"
+        standalone.mkdir(parents=True)
+        (standalone / "SKILL.md").write_text("---\nname: amplitude-tracking-test\n---\n")
+        skill = self.dirs["skills"] / "amplitude-tracking-test"
+        skill.symlink_to(standalone)
+        self.env["PATH"] = f"{self.dirs['bin']}:{os.environ.get('PATH', '')}"
+        code, out = self.run_install("--link")
+        self.assertEqual(code, 0, out)
+        # The user's own install of the tool is managed elsewhere and stays.
+        self.assertEqual(Path(os.readlink(skill)), standalone)
+        self.assertEqual(Path(os.readlink(self.dirs["commands"] / "testAmplitude.md")),
+                         REPO / "commands" / "testAmplitude.md")
+        skill.unlink()
+        code, out = self.run_install("--link")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(Path(os.readlink(skill)), REPO / "skills" / "amplitude-tracking-test")
+        code, out = self.run_install("--uninstall")
+        self.assertEqual(code, 0, out)
+        self.assertFalse(skill.is_symlink())
+        self.assertFalse((self.dirs["commands"] / "testAmplitude.md").is_symlink())
 
     def test_xcode_skill_export_uses_managed_agent_destinations_and_check_is_informational(self):
         app = self.home / "Xcode 27.1.app"

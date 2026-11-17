@@ -336,6 +336,18 @@ use `fastCarPlayTest run flow.json --target hardware --device <name> --record`.
 Contact sheets of every recorded case (needs Pillow), and a PASS/FAIL table across flows, variants
 and devices from `fastUIReport`.
 
+### `/testAmplitude`: Amplitude tracking against a tracking plan (Claude Code)
+
+```text
+/testAmplitude ~/Downloads/<App> - Amplitude Events and Properties.xlsx onboarding only
+```
+
+Diffs the plan with the code in seconds, refuses a build that sends to a production key, drives
+the journeys on Simulator or a cabled iPhone, and reports each event as PASS, FAIL, MISSING,
+DUPLICATE or UNPLANNED with its payload. It needs `python3 -m pip install --user openpyxl pillow`.
+It uses its own runners (`amplitude-tracking-test/`), separate from `fastDeviceTest`'s, and ships
+no app's flows.
+
 ### Several cases at once
 
 Ask for them in one message: *"check this screen in light and dark, normal and largest text"*.

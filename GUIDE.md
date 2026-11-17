@@ -25,7 +25,7 @@ Cài hai phần:
    tắt toàn bộ kiểm tra mạng bằng `FAST_IOS_NO_UPDATE_CHECK=1`). Job bỏ lượt nếu đang có lệnh fast*
    chạy và ghi log xoay vòng ở `~/Library/Logs/fast-ios-device-test-update.log`. Với Claude Code, lệnh này đã cài luôn
    hai skill `fast-ios-device-test`, `iphone-duo-swiftui`, các lệnh `/fastSimulatorTest`,
-   `/fastDeviceTest`, `/fastCarPlayTest`, `/fastUIReview` và subagent.
+   `/fastDeviceTest`, `/fastCarPlayTest`, `/fastUIReview`, `/testAmplitude` và subagent.
    Khi sửa code cho Duo, có thể chạy `npx fast-ios-device-test xcode-skills` để xuất thêm skill
    `apple-app-resizability` từ Xcode đang cài. Nội dung Apple chỉ nằm trên máy, không có trong repo/npm.
    Cập nhật các tool như dependency đã khóa: `npx fast-ios-device-test update-tools` (hoặc
@@ -101,6 +101,7 @@ Mode yêu cầu; hoặc cắm lại máy nếu bị ngắt giữa chừng.
 | `/fastDeviceTest <mô tả>` | Test trên iPhone thật, kể cả Settings / Shortcuts / màn hình chính |
 | `/fastCarPlayTest <flow>` | Test tuần tự cả màn hình điện thoại và CarPlay; sim hoặc iPhone thật + Apple CarPlay Simulator |
 | `/fastUIReview <session>` | Xem lại video đã quay |
+| `/testAmplitude <plan.xlsx> [nhóm/event]` | So event Amplitude của app với file tracking plan, chạy app trên Simulator hoặc iPhone cắm cáp, trả bảng PASS/FAIL. Cần `python3 -m pip install --user openpyxl pillow`. Chi tiết: `amplitude-tracking-test/GUIDE.md` |
 | (tự động) | Mỗi lần chạy flow PASS, và lần `--before` fail đúng bước kiểm tra, được chép ra `~/Desktop/<project> <ticket>/`: ảnh ghép có chú thích, video nén, ảnh lẻ trong `source/`. Merge PR xong thì tự xoá folder đó |
 | `fastEvidenceSheet <spec.json>` | Dựng lại ảnh ghép sau khi sửa `source/sheet.json` (đổi thứ tự, chú thích, ảnh) |
 | `fastUIClean [--project <root>] [--maps] [--max-dd-gb N] [--yes]` | Liệt kê dung lượng rồi (với `--yes`) xoá cache fast UI: runner iPhone, helper, lock, session, output của project và DerivedData của repo đã mất; `--max-dd-gb N` chọn thêm cache repo ít dùng nhất vượt giới hạn. Không đụng evidence trên Desktop, bỏ qua thứ đang chạy. Xong việc, agent tự hỏi một lần có muốn xoá cache không (kèm dung lượng), chỉ xoá khi bạn đồng ý |
