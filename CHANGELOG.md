@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- `fastSimulatorTest` with `fresh_install: false` now drives the build it just made. Before, it
+  kept running the app already on the simulator, so screenshots could show the old build. It
+  compares the new .app with the installed one and installs over it (data kept) only when they
+  differ, printing `NOTE installed the current build … (data kept)`. A session `start` does the
+  same.
+- `setup.preferences` accepts `null` on Simulator to remove a key before launch, for example
+  to show a once-only popup again. On an iPhone, `null` fails with a clear message, because
+  preferences there are launch arguments that cannot remove a key.
+- `fastSimulatorTest shutdown --list` lists the booted simulators and the non-Apple apps still
+  running on them, without shutting anything down.
+- `fastDeviceTest status` shows when a serving runner started and how long it has been up.
+- Skill: agents end iPhone work with `stop` and use `lock` only when the user agrees, list
+  simulators before shutting them down, stop retrying and tell the user on `unavailable` or
+  `CoreDeviceError 4016`, install an app built outside the tool with `--install` instead of
+  editing `project.pbxproj`, and pick profiles that share a name by UUID.
+
 ## 2.2.2 — 2026-11-12
 
 - `fastDeviceTest` and CarPlay hardware runs pick a USB-connected iPhone before one reached over
