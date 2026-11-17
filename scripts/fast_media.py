@@ -93,10 +93,12 @@ do {
 '''
 
 
-def helper_command(source: str, cache_dir: Path = HELPER_CACHE, name: str = "frames") -> list[str]:
+def helper_command(source: str, cache_dir: Path | None = None, name: str = "frames") -> list[str]:
     """Command prefix that runs an AVFoundation helper: a binary compiled once per helper
     source (`swiftc`, ~1 s, then 0.03 s per call) or, if that fails, the `swift`
-    interpreter (~4 s on first use, 0.3 s after)."""
+    interpreter (~4 s on first use, 0.3 s after). `cache_dir` defaults to HELPER_CACHE as it
+    is at call time, so a test can point it at a temporary folder."""
+    cache_dir = cache_dir or HELPER_CACHE
     digest = hashlib.sha1(source.encode("utf-8")).hexdigest()[:12]
     cache_dir.mkdir(parents=True, exist_ok=True)
     binary = cache_dir / f"{name}-{digest}"

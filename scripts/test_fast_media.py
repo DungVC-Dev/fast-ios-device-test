@@ -143,6 +143,15 @@ class ShrinkVideoTests(unittest.TestCase):
 class ShrinkVideoEncodeTests(unittest.TestCase):
     """Runs the real helper on a real clip, so an SDK change that breaks it shows up here."""
 
+    def setUp(self) -> None:
+        # Compile the helpers into a throwaway folder: the suite must not leave binaries in the
+        # user's ~/Library/Caches/fast-ios-device-test.
+        cache = tempfile.TemporaryDirectory()
+        self.addCleanup(cache.cleanup)
+        patcher = mock.patch.object(fast_media, "HELPER_CACHE", Path(cache.name))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_portrait_recording_comes_out_h264_at_review_size(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             clip = Path(raw) / "Screen Recording.mp4"

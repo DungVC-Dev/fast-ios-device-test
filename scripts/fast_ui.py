@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import xml.parsers.expat
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -1235,8 +1236,8 @@ class SimulatorLease:
         bundle_id = previous.get("bundle_id")
         if bundle_id:
             command(["xcrun", "simctl", "terminate", udid, bundle_id], check=False)
-            for key in previous.get("preferences") or []:
-                command(["xcrun", "simctl", "spawn", udid, "defaults", "delete", bundle_id, key], check=False)
+            delete_preferences(udid, bundle_id, previous.get("preferences") or [],
+                               previous.get("app_preferences_before"))
         self.repaired = [key for key in ("status_bar", "location", "ui", "privacy", "bundle_id", "preferences") if previous.get(key)]
         print(
             f"WARN dirty=1: previous run pid {previous.get('pid', '?')} ({previous.get('flow', '?')}) "
@@ -1369,8 +1370,9 @@ def verify_app(path: Path, bundle_id: str) -> None:
 
 def bundle_digest(app: Path) -> str | None:
     """SHA-256 of the parts of an .app that change with every rebuild: the executable, the
-    Debug dylib Xcode splits the code into, and the signature's resource list (assets, JSON).
-    None when the bundle cannot be read, so the caller installs rather than trusts it."""
+    Debug dylib Xcode splits the code into, and the signature's resource list (assets, JSON,
+    nested frameworks and extensions). An unsigned bundle has no resource list, so every file
+    is hashed instead. None when the bundle cannot be read, so the caller installs."""
     try:
         with (app / "Info.plist").open("rb") as stream:
             executable = plistlib.load(stream).get("CFBundleExecutable")
@@ -1379,7 +1381,13 @@ def bundle_digest(app: Path) -> str | None:
     if not isinstance(executable, str) or not (app / executable).is_file():
         return None
     digest = hashlib.sha256()
-    for part in (executable, f"{executable}.debug.dylib", "_CodeSignature/CodeResources"):
+    parts = [executable, f"{executable}.debug.dylib", "_CodeSignature/CodeResources"]
+    if not (app / parts[2]).is_file():
+        try:
+            parts = sorted(str(path.relative_to(app)) for path in app.rglob("*") if path.is_file())
+        except OSError:
+            return None
+    for part in parts:
         path = app / part
         if not path.is_file():
             continue
@@ -1393,17 +1401,17 @@ def bundle_digest(app: Path) -> str | None:
     return digest.hexdigest()
 
 
-def install_if_changed(udid: str, bundle_id: str, app_path: Path) -> bool:
-    """Install `app_path` over the kept install when it is missing or differs from it, so a
-    run without fresh_install never drives the previous build. `simctl install` over an
-    existing app keeps its data container. True when it installed."""
+def install_if_changed(udid: str, bundle_id: str, app_path: Path) -> str | None:
+    """Install `app_path` when the simulator lacks the app or has a different build, so a run
+    without fresh_install never drives the previous build. `simctl install` over an existing
+    app keeps its data container. "new" or "updated" when it installed, None when it did not."""
     result = command(["xcrun", "simctl", "get_app_container", udid, bundle_id, "app"], check=False)
     container = result.stdout.strip() if result.returncode == 0 and result.stdout else ""
     wanted = bundle_digest(app_path)
     if container and wanted is not None and bundle_digest(Path(container)) == wanted:
-        return False
+        return None
     command(["xcrun", "simctl", "install", udid, str(app_path)])
-    return True
+    return "updated" if container else "new"
 
 
 def ensure_booted(udid: str) -> None:
@@ -1794,11 +1802,71 @@ def write_preference(udid: str, domain: str, key: str, value: Any) -> None:
     command(args)
 
 
-def set_preferences(udid: str, bundle_id: str, preferences: dict[str, Any]) -> None:
+def app_preferences_plist(udid: str, bundle_id: str) -> Path | None:
+    """The plist the installed app writes its own UserDefaults to, when it has one. A key there
+    wins over the simulator's user domain that `defaults write <bundle id>` reaches, so on a kept
+    install a seeded or removed key must be changed in both."""
+    result = command(["xcrun", "simctl", "get_app_container", udid, bundle_id, "data"], check=False)
+    container = result.stdout.strip() if result.returncode == 0 and result.stdout else ""
+    if not container:
+        return None
+    plist = Path(container) / "Library" / "Preferences" / f"{bundle_id}.plist"
+    return plist if plist.is_file() else None
+
+
+def plist_fragment(value: Any) -> str:
+    """`value` as the XML plist fragment `defaults write` takes, for any plist type."""
+    xml = plistlib.dumps(value).decode("utf-8")
+    start = xml.index('<plist version="1.0">') + len('<plist version="1.0">')
+    return xml[start:xml.rindex("</plist>")].strip()
+
+
+def set_preferences(udid: str, bundle_id: str, preferences: dict[str, Any], stop_app: bool = True,
+                    record: Callable[[dict[str, str | None]], None] | None = None) -> dict[str, str | None]:
+    """Seed `preferences` (`null` removes a key) where the app will read them.
+
+    The app's own plist is changed only when `record` is given: the caller must be able to put
+    the old values back. `record` receives what that plist held for each key (an XML fragment,
+    or None when absent) before anything is written, so a run killed mid-seed can still be
+    repaired. Returns the same mapping. `stop_app` terminates a running copy first, which would
+    otherwise write its cached values back. An unreadable plist is never written to."""
     if not preferences:
-        return
+        return {}
+    own = app_preferences_plist(udid, bundle_id) if record is not None else None
+    before: dict[str, str | None] = {}
+    if own is not None:
+        if stop_app:
+            command(["xcrun", "simctl", "terminate", udid, bundle_id], check=False)
+        result = command(["xcrun", "simctl", "spawn", udid, "defaults", "export", str(own), "-"], check=False)
+        try:
+            current = plistlib.loads((result.stdout or "").encode("utf-8")) if result.returncode == 0 else None
+        except (ValueError, plistlib.InvalidFileException, xml.parsers.expat.ExpatError):
+            current = None
+        if isinstance(current, dict):
+            before = {key: plist_fragment(current[key]) if key in current else None for key in preferences}
+            assert record is not None
+            record(before)
     for key, value in preferences.items():
         write_preference(udid, bundle_id, key, value)
+        if before:
+            write_preference(udid, str(own), key, value)
+    return before
+
+
+def delete_preferences(udid: str, bundle_id: str, keys: Any, before: dict[str, Any] | None = None) -> None:
+    """Remove seeded keys from the user domain. In the app's own plist, only keys `before`
+    recorded are touched: a recorded value is put back, a key recorded as absent is removed.
+    A key with no record was never written there, so the app's value is left as it is."""
+    before = before if isinstance(before, dict) else {}
+    own = app_preferences_plist(udid, bundle_id) if before else None
+    for key in keys:
+        command(["xcrun", "simctl", "spawn", udid, "defaults", "delete", bundle_id, key], check=False)
+        if own is None or key not in before:
+            continue
+        if isinstance(before[key], str):
+            command(["xcrun", "simctl", "spawn", udid, "defaults", "write", str(own), key, before[key]], check=False)
+        else:
+            command(["xcrun", "simctl", "spawn", udid, "defaults", "delete", str(own), key], check=False)
 
 
 def reset_preferences(udid: str, bundle_id: str, preferences: dict[str, Any], fresh_install: bool) -> None:
@@ -1810,8 +1878,7 @@ def reset_preferences(udid: str, bundle_id: str, preferences: dict[str, Any], fr
     if fresh_install:
         command(["xcrun", "simctl", "spawn", udid, "defaults", "delete", bundle_id], check=False)
         return
-    for key in preferences:
-        command(["xcrun", "simctl", "spawn", udid, "defaults", "delete", bundle_id, key], check=False)
+    delete_preferences(udid, bundle_id, preferences)
 
 
 def sort_nodes(nodes: list[dict[str, Any]], keys: list[str]) -> list[dict[str, Any]]:
@@ -2904,8 +2971,9 @@ def session_main(argv: list[str]) -> int:
             command(["xcrun", "simctl", "install", udid, str(app_path)])
         else:
             command(["xcrun", "simctl", "terminate", udid, bundle_id], check=False)
-            if app_path is not None:
+            if app_path is not None and not app.get("prebuilt"):
                 install_if_changed(udid, bundle_id, app_path)
+        # A session never tears preferences down, so it leaves the app's own plist alone.
         set_preferences(udid, bundle_id, setup.get("preferences", {}))
         if variant.get("duo_pose"):
             set_duo_pose(udid, variant["duo_pose"], variant.get("duo_orientation"))
@@ -3334,18 +3402,27 @@ def main() -> int:
                 command(["xcrun", "simctl", "install", udid, str(app_path)])
                 if keychain:
                     keychain.wait(timeout=60)
-        elif app_path is not None:
+        elif app_path is not None and not app.get("prebuilt"):
+            # A prebuilt app is driven as installed; a built one must be the build just made.
             current_step = "install"
             with metrics.measure(current_step):
-                if install_if_changed(udid, bundle_id, app_path):
-                    print(f"NOTE installed the current build of {bundle_id} over the kept one (data kept)",
+                installed = install_if_changed(udid, bundle_id, app_path)
+                if installed == "updated":
+                    print(f"NOTE installed the current build of {bundle_id} over the older one (data kept)",
                           file=sys.stderr)
+                elif installed == "new":
+                    print(f"NOTE installed {bundle_id}: it was not on the simulator", file=sys.stderr)
         current_step = "state_and_launch"
         with metrics.measure(current_step):
             apply_ui_settings(udid, variant, previous_ui)
             if previous_ui:
                 journal("ui", dict(previous_ui))
-            set_preferences(udid, bundle_id, setup.get("preferences", {}))
+            # The old values are journalled before the first write, so teardown or the next
+            # run's lease repair can put them back even after a kill mid-seed.
+            set_preferences(udid, bundle_id, setup.get("preferences", {}),
+                            stop_app=fresh_install or setup.get("relaunch", True),
+                            record=(lambda before: lease.touch("app_preferences_before", before))
+                            if lease is not None else None)
             # A non-default orientation must be measured against the target app: the app left
             # open by an earlier run may support a different set of orientations. Establish the
             # pose's default first so recording still includes launch, then rotate after launch.
@@ -3536,8 +3613,7 @@ def teardown(
         if fresh_install:
             command(["xcrun", "simctl", "spawn", udid, "defaults", "delete", bundle_id], check=False)
         else:
-            for key in preferences:
-                command(["xcrun", "simctl", "spawn", udid, "defaults", "delete", bundle_id, key], check=False)
+            delete_preferences(udid, bundle_id, preferences, touched.get("app_preferences_before"))
 
 
 def cli_main() -> int:
