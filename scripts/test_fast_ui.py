@@ -1977,13 +1977,14 @@ class KeptInstallTests(unittest.TestCase):
 
     def run_install(self, built: Path, container: str, returncode: int = 0) -> list[list[str]]:
         calls: list[list[str]] = []
+        self.result = None
 
         def fake(args, **_):
             calls.append(args)
             out = container if args[2] == "get_app_container" else ""
             return subprocess.CompletedProcess(args, returncode if args[2] == "get_app_container" else 0, out, "")
         with mock.patch.object(fast_ui, "command", side_effect=fake):
-            fast_ui.install_if_changed("SIM", "com.example.demo", built)
+            self.result = fast_ui.install_if_changed("SIM", "com.example.demo", built)
         return [call for call in calls if call[2] == "install"]
 
     def test_same_build_is_not_reinstalled(self) -> None:
@@ -1991,6 +1992,7 @@ class KeptInstallTests(unittest.TestCase):
             built = self.make_app(Path(raw), "built", b"v1")
             installed = self.make_app(Path(raw), "installed", b"v1")
             self.assertEqual(self.run_install(built, f"{installed}\n"), [])
+            self.assertIsNone(self.result)
 
     def test_changed_code_or_resources_reinstall_over_the_kept_app(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -2000,33 +2002,56 @@ class KeptInstallTests(unittest.TestCase):
             for installed in (old_code, old_assets):
                 self.assertEqual(self.run_install(built, str(installed)),
                                  [["xcrun", "simctl", "install", "SIM", str(built)]])
+                self.assertEqual(self.result, "updated")
+
+    def test_unsigned_bundle_hashes_every_file(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            built = self.make_app(Path(raw), "built", b"v1")
+            installed = self.make_app(Path(raw), "installed", b"v1")
+            for app in (built, installed):
+                shutil.rmtree(app / "_CodeSignature")
+                (app / "cards.json").write_text("[1, 2, 3, 4]")
+            self.assertEqual(self.run_install(built, str(installed)), [])
+            (built / "cards.json").write_text("[5, 6, 7, 8]")
+            self.assertEqual(len(self.run_install(built, str(installed))), 1)
 
     def test_missing_or_unreadable_install_is_installed(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             built = self.make_app(Path(raw), "built", b"v1")
             self.assertEqual(len(self.run_install(built, "", returncode=2)), 1)
+            self.assertEqual(self.result, "new")
             self.assertEqual(len(self.run_install(built, str(Path(raw) / "gone.app"))), 1)
 
-    def test_kept_install_run_installs_the_new_build(self) -> None:
+    def run_kept(self, prebuilt: bool) -> tuple[mock.Mock, str, Path]:
         with tempfile.TemporaryDirectory() as raw:
             flow = Path(raw) / "kept.json"
+            app = {"bundle_id": "com.example.app", "simulator": "SIM", "project_root": raw}
+            if prebuilt:
+                app.update({"prebuilt": True, "app_path": str(Path(raw) / "Demo.app")})
             flow.write_text(json.dumps({"version": 1, "name": "kept", "actions": [],
-                                        "setup": {"fresh_install": False},
-                                        "app": {"bundle_id": "com.example.app", "simulator": "SIM",
-                                                "project_root": raw}}))
+                                        "setup": {"fresh_install": False}, "app": app}))
             built = Path(raw) / "Demo.app"
             with mock.patch.object(fast_ui.sys, "argv", ["fastSimulatorTest", str(flow)]), \
                     mock.patch.object(fast_ui, "resolve_simulator", return_value="SIM"), \
-                    mock.patch.object(fast_ui, "prepare_app", return_value=(built, True)), \
-                    mock.patch.object(fast_ui, "install_if_changed", return_value=True) as install, \
+                    mock.patch.object(fast_ui, "prepare_app", return_value=(built, not prebuilt)), \
+                    mock.patch.object(fast_ui, "install_if_changed", return_value="updated") as install, \
                     mock.patch.object(fast_ui, "command"), mock.patch.object(fast_ui, "apply_ui_settings"), \
                     mock.patch.object(fast_ui, "set_preferences"), mock.patch.object(fast_ui, "reset_preferences"), \
                     mock.patch.object(fast_ui, "restore_ui_settings"), mock.patch.object(fast_ui, "record"), \
                     mock.patch.object(fast_ui, "axe", side_effect=FakeAxe("[]")), \
                     contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as err:
                 fast_ui.main()
+        return install, err.getvalue(), built
+
+    def test_kept_install_run_installs_the_new_build(self) -> None:
+        install, err, built = self.run_kept(prebuilt=False)
         install.assert_called_once_with("SIM", "com.example.app", built)
-        self.assertIn("NOTE installed the current build", err.getvalue())
+        self.assertIn("NOTE installed the current build of com.example.app over the older one", err)
+
+    def test_prebuilt_app_is_driven_as_installed(self) -> None:
+        install, err, _ = self.run_kept(prebuilt=True)
+        install.assert_not_called()
+        self.assertNotIn("NOTE installed", err)
 
 
 class RunnerAgeTests(unittest.TestCase):
@@ -2046,13 +2071,109 @@ class RunnerAgeTests(unittest.TestCase):
 
 
 class PreferenceDeleteTests(unittest.TestCase):
-    def test_null_preference_deletes_the_key_on_simulator(self) -> None:
-        with mock.patch.object(fast_ui, "command") as command:
-            fast_ui.set_preferences("SIM", "com.example.app", {"seenPopupVersion": None, "isPremium": True})
-        self.assertEqual(command.call_args_list[0], mock.call(
-            ["xcrun", "simctl", "spawn", "SIM", "defaults", "delete", "com.example.app", "seenPopupVersion"],
-            check=False))
-        self.assertIn("-bool", command.call_args_list[1].args[0])
+    """Seeded keys must reach the app on a kept install, whose own plist wins over the
+    simulator's user domain, and must leave both again in teardown."""
+
+    def calls_with(self, own_plist: bool, fn, export: bytes | None = None) -> list[list[str]]:
+        export = plistlib.dumps({"seenPopupVersion": 3}) if export is None else export
+        with tempfile.TemporaryDirectory() as raw:
+            prefs = Path(raw) / "Library" / "Preferences"
+            prefs.mkdir(parents=True)
+            if own_plist:
+                (prefs / "com.example.app.plist").write_bytes(plistlib.dumps({"seenPopupVersion": 3}))
+            self.plist = str(prefs / "com.example.app.plist")
+
+            def fake(args, **_):
+                out = f"{raw}\n" if args[2] == "get_app_container" else ""
+                if args[5:6] == ["export"]:
+                    out = export.decode()
+                return subprocess.CompletedProcess(args, 0 if out or args[5:6] != ["export"] else 1, out, "")
+            with mock.patch.object(fast_ui, "command", side_effect=fake) as command:
+                self.returned = fn()
+        return [call.args[0] for call in command.call_args_list
+                if call.args[0][2] != "get_app_container" and call.args[0][5:6] != ["export"]]
+
+    def test_kept_install_seeds_and_removes_in_the_apps_own_plist(self) -> None:
+        recorded: list[dict] = []
+        calls = self.calls_with(True, lambda: fast_ui.set_preferences(
+            "SIM", "com.example.app", {"seenPopupVersion": None, "isPremium": True}, record=recorded.append))
+        self.assertEqual(recorded, [{"seenPopupVersion": "<integer>3</integer>", "isPremium": None}])
+        self.assertEqual(calls[0], ["xcrun", "simctl", "terminate", "SIM", "com.example.app"])
+        spawn = ["xcrun", "simctl", "spawn", "SIM", "defaults"]
+        self.assertEqual(calls[1:], [
+            spawn + ["delete", "com.example.app", "seenPopupVersion"],
+            spawn + ["delete", self.plist, "seenPopupVersion"],
+            spawn + ["write", "com.example.app", "isPremium", "-bool", "true"],
+            spawn + ["write", self.plist, "isPremium", "-bool", "true"],
+        ])
+        # What the app held before, for teardown to put back.
+        self.assertEqual(self.returned, {"seenPopupVersion": "<integer>3</integer>", "isPremium": None})
+
+    def test_unreadable_app_plist_is_never_overwritten(self) -> None:
+        for export in (b"", b"<?xml version='1.0'?><plist><dict><key>a\x01</key></dict></plist>"):
+            recorded: list[dict] = []
+            calls = self.calls_with(True, lambda: fast_ui.set_preferences(
+                "SIM", "com.example.app", {"isPremium": True}, record=recorded.append), export=export)
+            self.assertFalse([call for call in calls if self.plist in call])
+            self.assertEqual((self.returned, recorded), ({}, []))
+
+    def test_without_a_recorder_the_apps_plist_is_left_alone(self) -> None:
+        # A session never tears preferences down, so it must not change what it cannot restore.
+        calls = self.calls_with(True, lambda: fast_ui.set_preferences(
+            "SIM", "com.example.app", {"isPremium": True}))
+        self.assertEqual(calls, [["xcrun", "simctl", "spawn", "SIM", "defaults", "write", "com.example.app",
+                                  "isPremium", "-bool", "true"]])
+
+    def test_the_old_values_are_recorded_before_the_first_write(self) -> None:
+        order: list[str] = []
+        real = fast_ui.write_preference
+        with mock.patch.object(fast_ui, "write_preference",
+                               side_effect=lambda *a: (order.append("write"), real(*a))):
+            self.calls_with(True, lambda: fast_ui.set_preferences(
+                "SIM", "com.example.app", {"isPremium": True}, record=lambda _: order.append("record")))
+        self.assertEqual(order[0], "record")
+
+    def test_unrecorded_keys_are_not_touched_in_the_apps_plist(self) -> None:
+        calls = self.calls_with(True, lambda: fast_ui.delete_preferences(
+            "SIM", "com.example.app", ["isPremium", "theme"], {"theme": None}))
+        self.assertNotIn(["xcrun", "simctl", "spawn", "SIM", "defaults", "delete", self.plist, "isPremium"], calls)
+        self.assertIn(["xcrun", "simctl", "spawn", "SIM", "defaults", "delete", self.plist, "theme"], calls)
+        nothing = self.calls_with(True, lambda: fast_ui.delete_preferences("SIM", "com.example.app", ["isPremium"]))
+        self.assertEqual(nothing, [["xcrun", "simctl", "spawn", "SIM", "defaults", "delete", "com.example.app", "isPremium"]])
+
+    def test_teardown_puts_the_apps_own_value_back(self) -> None:
+        before = {"seenPopupVersion": "<integer>3</integer>", "isPremium": None}
+        with mock.patch.object(fast_ui.subprocess, "Popen"):
+            calls = self.calls_with(True, lambda: fast_ui.teardown(
+                "SIM", "com.example.app", {"app_preferences_before": before}, {},
+                {"seenPopupVersion": None, "isPremium": True}, False, False))
+        spawn = ["xcrun", "simctl", "spawn", "SIM", "defaults"]
+        self.assertIn(spawn + ["write", self.plist, "seenPopupVersion", "<integer>3</integer>"], calls)
+        self.assertIn(spawn + ["delete", self.plist, "isPremium"], calls)
+        self.assertNotIn(spawn + ["delete", self.plist, "seenPopupVersion"], calls)
+
+    def test_plist_fragment_round_trips_every_type(self) -> None:
+        for value in (True, 3, 1.5, "x<y", b"\x00\x01", [1, "a"], {"k": False}):
+            fragment = fast_ui.plist_fragment(value)
+            wrapped = f'<?xml version="1.0"?><plist version="1.0">{fragment}</plist>'
+            self.assertEqual(plistlib.loads(wrapped.encode()), value)
+
+    def test_relaunch_false_keeps_the_running_app(self) -> None:
+        calls = self.calls_with(True, lambda: fast_ui.set_preferences(
+            "SIM", "com.example.app", {"isPremium": True}, stop_app=False, record=lambda _: None))
+        self.assertNotIn("terminate", [call[2] for call in calls])
+
+    def test_fresh_install_only_writes_the_user_domain(self) -> None:
+        calls = self.calls_with(False, lambda: fast_ui.set_preferences(
+            "SIM", "com.example.app", {"seenPopupVersion": None, "isPremium": True}, record=lambda _: None))
+        self.assertEqual([call[2] for call in calls], ["spawn", "spawn"])
+        self.assertTrue(all(call[6] == "com.example.app" for call in calls))
+
+    def test_reset_removes_seeded_keys_from_the_user_domain_only(self) -> None:
+        calls = self.calls_with(True, lambda: fast_ui.reset_preferences(
+            "SIM", "com.example.app", {"isPremium": True}, fresh_install=False))
+        self.assertIn(["xcrun", "simctl", "spawn", "SIM", "defaults", "delete", "com.example.app", "isPremium"], calls)
+        self.assertFalse([call for call in calls if self.plist in call])
 
     def test_null_preference_is_refused_on_a_device_with_the_workaround(self) -> None:
         import fast_device
@@ -2153,6 +2274,22 @@ class LeaseTests(unittest.TestCase):
         self.assertIn(["xcrun", "simctl", "status_bar", "SIM", "clear"], issued)
         self.assertIn(["xcrun", "simctl", "terminate", "SIM", "com.example.app"], issued)
         self.assertEqual(following.repaired, ["status_bar", "bundle_id"])
+
+    def test_killed_run_puts_the_apps_own_preference_back(self) -> None:
+        with tempfile.TemporaryDirectory() as raw, mock.patch.object(fast_ui, "LOCK_DIR", Path(raw)), \
+                mock.patch.object(fast_ui, "command"), mock.patch.object(fast_ui, "restore_ui_settings"), \
+                mock.patch.object(fast_ui, "delete_preferences") as delete, \
+                mock.patch.object(fast_ui, "stop_stale_recorder"), mock.patch("sys.stderr"):
+            killed = fast_ui.SimulatorLease("SIM", Path("a.json"))
+            killed.acquire(0)
+            killed.touch("bundle_id", "com.example.app")
+            killed.touch("preferences", ["onboardingDone"])
+            killed.touch("app_preferences_before", {"onboardingDone": "<true/>"})
+            killed.release(clean=False)
+            following = fast_ui.SimulatorLease("SIM", Path("b.json"))
+            following.acquire(0)
+            following.release(clean=True)
+        delete.assert_called_once_with("SIM", "com.example.app", ["onboardingDone"], {"onboardingDone": "<true/>"})
 
 
 class SessionTests(unittest.TestCase):
