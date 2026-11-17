@@ -42,8 +42,9 @@ did not ask for). The user listed several flows: up to about 5 on one simulator 
 `--build-only` once, then run them here with `--reuse-app`; more flows or 2+ simulators →
 the skill's fan-out, collated with `fastUIReport`. "quay"/"record" → `--record`.
 
-At the end of the work, `fastSimulatorTest shutdown` (every booted simulator, or `--simulator <udid-or-name>`;
-spare one Xcode is running the app on).
+At the end of the work, `fastSimulatorTest shutdown --list` (booted simulators and the apps running on them),
+then `fastSimulatorTest shutdown` (every booted simulator, or `--simulator <udid-or-name>`; ask before
+shutting down one the user may be using, such as one Xcode is running the app on).
 
 Return the PASS/FAIL lines (a flow × simulator table when fanned out) and one concise cause
 per FAIL, with artifact links. Remove temporary flows; never edit the engine for one screen.

@@ -139,7 +139,9 @@ Everything the engine needs is in the flow; there is no per-project config.
    labels and `<name>-ui.json` has label, type, id, value and tap `center` per node. Never
    fake a `wait` on an impossible label to get a dump.
 4. Run `fastSimulatorTest <flow.json>`. It boots the simulator, reuses the cached app when
-   build inputs are unchanged, fresh-installs, seeds `setup.preferences`, prints one PASS/FAIL line.
+   build inputs are unchanged, fresh-installs (with `fresh_install: false` it installs the new build
+   over the kept app, data kept, only when the two differ), seeds `setup.preferences` (`null`
+   removes a key, e.g. a "popup seen" flag), prints one PASS/FAIL line.
 5. On FAIL the line lists `visible labels: [Add Widget (StaticText), …]` with types, says when
    the label exists under another type, and suggests close labels. Fix one selector, rerun
    with `--reuse-app`. After two reruns stop and report with the artifact link. A failing flow
@@ -191,13 +193,17 @@ URL: relay it as a markdown link.
 
 ## When the work is done
 
-- iPhone: `fastDeviceTest lock --device <d>` instead of `stop`. It frees the runner and locks
-  the screen, for a test phone kept on Auto-Lock "Never". Nothing can drive the phone again
-  until someone types its passcode, so only at the very end; it refuses an iPhone another
-  runner holds ("busy").
-- Simulator: `fastSimulatorTest shutdown` shuts down every booted simulator;
-  `--simulator <udid>` only that one. Spare one Xcode is running the app on unless the user is
-  done with it too.
+- iPhone: `fastDeviceTest stop --device <d>` frees the runner (the phone stops showing
+  "Automation Running") without locking it. `fastDeviceTest lock --device <d>` also locks the
+  screen, for a test phone kept on Auto-Lock "Never"; use it only when the user asked for it or
+  agreed, since nothing can drive the phone again until someone types its passcode. Both refuse
+  an iPhone another runner holds ("busy"). `fastDeviceTest status --device <d>` shows how long a
+  runner has been up (`up=3h07m`).
+- Simulator: first `fastSimulatorTest shutdown --list` (booted simulators and the non-Apple
+  apps still running on them, such as one an interrupted or `--keep-state` run left holding the
+  microphone). Then `fastSimulatorTest shutdown` shuts down every booted simulator, or
+  `--simulator <udid>` only that one. Ask before shutting down one the list shows the user may
+  be using (an app you did not start, one Xcode is running).
 - Then, after the final report, ask the user once whether to clear the test cache. First run
   `fastUIClean --project <root>` (it only lists) and quote its `DRY-RUN … size=` total in the
   question. Yes → `fastUIClean --project <root> --yes`; no → leave it. Say what goes: the

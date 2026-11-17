@@ -131,14 +131,19 @@ Agent tự chọn giữa viết flow (để chạy lại, chạy nhiều máy, q
   bánh xe; iPhone không lắc máy được: tool báo rõ thay vì làm sai.
 - Thời gian: một bước `do` khoảng 2 giây trên iPhone, 3 giây trên Simulator; một flow trên
   iPhone khoảng 7 giây khi runner đang chạy (lần đầu ~15–20 giây).
-- Runner trên iPhone tự tắt sau 5 phút rảnh; agent luôn `stop` khi xong. Xong hẳn việc thì agent
-  chạy `fastDeviceTest lock` (tắt runner rồi khoá màn hình, cho máy để Auto-Lock "Never") và
-  `fastSimulatorTest shutdown` (tắt các Simulator đang bật cho nhẹ máy). Máy đang bị người khác
-  dùng thì tool báo "busy", không giành máy.
+- Runner trên iPhone tự tắt sau 5 phút rảnh; agent luôn `stop` khi xong (giải phóng máy, không
+  khoá màn hình). `fastDeviceTest status` cho biết runner đã chạy bao lâu (`up=3h07m`). Chỉ khi
+  bạn đồng ý, agent mới chạy `fastDeviceTest lock` (tắt runner rồi khoá màn hình, cho máy để
+  Auto-Lock "Never"). Với Simulator, agent chạy `fastSimulatorTest shutdown --list` để xem máy
+  nào đang bật và app nào còn chạy, hỏi bạn nếu có máy bạn đang dùng, rồi mới
+  `fastSimulatorTest shutdown`. Máy đang bị người khác dùng thì tool báo "busy", không giành máy.
 - Nhiều bước gộp một lệnh mà có bước nguy hiểm (Xoá, Thanh toán, Gửi, Đăng xuất…) thì tool từ chối,
   trừ khi agent ghi rõ `"confirm": true`.
 - Trạng thái cài sẵn (premium, đã xong onboarding…) tự bị xoá sau khi test trên Simulator; trên
-  iPhone, chúng chỉ là tham số khi mở app, không ghi vào máy.
+  iPhone, chúng chỉ là tham số khi mở app, không ghi vào máy. Trên Simulator, giá trị `null` xoá
+  key trước khi chạy (ví dụ cho popup "chỉ hiện một lần" hiện lại).
+- Flow để `fresh_install: false` (giữ dữ liệu app) vẫn chạy đúng bản vừa build: bản build khác bản
+  đang cài thì tool cài đè, giữ dữ liệu.
 - Quay video được cả Simulator lẫn iPhone thật (iPhone dùng tính năng quay của XCTest, không cần
   Control Center hay QuickTime); video nén nhẹ, khoảng 1–2 MB cho 20 giây.
 - iPhone Duo cần Xcode 27.1. Flow dùng

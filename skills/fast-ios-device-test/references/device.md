@@ -25,7 +25,10 @@ the full multi-line report.
 - **Xcode is chosen per device:** the oldest installed Xcode whose iphoneos SDK
   covers the device's iOS (`FAST_DEVICE_DEVELOPER_DIR` overrides).
 - **The app is not built or fresh-installed.** It drives what is installed;
-  `--install` pushes an iphoneos `.app` first.
+  `--install <App.app>` (or `app.install_path` in the flow) pushes an iphoneos `.app` first.
+  An app whose targets need their own manual profiles (an extension with its own provisioning
+  profile, say) is built with `xcodebuild` outside the tool, then given to `--install`; never
+  edit the project's `project.pbxproj` to make the tool build it.
 - **`setup.preferences` become launch arguments** (typed plist fragments, `$json_data`
   as `<hex>`): the argument domain lasts one launch and is never written, so no
   cleanup is needed. Anything the app itself writes while running does persist.
@@ -169,8 +172,8 @@ fastDeviceTest do '{"type":"tap_label","label":"Lyrics","element_type":"RadioBut
 fastDeviceTest do '{"type":"screenshot","name":"now"}' --device <d> --out <dir>
 fastDeviceTest do '{"type":"launch"}' --app com.apple.Preferences --device <d>
 fastDeviceTest serve --install <path/to/App.app> --device <d>   # install, then start the runner
-fastDeviceTest status|stop --device <d>
-fastDeviceTest lock --device <d>     # end of the work: stop, then lock the screen
+fastDeviceTest status|stop --device <d>   # status: up=… since the runner started; stop frees it
+fastDeviceTest lock --device <d>     # stop, then lock the screen: only when the user agreed
 ```
 
 Each `do` prints PASS/FAIL plus the visible labels after the action, so an agent
@@ -195,8 +198,8 @@ fastDeviceTest do '[{"type":"terminate"},{"type":"launch"},
 `dump` writes the on-screen nodes with type and frame to `<out>/<name>-ui.json`
 (`ui=` in the PASS line); the frame keys are the selector keys, so a dump feeds
 `frame` bounds, `tap_point` and `tap_nearest` directly. In a flow they land in the
-run's artifacts folder. Always `stop` when done (`lock` at the end of the work, which also
-locks the screen): the runner holds the device, and another
+run's artifacts folder. Always `stop` when done (`lock` only when the user wants the screen
+locked too): the runner holds the device, and another
 agent's xcodebuild run on the same iPhone will collide with it. A device that already has a
 runner is refused ("is busy"); pick another iPhone, never `stop` a runner you did not start.
 A runner this Mac started that no longer answers (after an idle-out, while xcodebuild
@@ -335,3 +338,5 @@ Most pass criteria of a background feature live in the app's log (`song changed:
 | iOS newer than selected Xcode | Install a matching Xcode or set `DEVELOPER_DIR` (`FAST_DEVICE_DEVELOPER_DIR` also selects the preflight/build Xcode). |
 | Developer Mode requires a passcode | Set a device passcode, enable Developer Mode, then retry. |
 | Device disconnected mid-run | Reconnect it, keep it unlocked, and rerun the same flow. |
+| Device `unavailable`, or `CoreDeviceError 4016`, mid-session | The iPhone was locked or the cable pulled. Tell the user at once (unlock it, plug it in); do not retry in a loop. |
+| Xcode signs with the wrong one of two profiles with the same name (an old and a new "… NSE Profile") | Pick profiles by UUID, not name: `FAST_DEVICE_PROFILE=<uuid>` for the runner, the UUID (not the name) in each target's `PROVISIONING_PROFILE_SPECIFIER` for your own `xcodebuild`, and ask the user to delete the stale one from `~/Library/Developer/Xcode/UserData/Provisioning Profiles` (or `~/Library/MobileDevice/Provisioning Profiles`). |
