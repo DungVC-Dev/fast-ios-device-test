@@ -1,17 +1,17 @@
 {
   "axe": {
-    "version": "1.8.0",
-    "url": "https://github.com/cameroncooke/AXe/releases/download/v1.8.0/AXe-macOS-v1.8.0-universal.tar.gz",
-    "sha256": "7b76340b72e90d0f211bc7c4636f15009076eff07acef2f2b632b175debd8834",
+    "version": "2.0.4",
+    "url": "https://github.com/cameroncooke/AXe/releases/download/v2.0.4/AXe-macOS-v2.0.4-universal.tar.gz",
+    "sha256": "3178ec66d9ff46455fec737debad719c41cab16edb1435b2c721e07760a208c3",
     "license": "MIT",
     "license_file": "AXe-LICENSE",
     "notice": "AXe, Copyright (c) Cameron Cooke. Licensed under the MIT License; see LICENSE. Version and source URL are recorded in .fast-ios-pin.json.",
     "vendored": true
   },
   "baguette": {
-    "version": "0.2.12",
-    "url": "https://github.com/tddworks/baguette/releases/download/v0.2.12/baguette_v0.2.12_macOS_arm64.tar.gz",
-    "sha256": "32c21cc91c1d3b930bb01e9404139608e6d1ae1d274ef83b4f9dc68d99d8eeac",
+    "version": "0.2.14",
+    "url": "https://github.com/tddworks/baguette/releases/download/v0.2.14/baguette_v0.2.14_macOS_arm64.tar.gz",
+    "sha256": "885ad86ae989dda85e39de370d0e9be5368b564fa65000153577c59d5effc777",
     "license": "Apache-2.0",
     "license_file": "baguette-LICENSE",
     "notice": "baguette by TDDWorks. Licensed under the Apache License 2.0; see LICENSE. Upstream does not publish a NOTICE file, so this project records provenance here; version and source URL are in .fast-ios-pin.json.",
